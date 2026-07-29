@@ -110,6 +110,65 @@ grant path before wiring T-rows that must exclude trials.
   `hubspot_deals_associations`, `hubspot_owners`, `hubspot_pipelines`, `hubspot_pipelines_stages`
 - Intake: `ai_ticket_intake_tenant_phone_numbers`
 
+## Subscription products (BI / Bot / NT / Attendance / Platform) — one shared model
+
+The five per-product usage dashboards are **not five models** — they are one model parameterised per
+product. All of them resolve to the same dataset and the same DWS tables, and the product-specific
+part is only a column prefix (`bi` / `bot` / `nt` / `at`). Build the scorecard against the dataset;
+do not re-derive any of this.
+
+### `Product Metric Dataset` — id `1793541682307964929`
+
+**Grain: tenant × user × week** (`tenant_code`, `tenant_name`, `user_id`, `job_title`,
+`weeks_date`). 155 columns, in these families:
+
+- **Raw activity counts** (the engagement-score inputs): `login`, `viewing_a_widget`,
+  `use_a_nt_command`, `modifying_adding_a_nt_rule`, `test_nt_rule`, `assign_a_nt_filter_rule`,
+  `reject_a_nt_command`, `create_a_nt_filter`, `recording_attendance`, `create_or_update_a_bot`,
+  `create_or_update_a_dataset`, `create_or_update_a_widget`, `creating_or_updating_a_bi_dashboard`,
+  `read_a_bot_message`, `receive_bot_message`, `client_portal_login`, `schedule_report_triggered`
+- **Engagement scores, already weighted and aggregated** — per user
+  (`user_bi_score`, `user_bot_score`, `user_nt_score`, `user_at_score`, `user_score`, `sum_user_*`)
+  and per tenant (`client_score`, `client_bi_score`, `client_bot_score`, `client_nt_score`,
+  `client_at_score`), plus a per-activity decomposition (`client_login_score`,
+  `client_view_widget_score`, `client_use_nt_score`, `client_recording_attendance_score`,
+  `client_create_update_bot_score`, `client_read_bot_message_score`, … ~19 components)
+- **Active flags** — tenant level `active_client_flag`, `active_bi_client_flag`,
+  `active_bot_client_flag`, `active_nt_client_flag`, `active_at_client_flag`; user level
+  `active_user_flag`, `active_bi_user_flag`, `active_bot_user_flag`, `active_nt_user_flag`,
+  `active_at_user_flag`; plus `active_users`
+- **Commercial**: `mrr`, `subscription`, **`users_limit`** (licensed seats per tenant)
+- **Cohort**: `created_weeks`, `cohort_id`, `onboarding_weeks`, `rnk`
+
+This means design rule 7 ("engagement per the existing weighted engagement-score model") needs **no
+implementation** — the scores are columns. Read them; don't re-weight.
+
+### Mapping to the spec
+
+| metrics.yaml row | Computation |
+|---|---|
+| BI2 / BO2 / N2 / A2 active-paying ratio | `active_<p>_client_flag` over paying tenants (`subscription` / `dws_paying_client_subscription`) |
+| **N4 license utilization — TBD closed** | `active_users / users_limit` per tenant. Independently, the dashboards' "X Paid User" denominator is `sum(quantity)` from dataset layer `1831149609855102977` per week — the subscription seat quantity. There is **no separate license table**. |
+| N5 per-user NT frequency | the `use_a_nt_command` / NT event counts ÷ `active_users`, per tenant per week |
+| A2 Attendance usage | `recording_attendance`, `active_at_client_flag` |
+| BO2 Bot delivered/triggered | `read_a_bot_message`, `receive_bot_message`, `create_or_update_a_bot` |
+| BI2 BI views | `viewing_a_widget`, `creating_or_updating_a_bi_dashboard` |
+| Weekly cadence | `weeks_date` is already week-truncated — the WoW rows need no snapshot table |
+
+Active-user definition as used by the dashboards: `user_<p>_score > 0 AND access_<p>_client = true`.
+
+### Supporting tables (all five dashboards)
+
+- `dws_paying_client_subscription` — canonical paying-tenant/subscription source
+- `dws_paying_client_engagement_score` — engagement score at the DWS layer
+- `client_health_data`, `client_health_usage_report` — client health / usage reporting
+- **Churn**: `canceled_customers`, `sys_paying_user_log` — feeds the ">=2 churned in a week" reds
+  (A1/N1/BI1/BO1) and the churn ledger
+- Identity / seats: `sys_user`, `sys_role_user`, `sys_role`, `sys_user_mapping`, `teams_user`
+- Date scaffolding: `t_time_constant`, `statistic_date`, `tenant_weeks`
+- Dataset layers seen: `1831149609855102977` (seat quantity/week), `1928019073413812225`,
+  `2013201163188568066`, `2013859844716625922`
+
 ## Subscription products (BI / Bot) — paying-tenant counts
 
 From the Asset Management dashboard's BI/Bot "Paying Clients / Paying MRR by Subscription and PSA"
@@ -154,16 +213,22 @@ the requested dataset. Until then B1's template-vs-custom split and B5 stay unso
 
 ## Capture status by dashboard
 
-| Dashboard | Id | State |
-|---|---|---|
-| AI Credits | `1985164400759279618` | **done** — 13/13 widgets, digested above |
-| Asset Management: Usage | `1907368777088110593` | partial — BI/Bot billing widgets only (lazy mount) |
-| Per-product usage: BI | `1796382716256718850` | not started |
-| Per-product usage: Bot | `1796384999498539009` | not started |
-| Per-product usage: NT | `1796388005714911233` | not started — also owns the N4 license-source TBD |
-| Per-product usage: Attendance | `1796389551526338561` | not started |
-| Per-product usage: Platform | `1795279517164638210` | not started |
-| Existing Product Usage Scorecard | `scorecard-1815299047968346113` | not started — reuse its Sunday snapshot mechanism |
+| Dashboard | Id | Widgets (mounted / captured) | State |
+|---|---|---|---|
+| AI Credits | `1985164400759279618` | 13 / 13 | **done** |
+| Per-product usage: NT | `1796388005714911233` | 19 of 26 / 9 | **done** — closed the N4 license TBD |
+| Per-product usage: BI | `1796382716256718850` | 16 of 21 / 8 | **done** |
+| Per-product usage: Bot | `1796384999498539009` | 12 of 22 / 2 | **done** — same model confirmed |
+| Per-product usage: Attendance | `1796389551526338561` | 19 of 23 / 2 | **done** — same model + churn tables |
+| Per-product usage: Platform | `1795279517164638210` | 5 of 43 / 3 | **done** — same model confirmed |
+| Asset Management: Usage | `1907368777088110593` | 4 of 41 / 4 | partial — lineage TBD still open |
+| Existing Product Usage Scorecard | `scorecard-1815299047968346113` | — | not started — reuse its Sunday snapshot mechanism |
+
+Coverage note: on the four confirming dashboards we captured only the lead widgets on purpose. Once
+BI and NT proved the shared model (identical tables, identical dataset ids), further widgets on
+Bot/Attendance/Platform would restate the same sources. The Platform board mounts only 5 of 43
+widgets, so anything unique further down it is **not** covered — revisit if a Platform-specific row
+appears in the spec.
 
 ## Capture caveats (bit us once — don't repeat)
 
