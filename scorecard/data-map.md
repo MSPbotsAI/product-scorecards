@@ -335,6 +335,33 @@ Bot/Attendance/Platform would restate the same sources. The Platform board mount
 widgets, so anything unique further down it is **not** covered — revisit if a Platform-specific row
 appears in the spec.
 
+## ROI labor side — `Timesheet Project` enum (TBD closed)
+
+Pulled live from the ClickUp **workspace-level** custom field `Timesheet Project`
+(`83a718c8-aa8e-494f-bcb8-1513caf32af8`, dropdown, 23 options) on 2026-07-29. Product mapping:
+
+| Card | Timesheet Project option(s) |
+|---|---|
+| tqa | **`AI Ticket QA - Alpha` + `AI Ticket QA - Beta`** — two options, so TQA labor is their sum |
+| sentiment_max | `AI Sentiment` |
+| triage | `AI Ticket Triage` |
+| ticket_intake | `AI intake` |
+| bi / bot / next_ticket / attendance | `BI` / `Bot` / `NT` / `Attendance` |
+| sap | `SAP - SOP Agent Platform` (also `SOP use case`, `Agent Platform` — confirm scope) |
+| mpd | `Evolve MPD` |
+
+Not obviously mapped, needs Micus/Kevin: **`asset_library`** has no option of its own (closest are
+`Client Customization` / `Product Team - General`), and **`csm_internal_tool`** has none (`Trellis`?
+`AI RevOps`?). Non-product options to exclude from product ROI: `Admin`,
+`Product Team - General`, `Leadership Team - General`, `Recruitment`, `SRE`, `Integration`,
+`App Platform`, `Agent Platform`, `Client Customization`.
+
+Design rule 8 ("direct hours only, no allocation of generic tasks") has a concrete implementation:
+the sibling field **`Timesheet Category`** (`abc86eb2-…`) carries `Meeting`, `Management`,
+`Recruitment`, `Agile Practice`, `Department Rock`, `Operation`, `Feature`, `Bug`, `KB`, `Security`,
+`Client Engagement` — exclude the non-delivery categories rather than trying to filter by task name.
+`Timesheet Client` (`cf2b4d16-…`) is free short text, so it cannot be relied on as an enum.
+
 ## Capture caveats (bit us once — don't repeat)
 
 1. **SQL Inspector shows the *execution-time* query**, not the widget's stored definition: it

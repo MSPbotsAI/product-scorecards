@@ -4,6 +4,8 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildScorecard } from "./lib/scorecard.ts";
+import { GROUP_LABELS } from "./lib/rows.ts";
 
 const serverDir = dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +20,25 @@ app.get("/api/health", (c) =>
     time: new Date().toISOString(),
   }),
 );
+
+// The datasets are read as the calling user, in the MSPbots tenant that owns them, so the
+// user's own token is forwarded rather than a service credential. tenantCode is required by
+// the report API and is not inferable server-side — the client sends it.
+app.get("/api/scorecard", async (c) => {
+  const token = c.req.header("authorization")?.replace(/^Bearer /i, "") ?? c.req.header("token") ?? "";
+  const tenantCode = c.req.header("tenantCode") ?? c.req.query("tenantCode") ?? "";
+
+  if (!token) return c.json({ error: "missing token — this endpoint reads datasets as the caller" }, 401);
+  if (!tenantCode) return c.json({ error: "missing tenantCode" }, 400);
+
+  try {
+    const result = await buildScorecard({ token, tenantCode });
+    return c.json({ ...result, groups: GROUP_LABELS });
+  } catch (error) {
+    // Surface the real failure: a scorecard that silently renders zeros is worse than a visible error.
+    return c.json({ error: (error as Error).message }, 502);
+  }
+});
 
 const cacheControl = (pathname: string): string =>
   pathname.endsWith(".html") || pathname.endsWith("/")
