@@ -29,6 +29,8 @@ export interface ScorecardRow extends RowDef {
   value: number | null
   previous: number | null
   status: RowStatus
+  /** Weekly series, oldest → newest (subscription rows: every week the dataset holds). */
+  history?: WeekPoint[]
   /** Named tenants behind a red, so the L10 can act rather than discuss. */
   names?: string[]
   /** Why there is no value. Present whenever status is 'nodata'. */
@@ -146,8 +148,8 @@ function judge(value: number | null, previous: number | null, def: RowDef): RowS
 }
 
 /** AI products: active tenants and silent paid tenants, off the credit dataset. */
-function resolveAi(rows: Record_[]): Map<string, { value: number; previous: number | null; names: string[] }> {
-  const out = new Map<string, { value: number; previous: number | null; names: string[] }>()
+function resolveAi(rows: Record_[]): Resolved {
+  const out: Resolved = new Map()
   const products = [
     // `evidence` columns prove the tenant ever bought/used THIS product — without that scoping,
     // every paying tenant counts as "silent" on every product they never had.
@@ -174,6 +176,15 @@ function resolveAi(rows: Record_[]): Map<string, { value: number; previous: numb
       value: active.length,
       previous,
       names: active.map((r) => str(r.tenant_name)).filter(Boolean).slice(0, 12),
+      // The credit dataset is a snapshot: prior-7d vs last-7d is the only history it carries.
+      // A real weekly series needs a small dataset over dw.dws_ai_trace_stat_day_di_view.
+      history:
+        previous == null
+          ? undefined
+          : [
+              { week: 'p7d', value: previous },
+              { week: 'l7d', value: active.length },
+            ],
     })
 
     // Silent = paid, has history on THIS product, zero in the last 7 days. Named for routing.
@@ -198,18 +209,32 @@ function resolveAi(rows: Record_[]): Map<string, { value: number; previous: numb
   return out
 }
 
-type Resolved = Map<string, { value: number | null; previous: number | null; names: string[]; degraded?: boolean }>
+export interface WeekPoint {
+  week: string
+  value: number
+}
 
-/** Subscription products: paying tenants, active/paying ratio, engagement — off the product dataset. */
+type ResolvedHit = {
+  value: number | null
+  previous: number | null
+  names: string[]
+  degraded?: boolean
+  /** Weekly series, oldest → newest. A scorecard row is a history, not a single number. */
+  history?: WeekPoint[]
+}
+type Resolved = Map<string, ResolvedHit>
+
+/**
+ * Subscription products: paying tenants, active/paying ratio, engagement, license utilization —
+ * computed PER WEEK across every week the dataset carries (rolling 35 days today), so each row
+ * ships its history. Value = latest week, previous = the week before.
+ */
 function resolveSubscription(rows: Record_[]): { out: Resolved; current: string } {
   const out: Resolved = new Map()
   if (rows.length === 0) return { out, current: '' }
 
   const weeks = [...new Set(rows.map((r) => str(r.weeks_date)))].filter(Boolean).sort()
   const current = weeks[weeks.length - 1]
-  const prior = weeks.length > 1 ? weeks[weeks.length - 2] : null
-
-  const byWeek = (week: string | null) => (week ? rows.filter((r) => str(r.weeks_date) === week) : [])
 
   const products = [
     { key: 'bi', retention: 'BI1', ratio: 'BI2', eng: 'BI-ENG' },
@@ -221,23 +246,36 @@ function resolveSubscription(rows: Record_[]): { out: Resolved; current: string 
   // The ≥80% targets assume a PRODUCT-level paying base (tenants entitled to that product). The
   // dataset carries that base only if its SQL selects the access_<p>_client columns — detect it,
   // and degrade honestly when absent rather than judging against the wrong denominator.
-  const first = rows[0] ?? {}
-  const hasAccess = 'access_bi_client' in first
+  const hasAccess = 'access_bi_client' in (rows[0] ?? {})
 
-  // One row per tenant per week: collapse the user grain first.
-  const tenants = (week: string | null) => {
-    const map = new Map<string, Record_[]>()
-    for (const r of byWeek(week)) {
-      const code = str(r.tenant_code)
-      if (!code) continue
-      const list = map.get(code)
-      if (list) list.push(r)
-      else map.set(code, [r])
-    }
-    return map
+  // tenant → rows, per week (collapses whatever grain the dataset has to tenant grain).
+  const tenantsByWeek = new Map<string, Map<string, Record_[]>>()
+  for (const r of rows) {
+    const week = str(r.weeks_date)
+    const code = str(r.tenant_code)
+    if (!week || !code) continue
+    let map = tenantsByWeek.get(week)
+    if (!map) tenantsByWeek.set(week, (map = new Map()))
+    const list = map.get(code)
+    if (list) list.push(r)
+    else map.set(code, [r])
   }
-  const currentTenants = tenants(current)
-  const priorTenants = tenants(prior)
+
+  const series = (calc: (tenants: Map<string, Record_[]>) => number | null): WeekPoint[] =>
+    weeks
+      .map((week) => {
+        const v = calc(tenantsByWeek.get(week) ?? new Map())
+        return v == null ? null : { week, value: v }
+      })
+      .filter((p): p is WeekPoint => p != null)
+
+  const fromSeries = (h: WeekPoint[], extra?: Partial<ResolvedHit>): ResolvedHit => ({
+    value: h.length ? h[h.length - 1].value : null,
+    previous: h.length > 1 ? h[h.length - 2].value : null,
+    names: [],
+    history: h,
+    ...extra,
+  })
 
   for (const p of products) {
     const flag = `active_${p.key}_client_flag`
@@ -247,57 +285,57 @@ function resolveSubscription(rows: Record_[]): { out: Resolved; current: string 
     // The source is dws_PAYING_client_engagement_score: presence in a week = paying that week.
     // (mrr can be legitimately empty, e.g. Pax8-billed tenants, so it must not gate "paying".)
     // With access flags the base narrows to tenants entitled to THIS product.
-    const paying = [...currentTenants.entries()].filter(
-      ([, rs]) => !hasAccess || rs.some((r) => flagOn(r[access])),
-    )
-    const payingPrior = [...priorTenants.entries()].filter(
-      ([, rs]) => !hasAccess || rs.some((r) => flagOn(r[access])),
-    )
-    const activePaying = paying.filter(([, rs]) => rs.some((r) => flagOn(r[flag])))
+    const payingOf = (tenants: Map<string, Record_[]>) =>
+      [...tenants.entries()].filter(([, rs]) => !hasAccess || rs.some((r) => flagOn(r[access])))
 
-    out.set(p.retention, {
-      value: paying.length || null,
-      previous: payingPrior.length || null,
-      names: [],
-      degraded: !hasAccess,
-    })
+    out.set(p.retention, fromSeries(series((t) => payingOf(t).length || null), { degraded: !hasAccess }))
 
-    out.set(p.ratio, {
-      value: paying.length ? Math.round((activePaying.length / paying.length) * 1000) / 10 : null,
-      previous: null,
-      names: paying
-        .filter(([, rs]) => !rs.some((r) => flagOn(r[flag])))
-        .map(([, rs]) => str(rs[0]?.tenant_name))
-        .filter(Boolean)
-        .slice(0, 12),
-      degraded: !hasAccess,
+    const ratioSeries = series((t) => {
+      const paying = payingOf(t)
+      if (!paying.length) return null
+      const active = paying.filter(([, rs]) => rs.some((r) => flagOn(r[flag])))
+      return Math.round((active.length / paying.length) * 1000) / 10
     })
+    const currentSilent = payingOf(tenantsByWeek.get(current) ?? new Map())
+      .filter(([, rs]) => !rs.some((r) => flagOn(r[flag])))
+      .map(([, rs]) => str(rs[0]?.tenant_name))
+      .filter(Boolean)
+      .slice(0, 12)
+    out.set(p.ratio, { ...fromSeries(ratioSeries, { degraded: !hasAccess }), names: currentSilent })
 
     // Engagement score is already weighted on the dataset — average the tenant-level value.
-    const scores = [...currentTenants.values()]
-      .map((rs) => num(rs.find((r) => num(r[score]) > 0)?.[score]))
-      .filter((n) => n > 0)
-    out.set(p.eng, {
-      value: scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : null,
-      previous: null,
-      names: [],
-    })
+    out.set(
+      p.eng,
+      fromSeries(
+        series((t) => {
+          const scores = [...t.values()]
+            .map((rs) => num(rs.find((r) => num(r[score]) > 0)?.[score]))
+            .filter((n) => n > 0)
+          return scores.length
+            ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100
+            : null
+        }),
+      ),
+    )
   }
 
-  // N4 — license utilization. users_limit is the seat count (data-map.md).
-  const util = [...currentTenants.values()]
-    .map((rs) => {
-      const seats = Math.max(...rs.map((r) => num(r.users_limit)))
-      const active = Math.max(...rs.map((r) => num(r.active_users)))
-      return seats > 0 ? (active / seats) * 100 : null
-    })
-    .filter((n): n is number => n != null)
-    .sort((a, b) => a - b)
-  out.set('N4', {
-    value: util.length ? Math.round(util[Math.floor(util.length / 2)] * 10) / 10 : null,
-    previous: null,
-    names: [],
-  })
+  // N4 — license utilization median. users_limit is the seat count (data-map.md).
+  out.set(
+    'N4',
+    fromSeries(
+      series((t) => {
+        const util = [...t.values()]
+          .map((rs) => {
+            const seats = Math.max(...rs.map((r) => num(r.users_limit)))
+            const active = Math.max(...rs.map((r) => num(r.active_users)))
+            return seats > 0 ? (active / seats) * 100 : null
+          })
+          .filter((n): n is number => n != null)
+          .sort((a, b) => a - b)
+        return util.length ? Math.round(util[Math.floor(util.length / 2)] * 10) / 10 : null
+      }),
+    ),
+  )
 
   return { out, current: current ?? '' }
 }
@@ -308,6 +346,7 @@ interface Hit {
   names: string[]
   /** True when the value was computed against a coarser base than its target assumes. */
   degraded?: boolean
+  history?: WeekPoint[]
 }
 
 /** Narrows to a resolved hit, so the caller cannot read a value that was never computed. */
@@ -364,6 +403,7 @@ export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult
         previous: hit.previous ?? null,
         status: 'display',
         names: hit.names?.length ? hit.names : undefined,
+        history: hit.history,
         reason:
           'measured against the FULL paying base — add access_bi/bot/nt/at_client to the weekly ' +
           "dataset SQL to restore the product-level base this row's target assumes",
@@ -375,6 +415,7 @@ export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult
       previous: hit.previous ?? null,
       status: judge(hit.value, hit.previous ?? null, def),
       names: hit.names?.length ? hit.names : undefined,
+      history: hit.history,
     }
   })
 

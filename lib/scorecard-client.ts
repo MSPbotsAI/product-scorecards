@@ -8,16 +8,24 @@ export interface ScorecardRow {
   owner: string | null;
   group: string;
   kind: "computed" | "pending" | "unsourced" | "manual";
+  compare: "gte" | "lte" | "eq" | "no-decrease" | "display";
   value: number | null;
   previous: number | null;
   status: RowStatus;
   target: number | null;
   targetText: string;
   unit?: "percent" | "count" | "score" | "ratio" | "days";
+  /** Weekly series, oldest → newest. AI rows carry two relative points (p7d/l7d) for now. */
+  history?: { week: string; value: number }[];
   names?: string[];
   note?: string;
   reason?: string;
   anchor?: string;
+}
+
+/** For delta coloring: on lte-rows (silent counts, target 0) a rise is bad news. */
+export function upIsGood(row: Pick<ScorecardRow, "compare">): boolean {
+  return row.compare !== "lte";
 }
 
 export interface ScorecardData {

@@ -1,18 +1,9 @@
 import { useMemo } from "react";
-import {
-  Alert,
-  AlertDescription,
-  Badge,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  Skeleton,
-  cn,
-} from "@mspbots/ui";
+import { Alert, AlertDescription, Avatar, AvatarFallback, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton, cn } from "@mspbots/ui";
 import { AlertTriangle } from "lucide-react";
-import { STATUS_STYLE, formatValue, useScorecard, type ScorecardRow } from "../../lib/scorecard-client";
+import { Delta, LangToggle, LoadMeter, Sparkline, StatusChip } from "../../lib/board";
+import { groupLabel, rowName, rowTarget, useLang, useT } from "../../lib/i18n";
+import { formatValue, useScorecard, type ScorecardRow } from "../../lib/scorecard-client";
 
 export const meta = {
   label: "By Owner",
@@ -22,48 +13,67 @@ export const meta = {
   description: "Each person's rows — one owner per number, 3–7 numbers per owner.",
 };
 
-/** Frank carries the whole sustain portfolio, so his card is expected to aggregate. */
-const EXPECTED_RANGE = { min: 3, max: 7 };
-
 function OwnerCard({ owner, rows, groups }: { owner: string; rows: ScorecardRow[]; groups: Record<string, string> }) {
+  const t = useT();
+  const lang = useLang();
   const reds = rows.filter((r) => r.status === "red").length;
-  const accountable = rows.filter((r) => r.status !== "display");
-  const overloaded = accountable.length > EXPECTED_RANGE.max;
+  const accountable = rows.filter((r) => r.status !== "display").length;
+  const over = accountable > 7;
+  const isBucket = owner.startsWith("Unowned") || owner.startsWith("无主");
 
   return (
-    <Card className={reds > 0 ? "border-destructive/40" : undefined}>
-      <CardHeader>
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-base">{owner}</CardTitle>
-          <div className="flex items-center gap-1.5">
-            {reds > 0 && <Badge variant="destructive">{reds} red</Badge>}
-            <Badge variant="outline">{accountable.length} accountable</Badge>
+    <Card className={cn(reds > 0 && "border-red-500/30")}>
+      <CardHeader className="pb-3">
+        <div className="flex items-center gap-3">
+          <Avatar className="h-9 w-9">
+            <AvatarFallback className="bg-primary/10 text-sm font-semibold text-primary">
+              {isBucket ? "!" : owner.slice(0, 2)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="truncate text-base">{owner}</CardTitle>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {reds > 0 && (
+                  <Badge variant="destructive" className="h-5 px-1.5 text-[11px]">
+                    {reds} {t.red}
+                  </Badge>
+                )}
+                <Badge variant="outline" className="h-5 px-1.5 text-[11px]">
+                  {accountable} {t.accountable}
+                </Badge>
+              </div>
+            </div>
+            <CardDescription className="text-xs">
+              {t.loadBand(accountable)} · {over ? t.loadOver : t.loadOk}
+            </CardDescription>
           </div>
         </div>
-        <CardDescription>
-          {overloaded
-            ? `${accountable.length} accountable rows — above the 3–7 the workshop agreed per owner. Consider aggregating.`
-            : `Within the agreed 3–7 rows per owner.`}
-        </CardDescription>
+        {!isBucket && <LoadMeter count={accountable} />}
       </CardHeader>
-      <CardContent className="space-y-1.5">
-        {rows.map((row) => {
-          const s = STATUS_STYLE[row.status];
-          return (
-            <div key={row.id} className="flex items-center gap-2 rounded-md border bg-card px-3 py-2">
-              <Badge variant={s.variant} className={cn("w-[86px] shrink-0 justify-center", s.className)}>
-                {s.label}
-              </Badge>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm">{row.name}</div>
-                <div className="text-xs text-muted-foreground">
-                  {row.id} · {groups[row.group] ?? row.group} · target {row.targetText}
-                </div>
+      <CardContent className="space-y-1">
+        {rows.map((row) => (
+          <div
+            key={row.id}
+            className={cn(
+              "flex items-center gap-3 rounded-md border border-l-2 bg-card px-3 py-2",
+              row.status === "red" ? "border-l-red-500 bg-red-500/[0.04]" : "border-l-transparent",
+            )}
+          >
+            <StatusChip status={row.status} className="w-[64px] shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm">{rowName(row.id, row.name, lang)}</div>
+              <div className="text-[11px] text-muted-foreground">
+                {row.id} · {groupLabel(row.group, groups[row.group] ?? row.group, lang)} · {rowTarget(row.id, row.targetText, lang)}
               </div>
-              <div className="shrink-0 font-mono text-sm tabular-nums">{formatValue(row)}</div>
             </div>
-          );
-        })}
+            <Sparkline row={row} width={56} height={18} />
+            <div className="flex shrink-0 items-baseline gap-1.5">
+              <span className="font-mono text-sm font-semibold tabular-nums">{formatValue(row)}</span>
+              <Delta row={row} />
+            </div>
+          </div>
+        ))}
       </CardContent>
     </Card>
   );
@@ -71,30 +81,33 @@ function OwnerCard({ owner, rows, groups }: { owner: string; rows: ScorecardRow[
 
 export default function ByOwner() {
   const { data, error, loading } = useScorecard();
+  const t = useT();
 
   const byOwner = useMemo(() => {
     if (!data) return null;
     const map = new Map<string, ScorecardRow[]>();
     for (const row of data.rows) {
-      const key = row.owner ?? "Unowned — escalates to L10 IDS";
+      const key = row.owner ?? t.unownedBucket;
       const list = map.get(key);
       if (list) list.push(row);
       else map.set(key, [row]);
     }
     // People first, the unowned monitoring bucket last.
-    return [...map.entries()].sort(([a], [b]) =>
-      a.startsWith("Unowned") ? 1 : b.startsWith("Unowned") ? -1 : a.localeCompare(b),
-    );
-  }, [data]);
+    return [...map.entries()].sort(([a], [b]) => {
+      const aBucket = a === t.unownedBucket;
+      const bBucket = b === t.unownedBucket;
+      return aBucket === bBucket ? a.localeCompare(b) : aBucket ? 1 : -1;
+    });
+  }, [data, t]);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">By owner</h1>
-        <p className="text-sm text-muted-foreground">
-          One owner per number. Asset rows are deliberately unowned — a red there goes to IDS for on-the-spot
-          assignment rather than to a person.
-        </p>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{t.ownerTitle}</h1>
+          <p className="max-w-3xl text-sm text-muted-foreground">{t.ownerSubtitle}</p>
+        </div>
+        <LangToggle />
       </div>
 
       {error && (
@@ -112,10 +125,10 @@ export default function ByOwner() {
         </div>
       )}
 
-      {byOwner && (
+      {byOwner && data && (
         <div className="grid gap-4 lg:grid-cols-2">
           {byOwner.map(([owner, rows]) => (
-            <OwnerCard key={owner} owner={owner} rows={rows} groups={data!.groups} />
+            <OwnerCard key={owner} owner={owner} rows={rows} groups={data.groups} />
           ))}
         </div>
       )}
