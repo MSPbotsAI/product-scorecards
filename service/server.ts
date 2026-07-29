@@ -1,0 +1,81 @@
+import { Hono } from "hono";
+import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const serverDir = dirname(fileURLToPath(import.meta.url));
+
+const basePath = (process.env.BASE_URL ?? "/").replace(/\/+$/, "");
+
+const app = basePath ? new Hono().basePath(basePath) : new Hono();
+
+app.get("/api/health", (c) =>
+  c.json({
+    app: process.env.APP_NAME ?? "product-scorecards",
+    version: process.env.APP_VERSION ?? "dev",
+    time: new Date().toISOString(),
+  }),
+);
+
+const cacheControl = (pathname: string): string =>
+  pathname.endsWith(".html") || pathname.endsWith("/")
+    ? "no-cache"
+    : pathname.includes("/assets/")
+      ? "public, max-age=31536000, immutable"
+      : "public, max-age=3600";
+
+function bootstrap(hono: Hono) {
+  const port = Number(process.env.PORT);
+
+  if (process.env.NODE_ENV === "production") {
+    let indexHtml: string | null = null;
+    const sendIndex = (context: any) => {
+      if (indexHtml === null) {
+        try {
+          indexHtml = readFileSync(join(serverDir, "index.html"), "utf8");
+        } catch {
+          indexHtml = "";
+        }
+      }
+      if (!indexHtml) return context.json({ error: "Not Found" }, 404);
+      context.header("Cache-Control", "no-cache");
+      return context.html(indexHtml);
+    };
+
+    hono.get("/", sendIndex);
+    hono.use(
+      "/*",
+      serveStatic({
+        root: serverDir,
+        rewriteRequestPath: (path) => path.slice(basePath.length) || "/",
+        onFound: (_path, context) => context.header("Cache-Control", cacheControl(context.req.path)),
+      }),
+    );
+    // SPA history fallback: match by request path, not the Accept header (wujie fetches the entry with Accept: */*); rule per connect-history-api-fallback.
+    const stripBase = (path: string) =>
+      basePath && path.startsWith(basePath) ? path.slice(basePath.length) || "/" : path;
+    hono.get("/*", (context) => {
+      const path = stripBase(context.req.path);
+      const isSpaRoute = !/^\/(api|ws|sse)(\/|$)/.test(path) && !/\/[^/]+\.[^/]+$/.test(path);
+      return isSpaRoute ? sendIndex(context) : context.json({ error: "Not Found" }, 404);
+    });
+  }
+
+  const server = serve({ fetch: hono.fetch, port }, (info) => {
+    console.log(`Server listening on http://localhost:${info.port}`);
+  });
+
+  let closing = false;
+  const shutdown = () => {
+    if (closing) return;
+    closing = true;
+    server.close(() => process.exit(0));
+    setTimeout(() => process.exit(0), 8000).unref();
+  };
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
+}
+
+bootstrap(app);

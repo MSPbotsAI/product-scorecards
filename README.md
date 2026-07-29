@@ -61,9 +61,30 @@ the workshop decisions behind them, and (phase 4) the dashboard implementation.
 - Known data caveats: paying-user history before 2024-09-18 is unreliable (backfill limitation);
   heavy warehouse scans time out and return empty (filter early, never read empty as zero).
 
+## The app
+
+Built on the standard MSPbots app framework (`@template/react` via the `mspack` CLI) — the same
+framework as [tqa-gtm](https://github.com/MSPbotsAI/tqa-gtm). Vite 7 + React 19 frontend,
+Hono/Node backend, `@mspbots/ui` components; publishes to `https://npm.mspbots.ai/` as
+`@app/product-scorecards` and runs on the platform under `/apps/product-scorecards/`.
+
+Read [CLAUDE.md](CLAUDE.md) before writing code — it carries the framework's golden rules
+(you author only `pages/**/page.tsx` + `service/server.ts`; the toolchain generates the app shell).
+
+```bash
+pnpm install && pnpm dev
+```
+
+| Command | Purpose |
+|---|---|
+| `pnpm dev` | Vite frontend + Hono backend |
+| `pnpm exec tsc --noEmit` && `pnpm build` | Validation gate before publishing |
+| `pnpm exec mspack publish` | Publish to the registry (platform picks it up) |
+
 ## Status
 
 - R1 (roster / portfolio / stage alignment): **done**
 - R2 (per-product metric cards): **done** — cards 11/12 delegated to Kevin
-- R3 (metric spec + data source mapping): **this commit** — open TBDs listed inside `metrics.yaml`
-- R4 (dashboard build): pending framework decision (existing MSPbots app framework, deploy on platform)
+- R3 (metric spec + data source mapping): **done** — open TBDs listed inside `metrics.yaml`
+- R4 (dashboard build): **in progress** — framework skeleton deployable; next is capturing dashboard
+  SQL (see [HANDOFF.md](HANDOFF.md)) and building the scorecard views against `metrics.yaml`
