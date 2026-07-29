@@ -1,0 +1,353 @@
+# Product Team Scorecard — metric spec (R3)
+# Conventions:
+#   cadence: weekly unless noted. status: auto | manual | tbd | pending_review | background
+#   owner "monitor" = unowned monitoring row; red auto-escalates to L10 IDS.
+#   AI products: active = product-attributed credit consumption > 0 (Daily AI Credit Consumption,
+#   dataset 1984154266658537473, dimension ai_business_type); paid = purchased non-trial credits.
+#   Engagement/active standards for platform products: Product Usage Dashboards doc (25kcy-288397).
+
+meta:
+  team: Product
+  meeting: Product-Platform L10 (weekly, Daniel attends)
+  people: [Micus, Grace, Frank, Glenn, Kevin]
+  open_tbds:
+    - paid-vs-trial credit distinction table (expect in AI subscription/billing source behind
+      dashboard 1985164400759279618; capture SQL via SQL Inspector or public API)
+    - NT license count source (per-tenant licensed seats)
+    - Timesheet Project field enum list (map each product card's ROI row to its enum value)
+    - Sentiment "alert viewed/acted" telemetry (SM depth row; telemetry debt, SOP Action 14)
+    - TR4 human-override event existence (pending Grace review)
+    - Asset top-layer view/usage events keyed by original_id lineage (validate exact tables via
+      Asset usage dashboard 1907368777088110593 SQL)
+
+products:
+
+  attendance:
+    stage: {business: sustain-end-of-sale, release: ga}
+    first_line: Frank
+    second_line: Grace
+    metrics:
+      - id: A1
+        name: Paying tenant retention
+        def: tenants still subscribed this week
+        target: no WoW decrease
+        red: ">=2 churned in a week"
+        source: {system: warehouse, ref: platform subscription tables (per Usage Dashboards doc)}
+        status: auto
+      - id: A2
+        name: Active/paying ratio
+        def: tenants with real usage events in 7d / A1
+        target: ">=80%"
+        red: below target (paying-but-silent = churn precursor)
+        source: {system: warehouse, ref: Attendance usage dashboard 1796389551526338561}
+        status: auto
+      - id: A3
+        name: Attendance ROI
+        def: rolling-4w MRR / labor cost (Timesheet Project = Attendance value)
+        target: observation; threshold at quarterly EOS (feeds G3 sentinel discussion)
+        source: {system: warehouse+clickup, ref: time entries by Timesheet Project}
+        status: auto
+        anchor: G3 trigger evidence
+
+  asset_library:
+    stage: {business: sustain, release: ga}
+    first_line: null   # monitoring-only by decision; red -> L10 IDS on-the-spot assignment
+    scope: top layer only (dashboard / report / scorecard), lineage via original_id
+    metrics:
+      - id: B1
+        name: Asset dependency coverage
+        def: platform tenants using >=1 library-lineage asset in 7d / all platform tenants; split template vs custom
+        red: "-5pp trend"
+        source: {system: warehouse, ref: sys_model/sys_report original_id + view logs; asset dashboard 1907368777088110593}
+        status: auto
+      - id: B2
+        name: Dependency-downgrade tenants
+        def: per-tenant active asset count banded (0 / 1-2 / 3+); named tenants that dropped a band this week
+        red: ">=1 (named, to IDS)"
+        source: {system: warehouse}
+        status: auto
+      - id: B3
+        name: Dead template inventory
+        def: "% of template catalog items with zero tenant usage in 30d"
+        target: trend display only (investment-decision input)
+        source: {system: warehouse}
+        status: auto
+      - id: B4
+        name: DA maintenance backlog
+        def: asset-related client requests/bugs with no response >14d
+        red: ">=1 yellow (DA outside product team: flag, don't punish)"
+        source: {system: clickup}
+        status: auto
+      - id: B5
+        name: Template consumption share
+        def: template-lineage share of all top-layer asset view events (weekly)
+        target: trend display only (moat relevance signal)
+        source: {system: warehouse}
+        status: auto
+
+  tqa:
+    stage: {business: grow, release: ga}
+    first_line: Frank
+    second_line: Micus
+    note: conversion owned by sales/CSM — off this scorecard by decision
+    metrics:
+      - id: T1
+        name: Active tenants
+        def: tenants with TQA credit consumption >0 this week
+        target: no WoW net decrease
+        red: net decrease (leavers named -> outreach)
+        source: {system: warehouse, ref: dataset 1984154266658537473 ai_business_type=TQA}
+        status: auto
+      - id: T2
+        name: Multi-board adoption share
+        def: "% of active tenants with QA enabled on >=2 boards (per-tenant distribution in dashboard)"
+        target: rising
+        red: single-board tenants named -> expansion conversation
+        source: {system: warehouse, ref: TQA board enablement config}
+        status: auto
+      - id: T3
+        name: Review coverage inside enabled boards
+        def: reviewed tickets / inbound tickets on QA-enabled boards, per tenant; <70% flagged
+        target: median >=85% (calibrate R3)
+        source: {system: warehouse}
+        status: auto
+      - id: T4
+        name: Silent paid tenants (undispositioned)
+        def: state machine — paid consumption history, 14d zero, on list >1w without disposition
+        target: 0
+        red: ">=1 (named, to CSM via L10)"
+        source: {system: warehouse}
+        status: auto
+      - id: T5
+        name: TQA ROI
+        def: rolling-4w credit-consumption revenue / labor cost
+        target: observation
+        status: auto
+
+  sap:
+    stage: {business: explore, release: prototype}
+    owners: {customer_side: Micus, rnd_side: Grace}
+    one_time_check: G0 record completeness (problem statement, Cost of Inaction, stage budget,
+      kill deadline, named owner) — pre-scorecard Rock
+    metrics:
+      - id: P1
+        owner: Micus
+        name: Qualified alpha candidates
+        def: ICP-matched candidates in active conversation (named)
+        target: climb to 10 (Client Engagement SOP §1 standard)
+        red: flat two weeks -> yellow
+        source: {system: hubspot}
+        status: auto
+      - id: P2
+        owner: Micus
+        name: Customer discovery/demo calls
+        def: SAP-related customer calls held this week
+        target: ">=3"
+        kind: leading (excluded from evaluation)
+        source: {system: fathom}
+        status: auto
+      - id: P3
+        owner: Micus
+        name: Pipeline freshness
+        def: "% of active candidates with stage/next-step updated <=7d"
+        target: 100%
+        source: {system: hubspot}
+        status: auto
+      - id: P4
+        owner: Micus
+        name: Gate-1 evidence progress
+        def: closed evidence items x/N on Prototype->Alpha checklist
+        target: ">=1 item/week; two weeks zero progress -> yellow"
+        source: {system: clickup, ref: gate records}
+        status: auto
+      - id: P5
+        owner: Grace
+        name: Dev-blocking questions answered <=24h
+        target: 100%
+        source: {system: clickup, ref: comment timestamps}
+        status: auto
+      - id: P6
+        owner: Grace
+        name: Deliverable first-pass rate (U1)
+        target: ">=80% (Q1 observe only)"
+        source: {system: ai-reviewer logs}
+        status: auto
+      - id: P7
+        owner: Grace
+        name: Post-freeze AC changes per story (M-SPEC)
+        def: freeze point = status change to '5c - ready for dev'
+        target: "<=1"
+        activation: when SAP enters story flow
+        source: {system: clickup, ref: status history + AC edit history}
+        status: auto
+      - id: P8
+        owner: Grace
+        name: Dev-ready runway (weeks)
+        def: stories in ('5b - ready for groom','5c - ready for dev', not started) / rolling-4w dev weekly consumption
+        target: ">=2 weeks"
+        red: "<1 week (IDS question: Grace's Intake/SAP split)"
+        source: {system: clickup}
+        status: auto
+
+  ticket_intake:
+    stage: {business: wrapping-to-sustain, release: beta-ga}
+    first_line: Grace (permanent)
+    conversion_owner: Glenn
+    background_sentinel:
+      name: Residual external cost check
+      def: tenants with credits=0 or declined but still-billing external resources (phone numbers)
+      behavior: background query; anomaly -> L10 IDS; not a scorecard row
+      status: background
+    metrics:
+      - {id: I1, owner: Grace, name: Remaining launch blockers, target: to zero (row retires at zero),
+         red: flat two weeks -> yellow, source: {system: clickup}, status: auto}
+      - {id: I2, owner: Grace, name: Active tenants (credit>0), target: no WoW decrease, status: auto}
+      - {id: I3, owner: Grace, name: Silent paid tenants (state machine), target: 0, status: auto}
+      - {id: I4, owner: Grace, name: Intake ROI, target: observation, status: auto}
+      - id: G1
+        owner: Glenn
+        name: Engagement funnel freshness
+        def: "% of funnel tenants (invite->demo->provisioned->activated->window-close) with stage updated <=7d, named"
+        target: 100%
+        source: {system: hubspot+warehouse}
+        status: auto
+      - id: G2
+        owner: Glenn
+        name: Newly activated tenants
+        def: reached §0 behavioral activation threshold this week
+        target: ">=1; two weeks zero -> yellow"
+        status: auto
+      - id: G3
+        owner: Glenn
+        name: Day-7 zero-usage outreach completion
+        target: 100%
+        status: auto
+      - id: G4
+        owner: Glenn
+        name: Window-close compliance
+        def: expiring 14-day windows closed on time with Willing/Declined lists + structured exit reasons
+        target: 100% (N/A if no windows expired)
+        status: auto
+
+  sentiment_max:
+    stage: {business: sustain, release: ga}
+    first_line: Frank
+    second_line: Grace
+    metrics:
+      - {id: SM1, name: Active tenants (credit>0, ai-sentiment-max), owner: Frank, target: no WoW net decrease, status: auto,
+         source: {system: warehouse, ref: dataset 1984154266658537473 verified sample}}
+      - {id: SM2, name: Silent paid tenants undispositioned >1w, owner: Frank, target: 0, status: auto}
+      - {id: SM3, name: Sentiment ROI, owner: Frank, target: observation, status: auto}
+      - {id: SM4, name: Negative-alert viewed-within-7d rate, owner: Frank, status: tbd,
+         note: telemetry debt — needs alert view/act events (SOP Action 14)}
+
+  triage:
+    stage: {business: sustain, release: ga}
+    first_line: Frank
+    second_line: Grace
+    metrics:
+      - {id: TR1, name: Active tenants (credit>0), owner: Frank, target: no WoW net decrease, status: auto}
+      - {id: TR2, name: Silent paid tenants undispositioned >1w, owner: Frank, target: 0, status: auto}
+      - {id: TR3, name: Triage ROI, owner: Frank, target: observation, status: auto}
+      - {id: TR4, name: AI triage adoption rate, owner: Frank, status: pending_review,
+         def: "% of AI classifications not manually overridden (rolling 4w)",
+         red: "-5pp yellow / -10pp red -> route to AI/Data owner",
+         note: pending Grace review — confirm override event telemetry exists}
+
+  next_ticket:
+    stage: {business: sustain, release: ga}
+    first_line: Frank
+    second_line: Micus
+    metrics:
+      - {id: N1, name: Paying tenant retention, owner: Frank, target: no WoW decrease, red: ">=2 churn/week", status: auto}
+      - {id: N2, name: Active/paying ratio, owner: Frank, target: ">=80%", status: auto,
+         source: {system: warehouse, ref: next_ticket_request_log + NT dashboard 1796388005714911233}}
+      - {id: N3, name: NextTicket ROI, owner: Frank, target: observation, status: auto}
+      - id: N4
+        owner: Frank
+        name: License utilization + single-user red list
+        def: per tenant, 7d active NT users / licensed seats; median on card; tenants with <=1 active user named
+        target: median >=60% (calibrate); single-user tenant count declining
+        source: {system: warehouse, ref: license source TBD + next_ticket_request_log}
+        status: tbd   # license count source
+      - id: N5
+        owner: Frank
+        name: Per-user daily usage frequency
+        def: per tenant, daily NT pulls / active users; cross-tenant median on card; tenants -30% over 4w named
+        target: median flat/rising
+        source: {system: warehouse, ref: next_ticket_request_log}
+        status: auto
+
+  bot:
+    stage: {business: sustain, release: ga}
+    first_line: Frank
+    metrics:
+      - {id: BO1, name: Paying tenant retention, owner: Frank, target: no WoW decrease, red: ">=2 churn/week", status: auto}
+      - {id: BO2, name: Active/paying ratio (bot triggered/delivered in 7d), owner: Frank, target: ">=80%", status: auto,
+         source: {system: warehouse, ref: tenant_operation_log + bot message logs 1624952788222201857}}
+      - {id: BO3, name: Bot ROI, owner: Frank, target: observation, status: auto}
+
+  bi:
+    stage: {business: sustain, release: ga}
+    first_line: Frank
+    metrics:
+      - {id: BI1, name: Paying tenant retention, owner: Frank, target: no WoW decrease, red: ">=2 churn/week", status: auto}
+      - {id: BI2, name: Active/paying ratio (dashboard views in 7d), owner: Frank, target: ">=80%", status: auto,
+         source: {system: warehouse, ref: BI usage dashboard 1796382716256718850}}
+      - {id: BI3, name: BI ROI, owner: Frank, target: observation, status: auto}
+
+  mpd:
+    kind: custom delivery, independent
+    owner: Kevin
+    delegated: true   # Kevin finalizes his own card; drafts below are the starting point
+    metrics:
+      - {id: M1, name: Due-commitment keep rate (kept or re-decided on record before date), target: 100%, status: auto}
+      - {id: M2, name: Longest client-side blocked wait (days), target: "<=5", status: manual}
+
+  csm_internal_tool:
+    stage: {business: explore-internal, release: prototype}
+    owner: Kevin
+    delegated: true
+    metrics:
+      - {id: C1, name: CSM weekly actives (real operations, not logins), target: "6/6; <4 two weeks -> yellow", status: auto}
+      - {id: C2, name: CSM/Daniel requests into backlog <=48h, target: 100%, status: auto}
+      - {id: C3, name: Blocking defects, target: 0, status: auto}
+      - {id: C4, name: Kill/pivot sentinel (8 consecutive weeks C1<4 -> quarterly EOS kill/pivot item),
+         kind: quarterly signal, status: auto}
+
+non_product:
+  frank_cross_product:   # request handling counted once across the sustain portfolio
+    - id: F1
+      name: New-request triage within 7 days
+      def: new client requests classified into at-risk / expansion / canny within 7d
+      target: 100%
+      note: KPI doc says 48h — doc to be amended to 7d (two-way contract); dashboard tracks actual
+        latency distribution for quarterly re-tightening decision
+      source: {system: clickup+canny (canny_posts in warehouse)}
+      status: auto
+    - id: F2
+      name: Priority-lane evidence completeness at 5b
+      def: cards entering '5b - ready for groom' on the priority lane carry named client + $ + evidence source
+      target: 100%
+      check: on status-change event, field validation
+      status: auto
+    - id: F3
+      name: Canny queue head wait
+      def: days the top item (MRR-desc after merge) sits in awaiting-product-analysis
+      target: "<=14d (calibrate)"
+      source: {system: canny tables + clickup}
+      status: auto
+  micus_hop:
+    - {id: H1, name: Scorecard data completeness at L10 (pipelines ran + manual rows filled), target: 100%, status: auto}
+    - {id: H2, name: Red-light disposition closure (every last-week red has recorded action/owner), target: 100%, status: auto}
+    - {id: H3, name: Team on-track share, kind: display-only trend, status: auto}
+  universal_layer:
+    note: U1/U2 per person as observation panel during Q1 calibration (no red/green);
+      quarterly EOS evidence for U3. Exception P6 (on SAP card, action-testable).
+
+one_time_rocks:
+  - Gate review minute patch (KPI Framework §6 #2) — Micus
+  - SOP doc updates — Micus: TQA stage Explore->Grow; codify freeze marker = '5c - ready for dev';
+    Attendance = Sustain (end-of-sale); M-FLOW anchor 48h -> 7d
+  - SAP G0 record completeness check — Micus
+  - Public API credentials for cross-tenant data plane — Micus
