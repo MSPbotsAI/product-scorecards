@@ -4,7 +4,7 @@
 
 import type { ReactNode } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger, cn } from "@mspbots/ui";
-import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
+import { Activity, ArrowDownRight, ArrowUpRight, CircleAlert, CircleCheck, CircleDashed, Minus, TriangleAlert } from "lucide-react";
 import { STATUS_LABEL, setLang, useLang } from "./i18n";
 import { upIsGood, type RowStatus, type ScorecardRow } from "./scorecard-client";
 
@@ -26,6 +26,29 @@ export function StatusChip({ status, className }: { status: RowStatus; className
       <span className={cn("h-2 w-2 shrink-0 rounded-full", m.dot)} />
       {STATUS_LABEL[lang][status]}
     </span>
+  );
+}
+
+/**
+ * Compact status: shape-distinct icons (never color alone — each state has its own glyph),
+ * text label in the tooltip. For dense lists where the full chip would collide with labels.
+ */
+export function StatusIcon({ status, className }: { status: RowStatus; className?: string }) {
+  const lang = useLang();
+  const icons: Record<RowStatus, ReactNode> = {
+    red: <CircleAlert className="h-3.5 w-3.5 text-red-600 dark:text-red-400" />,
+    yellow: <TriangleAlert className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />,
+    green: <CircleCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />,
+    display: <Activity className="h-3.5 w-3.5 text-muted-foreground/70" />,
+    nodata: <CircleDashed className="h-3.5 w-3.5 text-muted-foreground/50" />,
+  };
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={cn("inline-flex shrink-0", className)}>{icons[status]}</span>
+      </TooltipTrigger>
+      <TooltipContent className="text-xs">{STATUS_LABEL[lang][status]}</TooltipContent>
+    </Tooltip>
   );
 }
 

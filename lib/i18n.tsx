@@ -268,6 +268,54 @@ const NOTE_ZH: Record<string, string> = {
   H2: "需要落库的处置状态；本应用尚未持久化。",
 };
 
+/** Short row names for dense card lists: [en, zh]. Full names stay in tooltips. */
+const ROW_SHORT: Record<string, [string, string]> = {
+  T1: ["Active tenants", "活跃租户"],
+  SM1: ["Active tenants", "活跃租户"],
+  TR1: ["Active tenants", "活跃租户"],
+  I2: ["Active tenants", "活跃租户"],
+  T4: ["Silent paid tenants", "沉默付费租户"],
+  SM2: ["Silent paid tenants", "沉默付费租户"],
+  TR2: ["Silent paid tenants", "沉默付费租户"],
+  I3: ["Silent paid tenants", "沉默付费租户"],
+  T5: ["ROI", "ROI"],
+  SM3: ["ROI", "ROI"],
+  TR3: ["ROI", "ROI"],
+  I4: ["ROI", "ROI"],
+  BI1: ["Paying tenants", "付费租户"],
+  BO1: ["Paying tenants", "付费租户"],
+  N1: ["Paying tenants", "付费租户"],
+  A1: ["Paying tenants", "付费租户"],
+  BI2: ["Active / paying", "活跃占比"],
+  BO2: ["Active / paying", "活跃占比"],
+  N2: ["Active / paying", "活跃占比"],
+  A2: ["Active / paying", "活跃占比"],
+  BI3: ["ROI", "ROI"],
+  BO3: ["ROI", "ROI"],
+  N3: ["ROI", "ROI"],
+  A3: ["ROI", "ROI"],
+  "BI-ENG": ["Engagement score", "Engagement 分"],
+  "BOT-ENG": ["Engagement score", "Engagement 分"],
+  "NEXT_TICKET-ENG": ["Engagement score", "Engagement 分"],
+  "ATTENDANCE-ENG": ["Engagement score", "Engagement 分"],
+  N4: ["License utilization", "座席利用率"],
+  N5: ["Per-user frequency", "人均使用频次"],
+  B1: ["Template coverage", "模板血缘覆盖"],
+  B2: ["Dependency drops", "依赖降档租户"],
+  B3: ["Dead templates", "死模板库存"],
+  SM4: ["Alert view rate", "告警查看率"],
+  TR4: ["AI adoption", "AI 采纳率"],
+  H1: ["Data completeness", "数据完整性"],
+  H2: ["Red-light closure", "红灯处置闭环"],
+  H3: ["On-track share", "达标占比"],
+};
+
+export function rowShort(id: string, fallback: string, l: Lang): string {
+  const hit = ROW_SHORT[id];
+  if (!hit) return fallback;
+  return l === "zh" ? hit[1] : hit[0];
+}
+
 export function rowName(id: string, fallback: string, l: Lang): string {
   return l === "zh" ? (ROW_NAME_ZH[id] ?? fallback) : fallback;
 }

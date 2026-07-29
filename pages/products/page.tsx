@@ -1,8 +1,8 @@
 import { useMemo } from "react";
-import { Alert, AlertDescription, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton, cn } from "@mspbots/ui";
+import { Alert, AlertDescription, Badge, Card, CardContent, Skeleton, cn } from "@mspbots/ui";
 import { AlertTriangle } from "lucide-react";
-import { Delta, LangToggle, Sparkline, StatusChip } from "../../lib/board";
-import { groupLabel, rowName, useLang, useT } from "../../lib/i18n";
+import { Delta, LangToggle, NoteHint, Sparkline, StatusIcon } from "../../lib/board";
+import { groupLabel, rowName, rowShort, rowTarget, useLang, useT } from "../../lib/i18n";
 import { formatValue, useScorecard, type ScorecardRow } from "../../lib/scorecard-client";
 
 export const meta = {
@@ -33,56 +33,145 @@ const STAGE_BADGE: Record<string, string> = {
   eos: "border-amber-500/40 text-amber-700 dark:text-amber-400",
 };
 
+/** The card leads with its activity metric — the first row that actually has a series. */
+function pickHero(rows: ScorecardRow[]): ScorecardRow | null {
+  return (
+    rows.find((r) => r.value != null && r.history && r.history.length >= 2) ??
+    rows.find((r) => r.value != null) ??
+    null
+  );
+}
+
+function Hero({ row }: { row: ScorecardRow }) {
+  const lang = useLang();
+  const judged = row.status === "red" || row.status === "yellow" || row.status === "green";
+  return (
+    <div className="flex items-end justify-between gap-3 border-y bg-muted/30 px-4 py-3 -mx-4">
+      <div className="min-w-0">
+        <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {rowShort(row.id, row.name, lang)}
+          {judged && <StatusIcon status={row.status} />}
+        </div>
+        <div className="mt-1 flex items-baseline gap-2">
+          <span
+            className={cn(
+              "text-[26px] font-semibold leading-none tracking-tight tabular-nums",
+              row.status === "red" && "text-red-700 dark:text-red-400",
+              row.status === "green" && "text-emerald-700 dark:text-emerald-400",
+            )}
+          >
+            {formatValue(row)}
+          </span>
+          <Delta row={row} />
+        </div>
+        <div className="mt-1 truncate text-[11px] text-muted-foreground/80">{rowTarget(row.id, row.targetText, lang)}</div>
+      </div>
+      <Sparkline row={row} width={104} height={34} />
+    </div>
+  );
+}
+
+function CompactRow({ row }: { row: ScorecardRow }) {
+  const lang = useLang();
+  return (
+    <NoteHint note={rowName(row.id, row.name, lang)}>
+      <div
+        className={cn(
+          "flex h-8 items-center gap-2 rounded-md px-1.5 -mx-1.5",
+          row.status === "red" && "bg-red-500/[0.06]",
+        )}
+      >
+        <StatusIcon status={row.status} />
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-[13px]",
+            row.status === "nodata" && "text-muted-foreground/70",
+            row.status === "red" && "font-medium",
+          )}
+        >
+          {rowShort(row.id, row.name, lang)}
+        </span>
+        <Sparkline row={row} width={44} height={14} />
+        <span
+          className={cn(
+            "shrink-0 font-mono text-[13px] font-semibold tabular-nums",
+            row.status === "nodata" && "font-normal text-muted-foreground/60",
+            row.status === "red" && "text-red-700 dark:text-red-400",
+          )}
+        >
+          {formatValue(row)}
+        </span>
+        <Delta row={row} />
+      </div>
+    </NoteHint>
+  );
+}
+
 function ProductCard({ group, label, rows }: { group: string; label: string; rows: ScorecardRow[] }) {
   const t = useT();
-  const lang = useLang();
   const stage = STAGE[group];
   const reds = rows.filter((r) => r.status === "red").length;
-  const gaps = rows.filter((r) => r.status === "nodata").length;
+  const sourced = rows.filter((r) => r.status !== "nodata").length;
+  const hero = pickHero(rows);
+  const rest = hero ? rows.filter((r) => r !== hero) : rows;
   const firstLine = stage?.firstLine === "monitoring only" ? t.monitoringOnly : stage?.firstLine;
 
   return (
-    <Card className={cn("flex flex-col", reds > 0 && "border-red-500/30")}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between gap-2">
-          <CardTitle className="text-base">{label}</CardTitle>
-          {reds > 0 && (
-            <Badge variant="destructive" className="h-5 px-1.5 text-[11px]">
-              {reds} {t.red}
-            </Badge>
-          )}
-        </div>
-        {stage && (
-          <CardDescription>
-            <span className="flex flex-wrap items-center gap-1.5">
-              <Badge variant="outline" className={cn("h-5 px-1.5 text-[11px] font-normal", stage.accent && STAGE_BADGE[stage.accent])}>
-                {stage.business}
-              </Badge>
-              <Badge variant="outline" className="h-5 px-1.5 text-[11px] font-normal">
-                {stage.release}
-              </Badge>
-              <span className="text-[11px]">
-                {t.firstLine}: {firstLine}
-              </span>
-            </span>
-          </CardDescription>
-        )}
-      </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-1">
-        {rows.map((row) => (
-          <div key={row.id} className="flex items-center gap-2 text-sm">
-            <StatusChip status={row.status} className="w-[60px] shrink-0" />
-            <span className="min-w-0 flex-1 truncate text-[13px]">
-              {rowName(row.id, row.name, lang).replace(/^[^—]+—\s*/, "")}
-            </span>
-            <Sparkline row={row} width={48} height={16} />
-            <span className="shrink-0 font-mono text-[13px] font-medium tabular-nums">{formatValue(row)}</span>
-            <Delta row={row} />
+    <Card className={cn("flex flex-col overflow-hidden", reds > 0 && "border-red-500/40")}>
+      <CardContent className="flex flex-1 flex-col px-4 pb-3 pt-4">
+        {/* header */}
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-[15px] font-semibold tracking-tight">{label}</span>
+              {reds > 0 && (
+                <Badge variant="destructive" className="h-[18px] shrink-0 px-1.5 text-[10px]">
+                  {reds} {t.red}
+                </Badge>
+              )}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              {stage && (
+                <>
+                  {stage.business !== "—" && (
+                    <Badge
+                      variant="outline"
+                      className={cn("h-[18px] px-1.5 text-[10px] font-normal", stage.accent && STAGE_BADGE[stage.accent])}
+                    >
+                      {stage.business}
+                    </Badge>
+                  )}
+                  {stage.release !== "—" && (
+                    <Badge variant="outline" className="h-[18px] px-1.5 text-[10px] font-normal">
+                      {stage.release}
+                    </Badge>
+                  )}
+                  <span className="text-[11px] text-muted-foreground">{firstLine}</span>
+                </>
+              )}
+            </div>
           </div>
-        ))}
-        {gaps > 0 && (
-          <p className="mt-auto pt-2 text-[11px] italic text-muted-foreground">{t.noSourceRows(gaps, rows.length)}</p>
-        )}
+        </div>
+
+        {/* hero metric */}
+        {hero && <Hero row={hero} />}
+
+        {/* remaining rows */}
+        <div className={cn("flex flex-1 flex-col gap-0.5", hero ? "pt-2.5" : "border-t pt-2.5")}>
+          {rest.map((row) => (
+            <CompactRow key={row.id} row={row} />
+          ))}
+        </div>
+
+        {/* coverage footer */}
+        <div className="mt-2.5 flex items-center gap-2 border-t pt-2.5">
+          <div className="flex h-1 flex-1 gap-px overflow-hidden rounded-full bg-muted">
+            <div className="h-full rounded-full bg-foreground/35" style={{ width: `${(sourced / rows.length) * 100}%` }} />
+          </div>
+          <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+            {sourced}/{rows.length}
+          </span>
+        </div>
       </CardContent>
     </Card>
   );
@@ -125,7 +214,7 @@ export default function ProductCards() {
       {loading && !data && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-48 w-full" />
+            <Skeleton key={i} className="h-64 w-full" />
           ))}
         </div>
       )}

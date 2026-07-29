@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Alert, AlertDescription, Avatar, AvatarFallback, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton, cn } from "@mspbots/ui";
 import { AlertTriangle } from "lucide-react";
-import { Delta, LangToggle, LoadMeter, Sparkline, StatusChip } from "../../lib/board";
+import { Delta, LangToggle, LoadMeter, Sparkline, StatusIcon } from "../../lib/board";
 import { groupLabel, rowName, rowTarget, useLang, useT } from "../../lib/i18n";
 import { formatValue, useScorecard, type ScorecardRow } from "../../lib/scorecard-client";
 
@@ -60,7 +60,7 @@ function OwnerCard({ owner, rows, groups }: { owner: string; rows: ScorecardRow[
               row.status === "red" ? "border-l-red-500 bg-red-500/[0.04]" : "border-l-transparent",
             )}
           >
-            <StatusChip status={row.status} className="w-[64px] shrink-0" />
+            <StatusIcon status={row.status} className="w-5 justify-center" />
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm">{rowName(row.id, row.name, lang)}</div>
               <div className="text-[11px] text-muted-foreground">
