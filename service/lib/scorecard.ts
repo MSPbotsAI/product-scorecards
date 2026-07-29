@@ -19,6 +19,13 @@ export const AI_CREDIT_DATASET = '1985255723050872834'
  * with ~929k rows of history — unreadable through the paged API by design, so it is NOT read here.
  */
 export const WEEKLY_METRICS_DATASET = process.env.WEEKLY_METRICS_DATASET ?? '2082466110929776641'
+/**
+ * Product Scorecard AI Weekly (Micus, 2026-07-29): week×tenant credits per AI product over 91 days,
+ * aggregated from dw.dws_ai_trace_stat_day_di_view. Gives the AI active-tenant rows their true
+ * calendar-week definition ("this week" per metrics.yaml) and a 13-week history; the credit
+ * snapshot dataset stays authoritative for the silent-paid rows and billing status.
+ */
+export const AI_WEEKLY_DATASET = process.env.AI_WEEKLY_DATASET ?? '2082481324433739777'
 
 const PAGE_SIZE = 500
 const MAX_PAGES = 20
@@ -349,6 +356,62 @@ interface Hit {
   history?: WeekPoint[]
 }
 
+/** Monday of the current week, YYYY-MM-DD — points at or after it belong to the in-progress week. */
+function currentWeekMonday(): string {
+  const now = new Date()
+  const monday = new Date(now.getTime() - (((now.getUTCDay() + 6) % 7) * 24 + now.getUTCHours()) * 3600 * 1000)
+  return monday.toISOString().slice(0, 10)
+}
+
+/**
+ * AI active tenants per calendar week, per product — the spec's own definition of the T1-family
+ * rows. The in-progress week is dropped: a 3-day-old week always reads as a dip and would put a
+ * fake red on every sparkline tail.
+ */
+function resolveAiWeekly(rows: Record_[]): Resolved {
+  const out: Resolved = new Map()
+  const products = [
+    { id: 'T1', col: 'credits_ticketqa' },
+    { id: 'SM1', col: 'credits_sentiment_max' },
+    { id: 'TR1', col: 'credits_ai_triage' },
+    { id: 'I2', col: 'credits_intake' },
+  ] as const
+
+  const cutoff = currentWeekMonday()
+  const weeks = [...new Set(rows.map((r) => str(r.weeks_date).slice(0, 10)))]
+    .filter((w) => w && w < cutoff)
+    .sort()
+  if (!weeks.length) return out
+
+  for (const p of products) {
+    const history: WeekPoint[] = weeks.map((week) => ({
+      week,
+      value: new Set(
+        rows
+          .filter((r) => str(r.weeks_date).slice(0, 10) === week && num(r[p.col]) > 0)
+          .map((r) => str(r.tenant_code)),
+      ).size,
+    }))
+    const latest = weeks[weeks.length - 1]
+    const names = [
+      ...new Set(
+        rows
+          .filter((r) => str(r.weeks_date).slice(0, 10) === latest && num(r[p.col]) > 0)
+          .map((r) => str(r.tenant_name) || str(r.tenant_code)),
+      ),
+    ]
+      .filter(Boolean)
+      .slice(0, 12)
+    out.set(p.id, {
+      value: history[history.length - 1].value,
+      previous: history.length > 1 ? history[history.length - 2].value : null,
+      names,
+      history,
+    })
+  }
+  return out
+}
+
 /** Narrows to a resolved hit, so the caller cannot read a value that was never computed. */
 function hasValue(hit: Hit | null | undefined): hit is Hit & { value: number } {
   return hit != null && hit.value != null
@@ -370,15 +433,22 @@ export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult
     }
   }
 
-  const [aiRows, productRows] = await Promise.all([load(AI_CREDIT_DATASET), load(WEEKLY_METRICS_DATASET)])
+  const [aiRows, productRows, aiWeeklyRows] = await Promise.all([
+    load(AI_CREDIT_DATASET),
+    load(WEEKLY_METRICS_DATASET),
+    load(AI_WEEKLY_DATASET),
+  ])
 
   const ai = aiRows ? resolveAi(aiRows) : null
+  const aiWeekly = aiWeeklyRows ? resolveAiWeekly(aiWeeklyRows) : null
   const sub = productRows ? resolveSubscription(productRows) : null
   const subMap = sub?.out ?? null
   const week = sub?.current ?? ''
 
   const rows: ScorecardRow[] = ROWS.map((def) => {
-    const hit = ai?.get(def.id) ?? subMap?.get(def.id) ?? null
+    // The weekly series is the spec's own definition for the AI active rows, so it wins there;
+    // the credit snapshot keeps the silent-paid rows and serves as fallback when weekly fails.
+    const hit = aiWeekly?.get(def.id) ?? ai?.get(def.id) ?? subMap?.get(def.id) ?? null
 
     if (def.kind === 'unsourced' || def.kind === 'manual' || def.kind === 'pending') {
       return { ...def, value: null, previous: null, status: 'nodata', reason: def.note ?? 'no source yet' }

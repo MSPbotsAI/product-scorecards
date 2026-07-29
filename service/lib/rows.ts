@@ -49,7 +49,7 @@ const AI_PRODUCTS = [
 const aiRows: RowDef[] = AI_PRODUCTS.flatMap(({ key, group, label, owner, ids }) => [
   {
     id: ids[0],
-    name: `${label} — active tenants (credit > 0, 7d)`,
+    name: `${label} — active tenants (credit > 0, this week)`,
     owner,
     group,
     kind: 'computed',

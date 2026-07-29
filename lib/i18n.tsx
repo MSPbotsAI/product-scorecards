@@ -161,16 +161,16 @@ export const STATUS_LABEL: Record<Lang, Record<string, string>> = {
 /* ── row-level translations, keyed by row id (English canon lives in service/lib/rows.ts) ── */
 
 const ROW_NAME_ZH: Record<string, string> = {
-  T1: "TicketQA — 活跃租户（7天 credit > 0）",
+  T1: "TicketQA — 活跃租户（本周 credit > 0）",
   T4: "TicketQA — 沉默付费租户（未处置）",
   T5: "TicketQA — ROI（滚动4周收入 ÷ 工时）",
-  SM1: "Sentiment Max — 活跃租户（7天 credit > 0）",
+  SM1: "Sentiment Max — 活跃租户（本周 credit > 0）",
   SM2: "Sentiment Max — 沉默付费租户（未处置）",
   SM3: "Sentiment Max — ROI（滚动4周收入 ÷ 工时）",
-  TR1: "AI Triage — 活跃租户（7天 credit > 0）",
+  TR1: "AI Triage — 活跃租户（本周 credit > 0）",
   TR2: "AI Triage — 沉默付费租户（未处置）",
   TR3: "AI Triage — ROI（滚动4周收入 ÷ 工时）",
-  I2: "Ticket Intake — 活跃租户（7天 credit > 0）",
+  I2: "Ticket Intake — 活跃租户（本周 credit > 0）",
   I3: "Ticket Intake — 沉默付费租户（未处置）",
   I4: "Ticket Intake — ROI（滚动4周收入 ÷ 工时）",
   BI1: "BI — 付费租户",
