@@ -197,19 +197,124 @@ Per-PSA breakdown is available on the same widgets.
 | `total_rnk`, `type_rnk` | ranking within all assets / within type |
 | `msp_size` | MSP size segmentation |
 
-**Still open — the `original_id` lineage TBD.** Nothing captured so far distinguishes
-*template-lineage* from *custom* assets (the `sys_model.original_id` / `sys_report.original_id`
-expectation in `metrics.yaml`). Two facts about why:
+### Template lineage — TBD closed (from the existing scorecard, not the Asset dashboard)
 
-1. `MSPbots Custom Asset Inventory` (`2082117976089296897`) — the dataset that would answer it —
-   is **Requested and empty**: no data, no columns. It has been asked for but not delivered.
-2. The Asset Management dashboard (`1907368777088110593`) has 41 widgets, but most are
-   lazily mounted — an unmounted widget exposes no action menu at all, so bulk SQL capture across it
-   is unreliable (see caveat 3).
+The answer was on the **`Weekly Active Client % Of Core Assets`** row of the existing scorecard, not
+on the Asset dashboard. Two mechanisms work together — the spec's `original_id` assumption was right
+but incomplete:
 
-Next step for this TBD: validate the lineage columns directly against the warehouse (Data CLI,
-single-tenant is sufficient to confirm a column exists) rather than waiting on the dataset, or chase
-the requested dataset. Until then B1's template-vs-custom split and B5 stay unsourced.
+**1. The template catalog** — `business_type = 'Template'`:
+
+```sql
+asset_list as (
+  select sr.id, sr.name,
+    case when sd.layout_type = 'report_layout'      then 'Dashboard'
+         when sd.layout_type = 'report_layout_page' then 'Report'
+         when sd.layout_type = 'scorecard_layout'   then 'Scorecard' end as asset_type
+  from sys_report sr
+  inner join sys_dashboard sd on sd.business_id = sr.id::varchar
+  where sr.business_type = 'Template'
+  union select id, name, 'Bot' as asset_type from sys_bot     where business_type = 'Template'
+  union select id, name, 'App' as asset_type from tenant_app  where type = 1 …
+)
+```
+
+So the top-layer taxonomy is `sys_dashboard.layout_type` → Dashboard / Report / Scorecard, plus Bot
+(`sys_bot`) and App (`tenant_app.type = 1`). Note this is **broader than the workshop's
+`asset_library` scope** (dashboard / report / scorecard only) — decide whether Bot and App belong.
+
+**2. Clone lineage — two hops, not one:**
+
+```sql
+sr.original_id,
+sro.original_id as p_original_id
+left join sys_report sro on sro.id = sr.original_id
+…
+) src on rlist.assets_id = src.original_id
+      or rlist.assets_id = src.p_original_id
+```
+
+A tenant asset points at its parent via `original_id`; that parent may itself be a clone, so its
+`original_id` is carried as `p_original_id` and the template match accepts **either** hop.
+`metrics.yaml`'s "null = original, else cloned" is true but insufficient — **matching a single hop
+undercounts clones-of-clones.**
+
+Supporting datasets: `t_dataset_1906984466644082690` (the `asset_list` CTE, declared
+`as not materialized`), `t_dataset_1830927587392749569`.
+
+Still not sourced: the **view/usage event** side keyed to these assets (B1's per-tenant usage, B2's
+banding). `MSPbots Custom Asset Inventory` (`2082117976089296897`) — the dataset that would carry it
+— is **Requested and empty**: no data, no columns. And the Asset dashboard (`1907368777088110593`)
+mounts only 4 of 41 widgets, so bulk capture there is unreliable (caveat 3).
+
+## Existing `Platform Product Usage Scorecard` (`1815299047968346113`)
+
+43 rows, each rendered as *name / current value / target* — the platform has a native scorecard
+object, so **the L10 board does not need to be built from scratch**; this is the pattern to follow.
+
+### Row shape — every product metric has two denominators
+
+Each product (BI / Bot / NT / AT) carries four activity rows, weekly **and** monthly:
+
+- `<P> - Weekly Active Tenants % (Product-level Paying Client Base)` — paying for *that product*
+- `<P> - Weekly Active Tenants % (Full Paying Client Base)` — *all* paying tenants
+- the same two for Active Users %
+- plus `<P> - Tenant Level Engagement Score` (weekly and monthly)
+
+Targets differ substantially between the two bases (BI weekly active tenants: 95% product-level vs
+89.69% full). **`metrics.yaml`'s "active/paying ratio ≥80%" (A2/N2/BI2/BO2) does not say which
+denominator** — that needs a decision, and the existing targets are the calibration baseline:
+
+| | BI | Bot | NT | AT |
+|---|---|---|---|---|
+| Engagement score target (weekly) | — | 90 | 15 | 5 |
+| WA Tenants % (prod) | 95% | 72% | 65% | 40% |
+| WA Users % (prod) | 32% | 50% | 25% | 25% |
+| WA Tenants % (full) | 89.69% | 65.7% | 50% | 30% |
+| WA Users % (full) | 25% | 30% | 15% | 15% |
+
+Asset rows already exist here too: `Weekly Active Client % Of Core Assets` (51% vs ≥44%),
+`Engagement score of Bot core assets` (11.67 vs ≥12), `Engagement score of BI core assets`
+(1.81 vs ≥10).
+
+### The snapshot mechanism — it is **not** a Sunday snapshot
+
+The handoff and README both say "weekly Sunday snapshots". The live SQL says otherwise:
+
+1. **There is no snapshot or history table at all** (no `snapshot` / `hist` identifier anywhere in
+   the 21k–40k-char row queries). Every weekly series is recomputed on read from a **week spine**:
+   `generate_series('2022-08-29'::date, date_trunc('week', current_date), interval '1 week')`,
+   left-joined to `payment` / `dws_paying_client_subscription`, with a running
+   `sum(client) over (order by week_list)` for cumulative paying clients.
+2. Weekly sampling of the **daily** `client_health_usage_report` is done with
+   `WHERE statistic_date >= current_date - interval '366 days' AND EXTRACT(DOW FROM statistic_date) = 1`.
+   In PostgreSQL `EXTRACT(DOW)` is 0 = Sunday, so **`= 1` is Monday**.
+3. Weeks are Monday-based throughout: `date_trunc('week', …)` is Monday-start in Postgres, and the
+   spine is seeded on `2022-08-29`, itself a Monday.
+
+Three independent signals agree: **the week boundary is Monday, and the weekly sample is the Monday
+row.** Consequences for us: we do not need to build a snapshot table either (this matches
+`Product Metric Dataset.weeks_date` already being week-truncated), and H1 ("scorecard data
+completeness at L10 time") must be judged against a Monday boundary — a scorecard read on Tuesday
+shows the week that began the previous day.
+
+### Inherited data-quality defects — do not copy blindly
+
+- **8 of the "(Full Paying Client Base)" monthly rows read `0.00%` against non-zero targets**
+  (BI/Bot/NT/AT × Tenants/Users). Under our design rules that is a permanently red row, which is
+  exactly the kind of dead red that teaches people to ignore reds. The full-base monthly calculation
+  is broken or unpopulated — and per the handoff's own warning, **empty must not be read as zero**.
+- `BI - Monthly Active Tenants % (Product-level)` reads **101.80%** — over 100%, so numerator and
+  denominator are on mismatched bases (likely a paying-base timing lag).
+
+Both must be fixed or excluded before any of these definitions are reused.
+
+### Extra dimensions worth keeping
+
+- **Client size banding** (from `client_health_usage_report.USR`): `>=1000` Mega, `>=100` Large,
+  `>=25` Medium, `>=10` Small, `<10` Micro — the same `msp_size` used by the asset dataset.
+- **Per-PSA user identity**: `task_autotask_user`, `connectwise_user`, `halo_agent`,
+  `kaseya_bms_users` — needed for any user-count denominator across PSAs.
 
 ## Capture status by dashboard
 
@@ -221,8 +326,8 @@ the requested dataset. Until then B1's template-vs-custom split and B5 stay unso
 | Per-product usage: Bot | `1796384999498539009` | 12 of 22 / 2 | **done** — same model confirmed |
 | Per-product usage: Attendance | `1796389551526338561` | 19 of 23 / 2 | **done** — same model + churn tables |
 | Per-product usage: Platform | `1795279517164638210` | 5 of 43 / 3 | **done** — same model confirmed |
-| Asset Management: Usage | `1907368777088110593` | 4 of 41 / 4 | partial — lineage TBD still open |
-| Existing Product Usage Scorecard | `scorecard-1815299047968346113` | — | not started — reuse its Sunday snapshot mechanism |
+| Asset Management: Usage | `1907368777088110593` | 4 of 41 / 4 | partial — asset *usage events* still unsourced |
+| **Existing Product Usage Scorecard** | `1815299047968346113` | 43 rows / 3 queries | **done** — closed the template-lineage TBD; corrected the "Sunday snapshot" claim |
 
 Coverage note: on the four confirming dashboards we captured only the lead widgets on purpose. Once
 BI and NT proved the shared model (identical tables, identical dataset ids), further widgets on
