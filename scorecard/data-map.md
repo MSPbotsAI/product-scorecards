@@ -13,9 +13,15 @@ Only four internal datasets exist as of capture:
 | Dataset | Id | Status | Serves |
 |---|---|---|---|
 | **Paying AI Credit Consumption** | `1985255723050872834` | In-Dev | AI products: T1/T4/T5, SM1–SM3, TR1–TR3, I2–I4 |
-| Paying Clients Contract info | *(tbd)* | Requested | Subscription / MRR context |
-| MSPbots Custom Asset Inventory | *(tbd)* | Requested | Asset rows B1–B5 (to verify) |
-| Intake Data Details | *(tbd)* | Published (created 2026-07-28) | Intake detail rows |
+| Paying Clients Contract info | *(id not read)* | Requested | Subscription / MRR context |
+| **MSPbots Custom Asset Inventory** | `2082117976089296897` | Requested — **empty, no columns yet** | Intended for asset rows B1–B5; not yet delivered |
+| Intake Data Details | *(id not read)* | Published (created 2026-07-28) | Intake detail rows |
+
+Outside the internal list, referenced by the Asset dashboard and already populated:
+
+| Dataset | Id | Serves |
+|---|---|---|
+| **Asset usage by MSP size** | `1879106462136016897` | B1 / B3 / B5 (see below) |
 
 The AI Credits Dashboard (`dashboard-1985164400759279618`) queries
 `t_dataset_1985255723050872834` — i.e. its widgets sit on **Paying AI Credit Consumption**, so the
@@ -104,6 +110,61 @@ grant path before wiring T-rows that must exclude trials.
   `hubspot_deals_associations`, `hubspot_owners`, `hubspot_pipelines`, `hubspot_pipelines_stages`
 - Intake: `ai_ticket_intake_tenant_phone_numbers`
 
+## Subscription products (BI / Bot) — paying-tenant counts
+
+From the Asset Management dashboard's BI/Bot "Paying Clients / Paying MRR by Subscription and PSA"
+widgets. **Billing runs through two channels, not one** — a paying-tenant count that only reads
+Chargebee undercounts:
+
+- Chargebee: `chargebee_subscriptions`, `chargebee_item_prices`, `chargebee_invoices`
+- **Pax8 (marketplace)**: `pax8_tenant`, `pax8_order_records`, `pax8_order_mapping`
+- Pricing / tiering: `price_list`, `tier_price`, `tenant_payment`
+- Context: `sys_tenant`, `sys_tenant_setting`, `tenant_app`, `sys_integration`,
+  `client_config_status`, `psa_info`, `hubspot_companies`
+
+Applies to BI1 / BO1 (and by extension N1 / A1) — "paying tenant retention" must union both channels.
+Per-PSA breakdown is available on the same widgets.
+
+## Asset rows (B1–B5) — partially sourced, lineage still open
+
+`Asset usage by MSP size` (`1879106462136016897`) — grain: one row per asset, per MSP size band:
+
+| Field | Use |
+|---|---|
+| `asset_name`, `asset_type` | asset identity + kind |
+| `used_tenant` | tenant count using the asset → **B3** dead inventory = zero-usage items |
+| `used_tenant_list` | the named tenants → feeds B2's named-tenant requirement |
+| `percentage` | share of tenants → **B1** coverage, **B5** consumption share |
+| `total_rnk`, `type_rnk` | ranking within all assets / within type |
+| `msp_size` | MSP size segmentation |
+
+**Still open — the `original_id` lineage TBD.** Nothing captured so far distinguishes
+*template-lineage* from *custom* assets (the `sys_model.original_id` / `sys_report.original_id`
+expectation in `metrics.yaml`). Two facts about why:
+
+1. `MSPbots Custom Asset Inventory` (`2082117976089296897`) — the dataset that would answer it —
+   is **Requested and empty**: no data, no columns. It has been asked for but not delivered.
+2. The Asset Management dashboard (`1907368777088110593`) has 41 widgets, but most are
+   lazily mounted — an unmounted widget exposes no action menu at all, so bulk SQL capture across it
+   is unreliable (see caveat 3).
+
+Next step for this TBD: validate the lineage columns directly against the warehouse (Data CLI,
+single-tenant is sufficient to confirm a column exists) rather than waiting on the dataset, or chase
+the requested dataset. Until then B1's template-vs-custom split and B5 stay unsourced.
+
+## Capture status by dashboard
+
+| Dashboard | Id | State |
+|---|---|---|
+| AI Credits | `1985164400759279618` | **done** — 13/13 widgets, digested above |
+| Asset Management: Usage | `1907368777088110593` | partial — BI/Bot billing widgets only (lazy mount) |
+| Per-product usage: BI | `1796382716256718850` | not started |
+| Per-product usage: Bot | `1796384999498539009` | not started |
+| Per-product usage: NT | `1796388005714911233` | not started — also owns the N4 license-source TBD |
+| Per-product usage: Attendance | `1796389551526338561` | not started |
+| Per-product usage: Platform | `1795279517164638210` | not started |
+| Existing Product Usage Scorecard | `scorecard-1815299047968346113` | not started — reuse its Sunday snapshot mechanism |
+
 ## Capture caveats (bit us once — don't repeat)
 
 1. **SQL Inspector shows the *execution-time* query**, not the widget's stored definition: it
@@ -113,3 +174,8 @@ grant path before wiring T-rows that must exclude trials.
 2. **Never scrape the SQL out of the Monaco DOM.** It is virtualized — a 16,434-char query rendered
    only 1,498 chars of `.view-lines`, i.e. 9%, with no visible truncation. Read the editor
    component's own `value` instead.
+3. **Widgets are lazily mounted and `.widget` DOM order ≠ visual order.** An unmounted widget has
+   zero action icons and an empty action menu; scrolling it into view helps but is not reliable on a
+   41-widget board. Verify the captured widget's own title rather than trusting an index.
+4. A dataset row in the list can be a *request*, not a source: check for real data columns before
+   planning against it (`MSPbots Custom Asset Inventory` looks legitimate in the list and is empty).
