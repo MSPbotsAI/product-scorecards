@@ -48,9 +48,12 @@ export function formatValue(row: Pick<ScorecardRow, "value" | "unit">): string {
   }
 }
 
-/** The report API needs the tenant alongside the token; the runtime carries it on the token payload. */
-function tenantCodeOf(payload: Record<string, unknown> | undefined): string {
-  for (const key of ["tenantCode", "tenant_code", "tenantId", "tenant"]) {
+/**
+ * The report API needs the tenant alongside the token. `tokenPayload` is typed as an open record,
+ * so the claim name is not knowable statically — try the plausible ones.
+ */
+function tenantCodeOf(payload: Record<string, unknown> | null | undefined): string {
+  for (const key of ["tenantCode", "tenant_code", "tenantId", "tenant_id", "tenant", "tid"]) {
     const v = payload?.[key];
     if (v != null && String(v).length > 0) return String(v);
   }
@@ -61,8 +64,9 @@ export function useScorecard() {
   const [data, setData] = useState<ScorecardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const access = useAccess() as { tokenPayload?: Record<string, unknown> };
-  const tenantCode = tenantCodeOf(access?.tokenPayload);
+  const access = useAccess();
+  const payload = access?.tokenPayload;
+  const tenantCode = tenantCodeOf(payload);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,14 +76,25 @@ export function useScorecard() {
         headers: tenantCode ? { tenantCode } : undefined,
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? `request failed (${res.status})`);
+      if (!res.ok) {
+        // A 400 means the server wanted a tenant it didn't get. The tenant claim's name isn't
+        // knowable statically, so name the claims the token does carry (names only, never values).
+        if (res.status === 400 && !tenantCode) {
+          const keys = payload ? Object.keys(payload) : [];
+          throw new Error(
+            `${body?.error ?? "missing tenantCode"} — the token carries no tenant claim under a known name. ` +
+              `Claims present: ${keys.join(", ") || "(none)"}. Add the right one to tenantCodeOf() in lib/scorecard-client.ts.`,
+          );
+        }
+        throw new Error(body?.error ?? `request failed (${res.status})`);
+      }
       setData(body as ScorecardData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "failed to load the scorecard");
     } finally {
       setLoading(false);
     }
-  }, [tenantCode]);
+  }, [tenantCode, payload]);
 
   useEffect(() => {
     void load();

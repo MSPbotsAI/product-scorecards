@@ -37,7 +37,19 @@ export interface ScorecardResult {
 
 const report = createMspbotsReportClient({
   mspbots_client_host: process.env.MSPBOTS_REPORT_HOST ?? 'https://app.mspbots.ai/web/reports',
+  public_api_key: process.env.PUBLIC_API_KEY,
 })
+
+/**
+ * Two ways in, and the environment decides which:
+ *
+ * - **token** — read as the calling user. Works when the app is served from the platform origin,
+ *   because only then does the browser hold a platform session to forward.
+ * - **public** — read with the app's own `PUBLIC_API_KEY`. Required off-platform (local dev), where
+ *   no user session is obtainable: production's login app has no route that will hand a token to a
+ *   localhost origin, and a token from the int environment cannot read production datasets.
+ */
+export const READ_MODE: 'public' | 'token' = process.env.PUBLIC_API_KEY ? 'public' : 'token'
 
 type Record_ = Record<string, unknown>
 
@@ -64,7 +76,10 @@ function unwrap(res: Record_, datasetId: string): Record_ {
 async function readAll(datasetId: string, auth: AuthHeaders): Promise<Record_[]> {
   const out: Record_[] = []
   for (let page = 1; page <= MAX_PAGES; page++) {
-    const res = (await report.getDatasetData(datasetId, { current: page, size: PAGE_SIZE }, auth)) as Record_
+    const query = { current: page, size: PAGE_SIZE }
+    const res = (READ_MODE === 'public'
+      ? await report.getPublicDatasetData(datasetId, query)
+      : await report.getDatasetData(datasetId, query, auth)) as Record_
     const payload = unwrap(res, datasetId)
     const batch = (payload?.records ?? payload?.list ?? payload?.rows ?? payload?.data ?? []) as Record_[]
     if (!Array.isArray(batch)) {

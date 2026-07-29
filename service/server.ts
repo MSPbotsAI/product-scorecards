@@ -4,7 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildScorecard } from "./lib/scorecard.ts";
+import { buildScorecard, READ_MODE } from "./lib/scorecard.ts";
 import { GROUP_LABELS } from "./lib/rows.ts";
 
 const serverDir = dirname(fileURLToPath(import.meta.url));
@@ -21,15 +21,30 @@ app.get("/api/health", (c) =>
   }),
 );
 
-// The datasets are read as the calling user, in the MSPbots tenant that owns them, so the
-// user's own token is forwarded rather than a service credential. tenantCode is required by
-// the report API and is not inferable server-side — the client sends it.
+app.get("/api/mode", (c) => c.json({ mode: READ_MODE }));
+
+// In token mode the datasets are read as the calling user (the MSPbots tenant owns them, and the
+// team logs into it), so the user's token is forwarded rather than a service credential; tenantCode
+// is not inferable server-side, so the client sends it. In public mode the app's own key is used and
+// neither is needed — see READ_MODE.
 app.get("/api/scorecard", async (c) => {
   const token = c.req.header("authorization")?.replace(/^Bearer /i, "") ?? c.req.header("token") ?? "";
   const tenantCode = c.req.header("tenantCode") ?? c.req.query("tenantCode") ?? "";
 
-  if (!token) return c.json({ error: "missing token — this endpoint reads datasets as the caller" }, 401);
-  if (!tenantCode) return c.json({ error: "missing tenantCode" }, 400);
+  if (READ_MODE === "token") {
+    if (!token) {
+      return c.json(
+        {
+          error:
+            "no platform token on the request. Off the platform origin a user session cannot be " +
+            "borrowed — set PUBLIC_API_KEY in .env.local to read with the app's own credential.",
+          mode: READ_MODE,
+        },
+        401,
+      );
+    }
+    if (!tenantCode) return c.json({ error: "missing tenantCode", mode: READ_MODE }, 400);
+  }
 
   try {
     const result = await buildScorecard({ token, tenantCode });
