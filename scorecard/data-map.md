@@ -23,6 +23,31 @@ Outside the internal list, referenced by the Asset dashboard and already populat
 |---|---|---|
 | **Asset usage by MSP size** | `1879106462136016897` | B1 / B3 / B5 (see below) |
 
+Created for this app (Micus, 2026-07-29) and whitelisted on the `Product Team Scorecards` public
+API key:
+
+| Dataset | Id | Serves |
+|---|---|---|
+| **Product Scorecard Weekly Metrics** | `2082466110929776641` | The whole subscription half: BI1/2, BO1/2, N1/2/4, A1/2, engagement rows |
+
+Its SQL is a tenant×week projection of `dws_paying_client_engagement_score` (rolling 35 days,
+`select distinct` collapses the user grain; ~1.6k rows). It exists because the full
+`Product Metric Dataset` (`1793541682307964929`) holds ~929k rows of tenant×user×week history —
+unreadable through the paged public API. **Wanted next**: add `access_bi_client`,
+`access_bot_client`, `access_nt_client`, `access_at_client` to its SELECT — the app detects them
+and upgrades the active/paying ratios from the full-base denominator (display-only) to the
+product-level base their ≥80% targets assume.
+
+Dataset-editor rules learned the hard way: **no `limit`** (rejected outright), **no comments**,
+and **`t_dataset_<id>` references do not resolve** (`relation does not exist`) — that syntax is a
+widget-layer construct; the editor sees only warehouse relations. `billable_users` and the csm/psa
+side-columns are not on the DWS table (the big dataset joins them in).
+
+Public API read notes (verified live): envelope `{code, requestId, msg, data}`, rows under
+`data.records`, errors arrive as HTTP 200 with a non-zero `code` (e.g. `500` "The resourceId is
+invalid" = dataset not whitelisted on the key; `401` = bad key). Booleans arrive as `true`/`'true'`
+— never assume numeric flags.
+
 The AI Credits Dashboard (`dashboard-1985164400759279618`) queries
 `t_dataset_1985255723050872834` — i.e. its widgets sit on **Paying AI Credit Consumption**, so the
 scorecard should read that dataset rather than rebuild the Chargebee logic.

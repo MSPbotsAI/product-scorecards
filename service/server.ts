@@ -23,6 +23,19 @@ app.get("/api/health", (c) =>
 
 app.get("/api/mode", (c) => c.json({ mode: READ_MODE }));
 
+// Shape probe, dev only. Reports the response envelope and the row's field NAMES — never values —
+// so the resolvers can be checked against the real payload without exporting any data.
+if (process.env.NODE_ENV !== "production") {
+  app.get("/api/debug/shape/:id", async (c) => {
+    const { probeShape } = await import("./lib/scorecard.ts");
+    try {
+      return c.json(await probeShape(c.req.param("id"), Number(c.req.query("size") ?? 1)));
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 502);
+    }
+  });
+}
+
 // In token mode the datasets are read as the calling user (the MSPbots tenant owns them, and the
 // team logs into it), so the user's token is forwarded rather than a service credential; tenantCode
 // is not inferable server-side, so the client sends it. In public mode the app's own key is used and

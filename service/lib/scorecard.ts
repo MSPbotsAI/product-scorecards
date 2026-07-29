@@ -2,7 +2,7 @@
 //
 // Sources (verified 2026-07-29, see scorecard/data-map.md):
 //   AI_CREDIT_DATASET     one row per paying tenant, l7d/p7d consumption split per product
-//   PRODUCT_METRIC_DATASET tenant x user x week; per-product active flags and engagement scores
+//   WEEKLY_METRICS_DATASET tenant x week; per-product active flags and engagement scores
 //
 // Rules this file follows deliberately:
 //   - An empty read is NOT zero. If a fetch fails or returns nothing, the row reports 'nodata'.
@@ -12,7 +12,13 @@ import { createMspbotsReportClient, type AuthHeaders } from './mspbots-report.ts
 import { ROWS, type Compare, type RowDef } from './rows.ts'
 
 export const AI_CREDIT_DATASET = '1985255723050872834'
-export const PRODUCT_METRIC_DATASET = '1793541682307964929'
+/**
+ * Product Scorecard Weekly Metrics — created for this app on 2026-07-29 (by Micus, in the dataset
+ * editor). A tenant×week projection of `dws_paying_client_engagement_score` over a rolling 35-day
+ * window (~2.5k rows). The full Product Metric Dataset (1793541682307964929) is tenant×user×week
+ * with ~929k rows of history — unreadable through the paged API by design, so it is NOT read here.
+ */
+export const WEEKLY_METRICS_DATASET = process.env.WEEKLY_METRICS_DATASET ?? '2082466110929776641'
 
 const PAGE_SIZE = 500
 const MAX_PAGES = 20
@@ -58,6 +64,8 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0
 }
 const str = (v: unknown): string => (v == null ? '' : String(v))
+/** Dataset booleans arrive as true/'true'/'t'/1/'1' depending on the column — never as a guaranteed number. */
+const flagOn = (v: unknown): boolean => v === true || num(v) > 0 || /^(t|true|yes|y)$/i.test(str(v))
 
 /**
  * The platform answers auth and query errors with HTTP 200 and a non-zero `code` in the envelope
@@ -70,6 +78,23 @@ function unwrap(res: Record_, datasetId: string): Record_ {
     throw new Error(`dataset ${datasetId} refused the read (code ${code}): ${str(res?.msg) || 'no message'}`)
   }
   return (res?.data ?? res) as Record_
+}
+
+/** Dev-only: the envelope's keys, the row-array key, one row's field names, and the total. No values. */
+export async function probeShape(datasetId: string, size = 1) {
+  const res = (await (READ_MODE === 'public'
+    ? report.getPublicDatasetData(datasetId, { current: 1, size })
+    : Promise.reject(new Error('shape probe is public-mode only')))) as Record_
+  const payload = (res?.data ?? res) as Record_
+  const rowsKey = ['records', 'list', 'rows', 'data'].find((k) => Array.isArray(payload?.[k]))
+  const batch = rowsKey ? (payload[rowsKey] as Record_[]) : []
+  return {
+    envelopeKeys: Object.keys(res ?? {}),
+    payloadKeys: Object.keys(payload ?? {}).slice(0, 15),
+    rowsKey: rowsKey ?? '(none matched)',
+    total: payload?.total ?? payload?.totalCount ?? payload?.count ?? null,
+    firstRowFields: batch[0] ? Object.keys(batch[0]) : [],
+  }
 }
 
 /** Read every page of a dataset, or fail loudly rather than return a partial or empty set. */
@@ -124,10 +149,22 @@ function judge(value: number | null, previous: number | null, def: RowDef): RowS
 function resolveAi(rows: Record_[]): Map<string, { value: number; previous: number | null; names: string[] }> {
   const out = new Map<string, { value: number; previous: number | null; names: string[] }>()
   const products = [
-    { ids: ['T1', 'T4'], l7d: 'l7d_consumed_ticketqa', p7d: null },
-    { ids: ['SM1', 'SM2'], l7d: 'l7d_consumed_sentiment_max', p7d: 'p7d_consumed_sentiment_max' },
-    { ids: ['TR1', 'TR2'], l7d: 'l7d_consumed_ai_triage', p7d: 'p7d_consumed_ai_triage' },
-    { ids: ['I2', 'I3'], l7d: 'l7d_consumed_intake', p7d: null },
+    // `evidence` columns prove the tenant ever bought/used THIS product — without that scoping,
+    // every paying tenant counts as "silent" on every product they never had.
+    { ids: ['T1', 'T4'], l7d: 'l7d_consumed_ticketqa', p7d: null, evidence: ['current_cycle_used_ticketqa'] },
+    {
+      ids: ['SM1', 'SM2'],
+      l7d: 'l7d_consumed_sentiment_max',
+      p7d: 'p7d_consumed_sentiment_max',
+      evidence: ['total_consumed_sentiment_max', 'current_cycle_used_sentiment'],
+    },
+    {
+      ids: ['TR1', 'TR2'],
+      l7d: 'l7d_consumed_ai_triage',
+      p7d: 'p7d_consumed_ai_triage',
+      evidence: ['total_consumed_ai_triage', 'current_cycle_used_triage'],
+    },
+    { ids: ['I2', 'I3'], l7d: 'l7d_consumed_intake', p7d: null, evidence: ['current_cycle_used_intake'] },
   ] as const
 
   for (const p of products) {
@@ -139,9 +176,12 @@ function resolveAi(rows: Record_[]): Map<string, { value: number; previous: numb
       names: active.map((r) => str(r.tenant_name)).filter(Boolean).slice(0, 12),
     })
 
-    // Silent = paid, zero consumption in the last 7 days. Named so the L10 can route them.
+    // Silent = paid, has history on THIS product, zero in the last 7 days. Named for routing.
     const silent = rows.filter(
-      (r) => /active paid/i.test(str(r.ai_billing_status)) && num(r[p.l7d]) === 0,
+      (r) =>
+        /active paid/i.test(str(r.ai_billing_status)) &&
+        p.evidence.some((col) => num(r[col]) > 0) &&
+        num(r[p.l7d]) === 0,
     )
     out.set(p.ids[1], {
       value: silent.length,
@@ -158,7 +198,7 @@ function resolveAi(rows: Record_[]): Map<string, { value: number; previous: numb
   return out
 }
 
-type Resolved = Map<string, { value: number | null; previous: number | null; names: string[] }>
+type Resolved = Map<string, { value: number | null; previous: number | null; names: string[]; degraded?: boolean }>
 
 /** Subscription products: paying tenants, active/paying ratio, engagement — off the product dataset. */
 function resolveSubscription(rows: Record_[]): { out: Resolved; current: string } {
@@ -178,6 +218,12 @@ function resolveSubscription(rows: Record_[]): { out: Resolved; current: string 
     { key: 'at', retention: 'A1', ratio: 'A2', eng: 'ATTENDANCE-ENG' },
   ] as const
 
+  // The ≥80% targets assume a PRODUCT-level paying base (tenants entitled to that product). The
+  // dataset carries that base only if its SQL selects the access_<p>_client columns — detect it,
+  // and degrade honestly when absent rather than judging against the wrong denominator.
+  const first = rows[0] ?? {}
+  const hasAccess = 'access_bi_client' in first
+
   // One row per tenant per week: collapse the user grain first.
   const tenants = (week: string | null) => {
     const map = new Map<string, Record_[]>()
@@ -193,32 +239,38 @@ function resolveSubscription(rows: Record_[]): { out: Resolved; current: string 
   const currentTenants = tenants(current)
   const priorTenants = tenants(prior)
 
-  const payingCount = (map: Map<string, Record_[]>) =>
-    [...map.values()].filter((rs) => rs.some((r) => num(r.subscription) > 0 || num(r.mrr) > 0)).length
-
   for (const p of products) {
     const flag = `active_${p.key}_client_flag`
+    const access = `access_${p.key}_client`
     const score = `client_${p.key}_score`
 
-    const paying = [...currentTenants.entries()].filter(([, rs]) =>
-      rs.some((r) => num(r.subscription) > 0 || num(r.mrr) > 0),
+    // The source is dws_PAYING_client_engagement_score: presence in a week = paying that week.
+    // (mrr can be legitimately empty, e.g. Pax8-billed tenants, so it must not gate "paying".)
+    // With access flags the base narrows to tenants entitled to THIS product.
+    const paying = [...currentTenants.entries()].filter(
+      ([, rs]) => !hasAccess || rs.some((r) => flagOn(r[access])),
     )
-    const activePaying = paying.filter(([, rs]) => rs.some((r) => num(r[flag]) > 0))
+    const payingPrior = [...priorTenants.entries()].filter(
+      ([, rs]) => !hasAccess || rs.some((r) => flagOn(r[access])),
+    )
+    const activePaying = paying.filter(([, rs]) => rs.some((r) => flagOn(r[flag])))
 
     out.set(p.retention, {
       value: paying.length || null,
-      previous: payingCount(priorTenants) || null,
+      previous: payingPrior.length || null,
       names: [],
+      degraded: !hasAccess,
     })
 
     out.set(p.ratio, {
       value: paying.length ? Math.round((activePaying.length / paying.length) * 1000) / 10 : null,
       previous: null,
       names: paying
-        .filter(([, rs]) => !rs.some((r) => num(r[flag]) > 0))
+        .filter(([, rs]) => !rs.some((r) => flagOn(r[flag])))
         .map(([, rs]) => str(rs[0]?.tenant_name))
         .filter(Boolean)
         .slice(0, 12),
+      degraded: !hasAccess,
     })
 
     // Engagement score is already weighted on the dataset — average the tenant-level value.
@@ -254,6 +306,8 @@ interface Hit {
   value: number | null
   previous: number | null
   names: string[]
+  /** True when the value was computed against a coarser base than its target assumes. */
+  degraded?: boolean
 }
 
 /** Narrows to a resolved hit, so the caller cannot read a value that was never computed. */
@@ -277,7 +331,7 @@ export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult
     }
   }
 
-  const [aiRows, productRows] = await Promise.all([load(AI_CREDIT_DATASET), load(PRODUCT_METRIC_DATASET)])
+  const [aiRows, productRows] = await Promise.all([load(AI_CREDIT_DATASET), load(WEEKLY_METRICS_DATASET)])
 
   const ai = aiRows ? resolveAi(aiRows) : null
   const sub = productRows ? resolveSubscription(productRows) : null
@@ -298,6 +352,21 @@ export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult
         previous: null,
         status: 'nodata',
         reason: failed ? `source unavailable: ${failed.error}` : 'the source returned no rows for this row',
+      }
+    }
+    if (hit.degraded) {
+      // Denominator mismatch: the ≥80% targets assume the product-level paying base, but the
+      // dataset lacks the access_<p>_client columns, so the base here is ALL paying tenants.
+      // A red against the wrong base is a fake red — show the number, skip the verdict.
+      return {
+        ...def,
+        value: hit.value,
+        previous: hit.previous ?? null,
+        status: 'display',
+        names: hit.names?.length ? hit.names : undefined,
+        reason:
+          'measured against the FULL paying base — add access_bi/bot/nt/at_client to the weekly ' +
+          "dataset SQL to restore the product-level base this row's target assumes",
       }
     }
     return {

@@ -26,13 +26,10 @@ export default defineConfig({
         name: 'MSPbots AI',
         title: 'Product Team Scorecards',
       },
-      // Enabled so local dev can obtain a real token: $fetch has nothing to attach otherwise.
-      // Same reason as the proxy above — dev logs in against production, not agentint.
-      auth: {
-        enabled: true,
-        target: ({ dev }) =>
-          dev ? 'https://app.mspbots.ai/apps/mb-platform-user/login' : '/apps/mb-platform-user/login',
-      },
+      // Off: production's login app cannot hand a session to localhost anyway (no providers on
+      // /login, no /sign-in route), and local dev reads data in public mode (PUBLIC_API_KEY), which
+      // needs no user. On-platform deploys get their session from the platform shell regardless.
+      auth: false,
       layout: {
         sidebar: {
           account: true,
