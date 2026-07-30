@@ -79,9 +79,10 @@ products:
 
   asset_library:
     stage: {business: sustain, release: ga}
-    first_line: null   # monitoring-only by decision; red -> L10 IDS on-the-spot assignment
+    first_line: Micus   # INTERIM custodian — every row needs one name (EOS rule); answers for
+                        # red disposition in L10, not for doing the customer work
     owner_candidate: Kevin   # said in 2026-07-30 L10 he may switch back to asset work
-                             # from time to time; Micus↔Kevin to confirm metrics/ownership
+                             # from time to time; Micus↔Kevin 1:1 to confirm and take over
     scope: top layer only (dashboard / report / scorecard), lineage via original_id
     metrics:
       - id: B1
