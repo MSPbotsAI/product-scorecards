@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Separator, Skeleton, cn } from "@mspbots/ui";
 import { AlertTriangle, CircleHelp, RefreshCw } from "lucide-react";
 import { Delta, LangToggle, NoteHint, STATUS_META, Sparkline, StatTile, StatusChip } from "../lib/board";
+import { RowDetailDialog } from "../lib/row-dialog";
 import { groupLabel, rowName, rowNote, rowTarget, useLang, useT } from "../lib/i18n";
 import { formatValue, useScorecard, type ScorecardRow } from "../lib/scorecard-client";
 
@@ -13,7 +14,7 @@ export const meta = {
   description: "Weekly product scorecard for the Product-Platform L10 — reds first, each with named tenants.",
 };
 
-function Rows({ rows, groups }: { rows: ScorecardRow[]; groups: Record<string, string> }) {
+function Rows({ rows, groups, onSelect }: { rows: ScorecardRow[]; groups: Record<string, string>; onSelect: (row: ScorecardRow) => void }) {
   const t = useT();
   const lang = useLang();
   return (
@@ -33,10 +34,11 @@ function Rows({ rows, groups }: { rows: ScorecardRow[]; groups: Record<string, s
         return (
           <div
             key={row.id}
+            onClick={() => onSelect(row)}
             className={cn(
-              "grid grid-cols-[88px_1fr_92px_150px_72px_88px] items-center gap-3 border-b border-l-2 px-5 py-2.5 last:border-b-0 max-lg:grid-cols-[80px_1fr_100px]",
+              "grid cursor-pointer grid-cols-[88px_1fr_92px_150px_72px_88px] items-center gap-3 border-b border-l-2 px-5 py-2.5 transition-colors last:border-b-0 hover:bg-muted/40 max-lg:grid-cols-[80px_1fr_100px]",
               STATUS_META[row.status].row,
-              row.status === "red" && "bg-red-500/[0.04]",
+              row.status === "red" && "bg-red-500/[0.04] hover:bg-red-500/[0.08]",
             )}
           >
             <StatusChip status={row.status} />
@@ -95,6 +97,7 @@ function Section({
   groups,
   tone,
   empty,
+  onSelect,
 }: {
   title: string;
   sub?: string;
@@ -102,6 +105,7 @@ function Section({
   groups: Record<string, string>;
   tone?: "red" | "dashed";
   empty?: string;
+  onSelect: (row: ScorecardRow) => void;
 }) {
   return (
     <Card className={cn(tone === "red" && "border-red-500/30", tone === "dashed" && "border-dashed")}>
@@ -111,7 +115,7 @@ function Section({
       </CardHeader>
       <CardContent className="px-0 pb-0">
         {rows.length ? (
-          <Rows rows={rows} groups={groups} />
+          <Rows rows={rows} groups={groups} onSelect={onSelect} />
         ) : (
           <p className="px-5 pb-4 text-sm text-muted-foreground">{empty}</p>
         )}
@@ -121,8 +125,9 @@ function Section({
 }
 
 export default function L10Board() {
-  const { data, error, loading, reload } = useScorecard();
+  const { data, error, loading, reload, fetchedAt } = useScorecard();
   const t = useT();
+  const [selected, setSelected] = useState<ScorecardRow | null>(null);
 
   const view = useMemo(() => {
     if (!data) return null;
@@ -153,6 +158,11 @@ export default function L10Board() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {fetchedAt != null && (
+            <span className="text-[11px] text-muted-foreground">
+              {t.updatedAt(new Date(fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}
+            </span>
+          )}
           <LangToggle />
           <Button variant="outline" size="sm" onClick={reload} disabled={loading}>
             <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", loading && "animate-spin")} />
@@ -191,10 +201,12 @@ export default function L10Board() {
             <StatTile label={t.onTrackTile} value={view.onTrack != null ? `${view.onTrack}%` : "—"} hint={t.onTrackHint} />
           </div>
 
-          <Section title={t.actNow} sub={t.actNowSub} rows={view.act} groups={data.groups} tone="red" empty={t.actNowEmpty} />
-          <Section title={t.onTrack} rows={view.ok} groups={data.groups} empty={t.onTrackEmpty} />
-          <Section title={t.trends} sub={t.trendsSub} rows={view.trend} groups={data.groups} />
-          <Section title={t.gaps(view.gaps.length)} sub={t.gapsSub} rows={view.gaps} groups={data.groups} tone="dashed" />
+          <Section title={t.actNow} sub={t.actNowSub} rows={view.act} groups={data.groups} tone="red" empty={t.actNowEmpty} onSelect={setSelected} />
+          <Section title={t.onTrack} rows={view.ok} groups={data.groups} empty={t.onTrackEmpty} onSelect={setSelected} />
+          <Section title={t.trends} sub={t.trendsSub} rows={view.trend} groups={data.groups} onSelect={setSelected} />
+          <Section title={t.gaps(view.gaps.length)} sub={t.gapsSub} rows={view.gaps} groups={data.groups} tone="dashed" onSelect={setSelected} />
+
+          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelected(null)} />
 
           {data.sources.length > 0 && (
             <>

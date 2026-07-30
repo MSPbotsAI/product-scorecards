@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Alert, AlertDescription, Badge, Card, CardContent, Skeleton, cn } from "@mspbots/ui";
 import { AlertTriangle } from "lucide-react";
 import { Delta, LangToggle, NoteHint, Sparkline, StatusIcon } from "../../lib/board";
 import { groupLabel, rowName, rowShort, rowTarget, useLang, useT } from "../../lib/i18n";
+import { RowDetailDialog } from "../../lib/row-dialog";
 import { formatValue, useScorecard, type ScorecardRow } from "../../lib/scorecard-client";
 
 export const meta = {
@@ -42,11 +43,14 @@ function pickHero(rows: ScorecardRow[]): ScorecardRow | null {
   );
 }
 
-function Hero({ row }: { row: ScorecardRow }) {
+function Hero({ row, onSelect }: { row: ScorecardRow; onSelect: (row: ScorecardRow) => void }) {
   const lang = useLang();
   const judged = row.status === "red" || row.status === "yellow" || row.status === "green";
   return (
-    <div className="flex items-end justify-between gap-3 border-y bg-muted/30 px-4 py-3 -mx-4">
+    <div
+      onClick={() => onSelect(row)}
+      className="-mx-4 flex cursor-pointer items-end justify-between gap-3 border-y bg-muted/30 px-4 py-3 transition-colors hover:bg-muted/50"
+    >
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {rowShort(row.id, row.name, lang)}
@@ -71,14 +75,15 @@ function Hero({ row }: { row: ScorecardRow }) {
   );
 }
 
-function CompactRow({ row }: { row: ScorecardRow }) {
+function CompactRow({ row, onSelect }: { row: ScorecardRow; onSelect: (row: ScorecardRow) => void }) {
   const lang = useLang();
   return (
     <NoteHint note={rowName(row.id, row.name, lang)}>
       <div
+        onClick={() => onSelect(row)}
         className={cn(
-          "flex h-8 items-center gap-2 rounded-md px-1.5 -mx-1.5",
-          row.status === "red" && "bg-red-500/[0.06]",
+          "-mx-1.5 flex h-8 cursor-pointer items-center gap-2 rounded-md px-1.5 transition-colors hover:bg-muted/50",
+          row.status === "red" && "bg-red-500/[0.06] hover:bg-red-500/[0.1]",
         )}
       >
         <StatusIcon status={row.status} />
@@ -107,7 +112,7 @@ function CompactRow({ row }: { row: ScorecardRow }) {
   );
 }
 
-function ProductCard({ group, label, rows }: { group: string; label: string; rows: ScorecardRow[] }) {
+function ProductCard({ group, label, rows, onSelect }: { group: string; label: string; rows: ScorecardRow[]; onSelect: (row: ScorecardRow) => void }) {
   const t = useT();
   const stage = STAGE[group];
   const reds = rows.filter((r) => r.status === "red").length;
@@ -154,12 +159,12 @@ function ProductCard({ group, label, rows }: { group: string; label: string; row
         </div>
 
         {/* hero metric */}
-        {hero && <Hero row={hero} />}
+        {hero && <Hero row={hero} onSelect={onSelect} />}
 
         {/* remaining rows */}
         <div className={cn("flex flex-1 flex-col gap-0.5", hero ? "pt-2.5" : "border-t pt-2.5")}>
           {rest.map((row) => (
-            <CompactRow key={row.id} row={row} />
+            <CompactRow key={row.id} row={row} onSelect={onSelect} />
           ))}
         </div>
 
@@ -181,6 +186,7 @@ export default function ProductCards() {
   const { data, error, loading } = useScorecard();
   const t = useT();
   const lang = useLang();
+  const [selected, setSelected] = useState<ScorecardRow | null>(null);
 
   const cards = useMemo(() => {
     if (!data) return null;
@@ -220,11 +226,14 @@ export default function ProductCards() {
       )}
 
       {cards && data && (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {cards.map(([group, rows]) => (
-            <ProductCard key={group} group={group} label={groupLabel(group, data.groups[group] ?? group, lang)} rows={rows} />
-          ))}
-        </div>
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {cards.map(([group, rows]) => (
+              <ProductCard key={group} group={group} label={groupLabel(group, data.groups[group] ?? group, lang)} rows={rows} onSelect={setSelected} />
+            ))}
+          </div>
+          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelected(null)} />
+        </>
       )}
     </div>
   );

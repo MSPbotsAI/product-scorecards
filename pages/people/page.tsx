@@ -1,8 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Alert, AlertDescription, Avatar, AvatarFallback, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton, cn } from "@mspbots/ui";
 import { AlertTriangle } from "lucide-react";
 import { Delta, LangToggle, LoadMeter, Sparkline, StatusIcon } from "../../lib/board";
 import { groupLabel, rowName, rowTarget, useLang, useT } from "../../lib/i18n";
+import { RowDetailDialog } from "../../lib/row-dialog";
 import { formatValue, useScorecard, type ScorecardRow } from "../../lib/scorecard-client";
 
 export const meta = {
@@ -13,7 +14,7 @@ export const meta = {
   description: "Each person's rows — one owner per number, 3–7 numbers per owner.",
 };
 
-function OwnerCard({ owner, rows, groups }: { owner: string; rows: ScorecardRow[]; groups: Record<string, string> }) {
+function OwnerCard({ owner, rows, groups, onSelect }: { owner: string; rows: ScorecardRow[]; groups: Record<string, string>; onSelect: (row: ScorecardRow) => void }) {
   const t = useT();
   const lang = useLang();
   const reds = rows.filter((r) => r.status === "red").length;
@@ -55,9 +56,10 @@ function OwnerCard({ owner, rows, groups }: { owner: string; rows: ScorecardRow[
         {rows.map((row) => (
           <div
             key={row.id}
+            onClick={() => onSelect(row)}
             className={cn(
-              "flex items-center gap-3 rounded-md border border-l-2 bg-card px-3 py-2",
-              row.status === "red" ? "border-l-red-500 bg-red-500/[0.04]" : "border-l-transparent",
+              "flex cursor-pointer items-center gap-3 rounded-md border border-l-2 bg-card px-3 py-2 transition-colors hover:bg-muted/40",
+              row.status === "red" ? "border-l-red-500 bg-red-500/[0.04] hover:bg-red-500/[0.08]" : "border-l-transparent",
             )}
           >
             <StatusIcon status={row.status} className="w-5 justify-center" />
@@ -82,6 +84,7 @@ function OwnerCard({ owner, rows, groups }: { owner: string; rows: ScorecardRow[
 export default function ByOwner() {
   const { data, error, loading } = useScorecard();
   const t = useT();
+  const [selected, setSelected] = useState<ScorecardRow | null>(null);
 
   const byOwner = useMemo(() => {
     if (!data) return null;
@@ -126,11 +129,14 @@ export default function ByOwner() {
       )}
 
       {byOwner && data && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {byOwner.map(([owner, rows]) => (
-            <OwnerCard key={owner} owner={owner} rows={rows} groups={data.groups} />
-          ))}
-        </div>
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {byOwner.map(([owner, rows]) => (
+              <OwnerCard key={owner} owner={owner} rows={rows} groups={data.groups} onSelect={setSelected} />
+            ))}
+          </div>
+          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelected(null)} />
+        </>
       )}
     </div>
   );

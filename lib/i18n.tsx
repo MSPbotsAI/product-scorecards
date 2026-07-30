@@ -92,6 +92,17 @@ const EN = {
     firstLine: "first line",
     noSourceRows: (n: number, total: number) => `${n} of ${total} rows have no source yet`,
     monitoringOnly: "monitoring only",
+    // row detail dialog
+    detailHistory: "Weekly history",
+    detailNames: "Named tenants",
+    detailNotes: "Definition & notes",
+    detailSource: "Source dataset",
+    detailAnchor: "SOP anchor",
+    weekCol: "Week",
+    changeCol: "Δ vs prior",
+    noHistory: "No history yet — this row currently has a single reading.",
+    noSourceYet: "No data source wired yet.",
+    updatedAt: (time: string) => `data as of ${time}`,
 };
 
 /** Widen EN's literal strings so the zh table type-checks against the same shape. */
@@ -142,6 +153,16 @@ const ZH: UIStrings = {
     firstLine: "一线",
     noSourceRows: (n: number, total: number) => `${total} 行中 ${n} 行暂无数据源`,
     monitoringOnly: "仅监控",
+    detailHistory: "周历史",
+    detailNames: "具名租户",
+    detailNotes: "口径与备注",
+    detailSource: "来源数据集",
+    detailAnchor: "制度锚点",
+    weekCol: "周",
+    changeCol: "环比",
+    noHistory: "暂无历史——该行目前只有单点读数。",
+    noSourceYet: "尚未接入数据源。",
+    updatedAt: (time: string) => `数据截至 ${time}`,
 };
 
 const UI: Record<Lang, UIStrings> = { en: EN, zh: ZH };

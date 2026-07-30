@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 export type RowStatus = "green" | "yellow" | "red" | "display" | "nodata";
 
@@ -68,45 +68,83 @@ function tenantCodeOf(payload: Record<string, unknown> | null | undefined): stri
   return "";
 }
 
+/**
+ * Module-level cache shared by all pages: the scorecard is a weekly number, so navigating between
+ * views must not refetch it. One fetch fills every page; only the Refresh button forces a new read.
+ */
+let cached: ScorecardData | null = null;
+let cachedAt: number | null = null;
+let inflight: Promise<ScorecardData> | null = null;
+const cacheSubs = new Set<() => void>();
+const emitCache = () => cacheSubs.forEach((fn) => fn());
+
+async function fetchScorecard(tenantCode: string, payload: Record<string, unknown> | null | undefined): Promise<ScorecardData> {
+  const res = await $fetch(`/api/scorecard${tenantCode ? `?tenantCode=${encodeURIComponent(tenantCode)}` : ""}`, {
+    headers: tenantCode ? { tenantCode } : undefined,
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    // A 400 means the server wanted a tenant it didn't get. The tenant claim's name isn't
+    // knowable statically, so name the claims the token does carry (names only, never values).
+    if (res.status === 400 && !tenantCode) {
+      const keys = payload ? Object.keys(payload) : [];
+      throw new Error(
+        `${body?.error ?? "missing tenantCode"} — the token carries no tenant claim under a known name. ` +
+          `Claims present: ${keys.join(", ") || "(none)"}. Add the right one to tenantCodeOf() in lib/scorecard-client.ts.`,
+      );
+    }
+    throw new Error(body?.error ?? `request failed (${res.status})`);
+  }
+  return body as ScorecardData;
+}
+
 export function useScorecard() {
-  const [data, setData] = useState<ScorecardData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!cached);
   const access = useAccess();
   const payload = access?.tokenPayload;
   const tenantCode = tenantCodeOf(payload);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await $fetch(`/api/scorecard${tenantCode ? `?tenantCode=${encodeURIComponent(tenantCode)}` : ""}`, {
-        headers: tenantCode ? { tenantCode } : undefined,
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        // A 400 means the server wanted a tenant it didn't get. The tenant claim's name isn't
-        // knowable statically, so name the claims the token does carry (names only, never values).
-        if (res.status === 400 && !tenantCode) {
-          const keys = payload ? Object.keys(payload) : [];
-          throw new Error(
-            `${body?.error ?? "missing tenantCode"} — the token carries no tenant claim under a known name. ` +
-              `Claims present: ${keys.join(", ") || "(none)"}. Add the right one to tenantCodeOf() in lib/scorecard-client.ts.`,
-          );
-        }
-        throw new Error(body?.error ?? `request failed (${res.status})`);
+  const data = useSyncExternalStore(
+    (fn) => {
+      cacheSubs.add(fn);
+      return () => cacheSubs.delete(fn);
+    },
+    () => cached,
+    () => null,
+  );
+
+  const load = useCallback(
+    async (force: boolean) => {
+      if (cached && !force) {
+        setLoading(false);
+        return;
       }
-      setData(body as ScorecardData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "failed to load the scorecard");
-    } finally {
-      setLoading(false);
-    }
-  }, [tenantCode, payload]);
+      // Deduplicate: several pages mounting at once must not issue parallel reads.
+      if (!inflight) {
+        inflight = fetchScorecard(tenantCode, payload).finally(() => {
+          inflight = null;
+        });
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const result = await inflight;
+        cached = result;
+        cachedAt = Date.now();
+        emitCache();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "failed to load the scorecard");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [tenantCode, payload],
+  );
 
   useEffect(() => {
-    void load();
+    void load(false);
   }, [load]);
 
-  return { data, error, loading, reload: load };
+  return { data, error, loading, reload: () => void load(true), fetchedAt: cachedAt };
 }
