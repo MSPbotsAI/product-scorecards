@@ -92,7 +92,7 @@ if (process.env.NODE_ENV !== "production") {
 app.get("/api/timesheet", async (c) => {
   const { readTimesheet } = await import("./lib/timesheet.ts");
   try {
-    return c.json(await readTimesheet(c.req.query("from") || undefined, c.req.query("to") || undefined));
+    return c.json(await readTimesheet({ refresh: c.req.query("refresh") === "1" }));
   } catch (error) {
     return c.json({ error: (error as Error).message }, 502);
   }

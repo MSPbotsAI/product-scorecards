@@ -41,6 +41,7 @@ interface Entry {
 
 interface TimesheetData {
   entries: Entry[];
+  fetchedAt: number;
   roster: { person: string; department: string | null; manager: string | null }[];
   excluded: string[];
   root: string;
@@ -78,6 +79,7 @@ const T = {
     clearAll: "Clear all",
     ofTotal: (n: number) => `of ${n}`,
     refresh: "Refresh",
+    synced: (t: string) => `synced ${t}`,
   },
   zh: {
     title: "工时",
@@ -108,6 +110,7 @@ const T = {
     clearAll: "清除全部",
     ofTotal: (n: number) => `/ 共 ${n}`,
     refresh: "刷新",
+    synced: (t: string) => `同步于 ${t}`,
   },
 };
 
@@ -239,11 +242,13 @@ export default function Timesheet() {
   const from = mode === "week" ? iso(anchor) : iso(anchor);
   const to = mode === "week" ? iso(addDays(anchor, 6)) : iso(anchor);
 
-  const load = useCallback(async () => {
+  // One fetch covers the dataset's whole span; the visible range is sliced from it in the browser,
+  // so paging weeks costs nothing. Only Refresh goes back to the upstream dataset.
+  const load = useCallback(async (refresh = false) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await $fetch(`/api/timesheet?from=${from}&to=${to}`);
+      const res = await $fetch(`/api/timesheet${refresh ? "?refresh=1" : ""}`);
       const body = await res.json();
       if (!res.ok) throw new Error(body?.error ?? `request failed (${res.status})`);
       setData(body as TimesheetData);
@@ -252,14 +257,16 @@ export default function Timesheet() {
     } finally {
       setLoading(false);
     }
-  }, [from, to]);
+  }, []);
 
   useEffect(() => {
-    void load();
+    void load(false);
   }, [load]);
 
   const view = useMemo(() => {
     if (!data) return null;
+    // Date range first — everything below operates on the visible window.
+    const inRange = data.entries.filter((e) => e.date >= from && e.date <= to);
     const group = (rows: Entry[], key: (e: Entry) => string): [string, number][] => {
       const m = new Map<string, number>();
       for (const e of rows) m.set(key(e), (m.get(key(e)) ?? 0) + e.hours);
@@ -267,17 +274,17 @@ export default function Timesheet() {
     };
     // Fully-scoped rows drive the KPI band and the entry table; each card excludes its own
     // dimension so it still lists every value it could be filtered to.
-    const scoped = filterRows(data.entries, filters, null);
+    const scoped = filterRows(inRange, filters, null);
     return {
       scoped,
       total: scoped.reduce((s, e) => s + e.hours, 0),
-      byProject: group(filterRows(data.entries, filters, "project"), dimOf.project),
-      byPerson: group(filterRows(data.entries, filters, "person"), dimOf.person),
-      byCategory: group(filterRows(data.entries, filters, "category"), dimOf.category),
+      byProject: group(filterRows(inRange, filters, "project"), dimOf.project),
+      byPerson: group(filterRows(inRange, filters, "person"), dimOf.person),
+      byCategory: group(filterRows(inRange, filters, "category"), dimOf.category),
       people: new Set(scoped.map((e) => e.person)).size,
-      unfilteredCount: data.entries.length,
+      unfilteredCount: inRange.length,
     };
-  }, [data, filters]);
+  }, [data, filters, from, to]);
 
   const chips = (["project", "person", "category"] as Dim[])
     .map((d) => (filters[d] ? { dim: d, value: filters[d] as string } : null))
@@ -297,10 +304,14 @@ export default function Timesheet() {
         </div>
         <div className="flex items-center gap-2">
           {data?.span.from && data.span.to && (
-            <span className="text-[11px] text-muted-foreground">{t.dataFrom(data.span.from, data.span.to)}</span>
+            <span className="text-[11px] text-muted-foreground">
+              {t.dataFrom(data.span.from, data.span.to)}
+              {" · "}
+              {t.synced(new Date(data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}
+            </span>
           )}
           <LangToggle />
-          <Button variant="outline" size="sm" onClick={load} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={() => load(true)} disabled={loading}>
             <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", loading && "animate-spin")} />
             {t.refresh}
           </Button>

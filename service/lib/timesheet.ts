@@ -32,8 +32,10 @@ export interface TimesheetResult {
   /** Names dropped from the tree by configuration, shown so an exclusion is never invisible. */
   excluded: string[]
   root: string
-  /** Full date span available in the dataset, before the range filter. */
+  /** Full date span available in the dataset. */
   span: { from: string | null; to: string | null }
+  /** When the upstream dataset was last read (epoch ms) — the page shows this as "synced". */
+  fetchedAt: number
   totalRowsScanned: number
 }
 
@@ -51,6 +53,18 @@ const dayOf = (v: unknown): string => {
   if (m) return m[1]
   const d = new Date(s)
   return Number.isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10)
+}
+
+/**
+ * The upstream read is the expensive part — four paged calls, ~9s — and the underlying data is a
+ * weekly timesheet that changes slowly. Caching it means changing the displayed date range costs
+ * nothing: the range is applied to already-fetched rows (the client slices them locally too).
+ */
+const CACHE_TTL_MS = 10 * 60 * 1000
+let rowCache: { datasetId: string; rows: Row[]; fetchedAt: number } | null = null
+
+export function invalidateTimesheet(): void {
+  rowCache = null
 }
 
 async function readAllRows(datasetId: string, apiKey: string): Promise<Row[]> {
@@ -113,12 +127,18 @@ function resolveOrg(rows: Row[], root: string, exclude: Set<string>): Set<string
   return inTree
 }
 
-export async function readTimesheet(from?: string, to?: string): Promise<TimesheetResult> {
+export async function readTimesheet(opts: { refresh?: boolean } = {}): Promise<TimesheetResult> {
   const { values } = await readSettings()
   const apiKey = values.public_api_key
   if (!apiKey) throw new Error('no API key configured — set it on the Settings page')
 
-  const rows = await readAllRows(values['dataset.timesheet'], apiKey)
+  const datasetId = values['dataset.timesheet']
+  const fresh =
+    rowCache && rowCache.datasetId === datasetId && Date.now() - rowCache.fetchedAt < CACHE_TTL_MS
+  if (opts.refresh || !fresh) {
+    rowCache = { datasetId, rows: await readAllRows(datasetId, apiKey), fetchedAt: Date.now() }
+  }
+  const rows = rowCache!.rows
   const root = values['org.root']
   const excludeList = (values['org.exclude'] ?? '')
     .split(',')
@@ -144,9 +164,6 @@ export async function readTimesheet(from?: string, to?: string): Promise<Timeshe
       roster.set(person, { person, department: str(r.department) || null, manager: str(r.manager) || null })
     }
 
-    if (from && date < from) continue
-    if (to && date > to) continue
-
     entries.push({
       date,
       ticketId: str(r.ticket_id) || null,
@@ -171,6 +188,7 @@ export async function readTimesheet(from?: string, to?: string): Promise<Timeshe
     excluded: excludeList,
     root,
     span: { from: min, to: max },
+    fetchedAt: rowCache!.fetchedAt,
     totalRowsScanned: rows.length,
   }
 }
