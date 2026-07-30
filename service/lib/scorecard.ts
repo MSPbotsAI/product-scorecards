@@ -128,15 +128,48 @@ export async function probeShape(datasetId: string, size = 1) {
     size,
   })) as Record_
   const payload = (res?.data ?? res) as Record_
-  const rowsKey = ['records', 'list', 'rows', 'data'].find((k) => Array.isArray(payload?.[k]))
-  const batch = rowsKey ? (payload[rowsKey] as Record_[]) : []
+  const rowsKey = Array.isArray(res?.data)
+    ? 'data (flat array)'
+    : ['records', 'list', 'rows', 'data'].find((k) => Array.isArray(payload?.[k]))
+  const batch = (Array.isArray(res?.data) ? res.data : rowsKey ? payload[rowsKey as string] : []) as Record_[]
   return {
+    code: res?.code,
+    msg: sanitizeUpstream(str(res?.msg)),
+    dataType: Array.isArray(res?.data) ? 'array' : typeof res?.data,
+    dataLength: Array.isArray(res?.data) ? res.data.length : undefined,
     envelopeKeys: Object.keys(res ?? {}),
     payloadKeys: Object.keys(payload ?? {}).slice(0, 15),
     rowsKey: rowsKey ?? '(none matched)',
     total: payload?.total ?? payload?.totalCount ?? payload?.count ?? null,
     firstRowFields: batch[0] ? Object.keys(batch[0]) : [],
   }
+}
+
+/** Dev-only: distinct values (with counts) for the given columns — used to design filters. */
+export async function probeFacets(datasetId: string, cols: string[]) {
+  const { values } = await readSettings()
+  const client = reportClient(values.public_api_key)
+  const rows: Record_[] = []
+  for (let page = 1; page <= 6; page++) {
+    const res = (await client.getPublicDatasetData(datasetId, { current: page, size: 500 })) as Record_
+    const payload = unwrap(res, datasetId, 'public')
+    const batch = (payload?.records ?? []) as Record_[]
+    if (!batch.length) break
+    rows.push(...batch)
+    if (batch.length < 500) break
+  }
+  const out: Record<string, { value: string; n: number }[]> = {}
+  for (const col of cols) {
+    const counts = new Map<string, number>()
+    for (const r of rows) {
+      const v = col.includes('+')
+        ? col.split('+').map((c) => str(r[c.trim()]) || '(blank)').join(' | ')
+        : str(r[col]) || '(blank)'
+      counts.set(v, (counts.get(v) ?? 0) + 1)
+    }
+    out[col] = [...counts.entries()].map(([value, n]) => ({ value, n })).sort((a, b) => b.n - a.n)
+  }
+  return { scanned: rows.length, facets: out }
 }
 
 interface ReadContext {

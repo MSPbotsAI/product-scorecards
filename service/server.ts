@@ -70,6 +70,15 @@ app.put("/api/settings", async (c) => {
 // Shape probe, dev only. Reports the response envelope and the row's field NAMES — never values —
 // so the resolvers can be checked against the real payload without exporting any data.
 if (process.env.NODE_ENV !== "production") {
+  app.get("/api/debug/facets/:id", async (c) => {
+    const { probeFacets } = await import("./lib/scorecard.ts");
+    try {
+      return c.json(await probeFacets(c.req.param("id"), (c.req.query("cols") ?? "").split(",").filter(Boolean)));
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 502);
+    }
+  });
+
   app.get("/api/debug/shape/:id", async (c) => {
     const { probeShape } = await import("./lib/scorecard.ts");
     try {
@@ -79,6 +88,15 @@ if (process.env.NODE_ENV !== "production") {
     }
   });
 }
+
+app.get("/api/timesheet", async (c) => {
+  const { readTimesheet } = await import("./lib/timesheet.ts");
+  try {
+    return c.json(await readTimesheet(c.req.query("from") || undefined, c.req.query("to") || undefined));
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 502);
+  }
+});
 
 // In token mode the datasets are read as the calling user, so the user's token is forwarded rather
 // than a service credential; tenantCode is not inferable server-side, so the client sends it. In

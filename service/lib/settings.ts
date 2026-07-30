@@ -23,6 +23,11 @@ export const SETTING_DEFS: SettingDef[] = [
   { key: 'dataset.ai_weekly', env: 'AI_WEEKLY_DATASET', default: '2082481324433739777' },
   { key: 'dataset.ai_credit', env: 'AI_CREDIT_DATASET', default: '1985255723050872834' },
   { key: 'dataset.weekly_metrics', env: 'WEEKLY_METRICS_DATASET', default: '2082466110929776641' },
+  { key: 'dataset.timesheet', env: 'TIMESHEET_DATASET', default: '2073966327621623809' },
+  // Root of the reporting tree that defines "our people". Filtering by department would miss
+  // product-team members who sit in other departments (Kevin in MSPbots.ai, Glenn in Asset - Core),
+  // and filtering by manager alone would miss the root and second-level reports.
+  { key: 'org.root', env: 'ORG_ROOT', default: 'Micus Zhang' },
 ]
 
 const DEFS = new Map(SETTING_DEFS.map((d) => [d.key, d]))

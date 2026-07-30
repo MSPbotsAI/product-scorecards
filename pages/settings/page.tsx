@@ -22,7 +22,7 @@ import { invalidateScorecard } from "../../lib/scorecard-client";
 export const meta = {
   label: "Settings",
   icon: "Settings",
-  order: 4,
+  order: 5,
   menu: true,
   description: "API key and dataset ids — stored in the app database so they survive a version update.",
 };
