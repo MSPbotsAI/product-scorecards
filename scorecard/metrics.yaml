@@ -10,6 +10,34 @@ meta:
   team: Product
   meeting: Product-Platform L10 (weekly, Daniel attends)
   people: [Micus, Grace, Frank, Glenn, Kevin]
+  # --- L10 feedback round, 2026-07-30 (Fathom 763554621) ---
+  row_kinds:
+    kpi: behavior/response rows the person directly controls (triage SLAs, disposition closure,
+      24h answers, outreach completion). These carry the person's red/green.
+    telemetry: product-health rows (actives, coverage, ROI). Shown as portfolio context with named
+      drill-downs; a telemetry red is NOT the owner's miss — leaving it undispositioned >1 week is.
+      (Daniel: "if a red doesn't change what Frank does next week, it's not a KPI.")
+  person_view_rule: per person = their kpi rows (target 5±2) + ONE aggregated territory-health tile
+    (drill-down to named lists). Every telemetry red spawns a disposition item; per-person KPI =
+    disposition within 1 week (H2 pushed down to each owner). Fixes "Frank has 17 rows".
+  product_card_context_row: every product card also displays "open enhancement requests" count
+    (Canny/ClickUp, product dimension; display-only) — Glenn's ask. Bug counts stay OUT (dev team's
+    number; product has no direct action — reaffirmed in the L10).
+  implementation_fixes:
+    - per-app paying-tenant counts wrong in v0 (showed total platform clients, ~400, for every
+      product) — must read per-app subscription source
+    - red/green color mapping inverted in v0
+    - named-list drill-downs (silent tenants, single-user tenants, dependency downgrades,
+      frequency drops) not yet implemented — these are the early-churn-detection answer to
+      Kevin's concern; build them first
+  open_questions_for_eos:
+    - Daniel wants activity/behavior KPIs (BDR-style call counts, time-log completeness) while
+      KPI Framework principle #1 forbids pricing activity volume. Position taken here: response
+      SLAs are the reconciling KPI class; pure activity-hygiene metrics (time-log completeness,
+      utilization) belong to a company-level system, not this scorecard. Micus + Daniel to settle
+      at EOS if more is wanted.
+    - KPI ↔ performance review / bonus linkage = PM KPI Framework's job (this scorecard is its
+      weekly feed); walk Daniel through doc 25kcy-456537 in the scorecard wrap-up meeting.
   open_tbds:
     - paid-vs-trial credit distinction table (expect in AI subscription/billing source behind
       dashboard 1985164400759279618; capture SQL via SQL Inspector or public API)
@@ -52,6 +80,8 @@ products:
   asset_library:
     stage: {business: sustain, release: ga}
     first_line: null   # monitoring-only by decision; red -> L10 IDS on-the-spot assignment
+    owner_candidate: Kevin   # said in 2026-07-30 L10 he may switch back to asset work
+                             # from time to time; Micus↔Kevin to confirm metrics/ownership
     scope: top layer only (dashboard / report / scorecard), lineage via original_id
     metrics:
       - id: B1
@@ -337,6 +367,12 @@ non_product:
       target: "<=14d (calibrate)"
       source: {system: canny tables + clickup}
       status: auto
+    - id: F4
+      name: CSM escalation justification rate
+      def: "% of CSM->product escalations carrying a justified reason (AI reads ticket/comments to judge)"
+      target: 100%
+      source: {system: clickup + AI extraction}
+      status: tbd   # committed in the 2026-07-30 L10; needs AI-read pipeline
   micus_hop:
     - {id: H1, name: Scorecard data completeness at L10 (pipelines ran + manual rows filled), target: 100%, status: auto}
     - {id: H2, name: Red-light disposition closure (every last-week red has recorded action/owner), target: 100%, status: auto}

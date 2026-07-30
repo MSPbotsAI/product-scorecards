@@ -65,5 +65,10 @@ the workshop decisions behind them, and (phase 4) the dashboard implementation.
 
 - R1 (roster / portfolio / stage alignment): **done**
 - R2 (per-product metric cards): **done** — cards 11/12 delegated to Kevin
-- R3 (metric spec + data source mapping): **this commit** — open TBDs listed inside `metrics.yaml`
-- R4 (dashboard build): pending framework decision (existing MSPbots app framework, deploy on platform)
+- R3 (metric spec + data source mapping): **done** — open TBDs listed inside `metrics.yaml`
+- R4 (dashboard build): **in progress** — v0 ("Hello World") demoed at the 2026-07-30 L10;
+  framework reference: `MSPbotsAI/tqa-gtm`; deploys to the MSPbots agent platform
+- L10 feedback round (2026-07-30) folded into `metrics.yaml` meta: kpi-vs-telemetry row split,
+  person-view rule (5±2 kpi rows + one territory tile), F4 escalation-justification metric,
+  per-card enhancement-request context row, v0 data fixes. Next: 1:1s with each owner to finalize
+  their rows; scorecard stays a recurring L10 agenda item until stable.
