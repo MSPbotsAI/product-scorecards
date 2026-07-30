@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1785384446216,
+      "tag": "20260730040726_clumsy_hiroim",
+      "breakpoints": true
+    }
+  ]
+}

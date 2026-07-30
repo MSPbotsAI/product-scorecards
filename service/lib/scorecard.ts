@@ -9,8 +9,10 @@
 //   - Pagination is never silently truncated: hitting the cap is reported as an error on the row.
 
 import { createMspbotsReportClient, type AuthHeaders } from './mspbots-report.ts'
+import { readSettings } from './settings.ts'
 import { ROWS, type Compare, type RowDef } from './rows.ts'
 
+/** Built-in defaults. The live values come from the Settings page — see readSettings(). */
 export const AI_CREDIT_DATASET = '1985255723050872834'
 /**
  * Product Scorecard Weekly Metrics — created for this app on 2026-07-29 (by Micus, in the dataset
@@ -50,21 +52,33 @@ export interface ScorecardResult {
   sources: { dataset: string; rows: number; ok: boolean; error?: string }[]
 }
 
-const report = createMspbotsReportClient({
-  mspbots_client_host: process.env.MSPBOTS_REPORT_HOST ?? 'https://app.mspbots.ai/web/reports',
-  public_api_key: process.env.PUBLIC_API_KEY,
-})
+/**
+ * Built per request from the resolved settings: the API key is editable at runtime from the
+ * Settings page, so it cannot be captured in a module-level singleton.
+ */
+function reportClient(apiKey: string) {
+  return createMspbotsReportClient({
+    mspbots_client_host: process.env.MSPBOTS_REPORT_HOST ?? 'https://app.mspbots.ai/web/reports',
+    public_api_key: apiKey,
+  })
+}
 
 /**
- * Two ways in, and the environment decides which:
+ * Two ways in, and the configured key decides which:
  *
- * - **token** — read as the calling user. Works when the app is served from the platform origin,
- *   because only then does the browser hold a platform session to forward.
- * - **public** — read with the app's own `PUBLIC_API_KEY`. Required off-platform (local dev), where
- *   no user session is obtainable: production's login app has no route that will hand a token to a
- *   localhost origin, and a token from the int environment cannot read production datasets.
+ * - **public** — read with the app's own API key (Settings page, or PUBLIC_API_KEY). This is the
+ *   mode that works everywhere: local dev has no user session to borrow, and the agent platform's
+ *   token is a different auth system from the app.mspbots.ai reports API (it answers 401).
+ * - **token** — read as the calling user. Only viable when served from an origin whose session the
+ *   reports API accepts; kept as the fallback when no key is configured.
  */
-export const READ_MODE: 'public' | 'token' = process.env.PUBLIC_API_KEY ? 'public' : 'token'
+export type ReadMode = 'public' | 'token'
+
+/** The mode implied by the currently configured settings. */
+export async function readMode(): Promise<ReadMode> {
+  const { values } = await readSettings()
+  return values.public_api_key ? 'public' : 'token'
+}
 
 type Record_ = Record<string, unknown>
 
@@ -90,15 +104,15 @@ function sanitizeUpstream(msg: string): string {
  * (e.g. `{"code":"401","msg":"token not userID."}`). Treating that as an empty result is how a
  * broken read turns into a confident zero, so the envelope is checked before the rows are read.
  */
-function unwrap(res: Record_, datasetId: string): Record_ {
+function unwrap(res: Record_, datasetId: string, mode: ReadMode): Record_ {
   const code = res?.code
   if (code != null && !['0', '200', 'success'].includes(String(code).toLowerCase())) {
     const msg = sanitizeUpstream(str(res?.msg) || 'no message')
     const hint =
-      READ_MODE === 'token' && String(code) === '401'
+      mode === 'token' && String(code) === '401'
         ? ' — the forwarded platform token was rejected by the reports API. Agent-platform tokens ' +
-          'cannot read app.mspbots.ai datasets; set PUBLIC_API_KEY in the deployment environment ' +
-          'so the app reads with its own credential.'
+          'cannot read app.mspbots.ai datasets; set the API key on the Settings page so the app ' +
+          'reads with its own credential.'
         : ''
     throw new Error(`dataset ${datasetId} refused the read (code ${code}): ${msg}${hint}`)
   }
@@ -107,9 +121,12 @@ function unwrap(res: Record_, datasetId: string): Record_ {
 
 /** Dev-only: the envelope's keys, the row-array key, one row's field names, and the total. No values. */
 export async function probeShape(datasetId: string, size = 1) {
-  const res = (await (READ_MODE === 'public'
-    ? report.getPublicDatasetData(datasetId, { current: 1, size })
-    : Promise.reject(new Error('shape probe is public-mode only')))) as Record_
+  const { values } = await readSettings()
+  if (!values.public_api_key) throw new Error('shape probe is public-mode only')
+  const res = (await reportClient(values.public_api_key).getPublicDatasetData(datasetId, {
+    current: 1,
+    size,
+  })) as Record_
   const payload = (res?.data ?? res) as Record_
   const rowsKey = ['records', 'list', 'rows', 'data'].find((k) => Array.isArray(payload?.[k]))
   const batch = rowsKey ? (payload[rowsKey] as Record_[]) : []
@@ -122,15 +139,22 @@ export async function probeShape(datasetId: string, size = 1) {
   }
 }
 
+interface ReadContext {
+  mode: ReadMode
+  apiKey: string
+  auth: AuthHeaders
+}
+
 /** Read every page of a dataset, or fail loudly rather than return a partial or empty set. */
-async function readAll(datasetId: string, auth: AuthHeaders): Promise<Record_[]> {
+async function readAll(datasetId: string, ctx: ReadContext): Promise<Record_[]> {
+  const client = reportClient(ctx.apiKey)
   const out: Record_[] = []
   for (let page = 1; page <= MAX_PAGES; page++) {
     const query = { current: page, size: PAGE_SIZE }
-    const res = (READ_MODE === 'public'
-      ? await report.getPublicDatasetData(datasetId, query)
-      : await report.getDatasetData(datasetId, query, auth)) as Record_
-    const payload = unwrap(res, datasetId)
+    const res = (ctx.mode === 'public'
+      ? await client.getPublicDatasetData(datasetId, query)
+      : await client.getDatasetData(datasetId, query, ctx.auth)) as Record_
+    const payload = unwrap(res, datasetId, ctx.mode)
     const batch = (payload?.records ?? payload?.list ?? payload?.rows ?? payload?.data ?? []) as Record_[]
     if (!Array.isArray(batch)) {
       throw new Error(`dataset ${datasetId} returned an unrecognised envelope — refusing to guess at the shape`)
@@ -436,9 +460,16 @@ function hasValue(hit: Hit | null | undefined): hit is Hit & { value: number } {
 export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult> {
   const sources: ScorecardResult['sources'] = []
 
+  const { values } = await readSettings()
+  const ctx: ReadContext = {
+    mode: values.public_api_key ? 'public' : 'token',
+    apiKey: values.public_api_key,
+    auth,
+  }
+
   const load = async (id: string) => {
     try {
-      const rows = await readAll(id, auth)
+      const rows = await readAll(id, ctx)
       sources.push({ dataset: id, rows: rows.length, ok: true })
       return rows
     } catch (error) {
@@ -450,9 +481,9 @@ export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult
   }
 
   const [aiRows, productRows, aiWeeklyRows] = await Promise.all([
-    load(AI_CREDIT_DATASET),
-    load(WEEKLY_METRICS_DATASET),
-    load(AI_WEEKLY_DATASET),
+    load(values['dataset.ai_credit']),
+    load(values['dataset.weekly_metrics']),
+    load(values['dataset.ai_weekly']),
   ])
 
   const ai = aiRows ? resolveAi(aiRows) : null

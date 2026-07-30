@@ -78,6 +78,13 @@ let inflight: Promise<ScorecardData> | null = null;
 const cacheSubs = new Set<() => void>();
 const emitCache = () => cacheSubs.forEach((fn) => fn());
 
+/** Drop the cached scorecard — used after Settings changes the key or a dataset id. */
+export function invalidateScorecard(): void {
+  cached = null;
+  cachedAt = null;
+  emitCache();
+}
+
 async function fetchScorecard(tenantCode: string, payload: Record<string, unknown> | null | undefined): Promise<ScorecardData> {
   const res = await $fetch(`/api/scorecard${tenantCode ? `?tenantCode=${encodeURIComponent(tenantCode)}` : ""}`, {
     headers: tenantCode ? { tenantCode } : undefined,
