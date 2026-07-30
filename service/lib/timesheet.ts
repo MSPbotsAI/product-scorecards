@@ -29,6 +29,8 @@ export interface TimesheetResult {
   entries: TimesheetEntry[]
   /** The resolved org tree, so the filter is auditable in the UI rather than implicit. */
   roster: { person: string; department: string | null; manager: string | null }[]
+  /** Names dropped from the tree by configuration, shown so an exclusion is never invisible. */
+  excluded: string[]
   root: string
   /** Full date span available in the dataset, before the range filter. */
   span: { from: string | null; to: string | null }
@@ -77,7 +79,7 @@ async function readAllRows(datasetId: string, apiKey: string): Promise<Row[]> {
  * Everyone at or below `root` in the manager chain. Iterates to a fixed point so depth is not
  * assumed, and guards against a cycle in the data (a manager loop would otherwise hang).
  */
-function resolveOrg(rows: Row[], root: string): Set<string> {
+function resolveOrg(rows: Row[], root: string, exclude: Set<string>): Set<string> {
   const managerOf = new Map<string, string>()
   for (const r of rows) {
     const person = str(r.worker)
@@ -93,6 +95,8 @@ function resolveOrg(rows: Row[], root: string): Set<string> {
     let grew = false
     for (const [person, manager] of managerOf) {
       if (inTree.has(person) || !manager) continue
+      // An excluded person is not a branch: their own reports do not enter the tree through them.
+      if (exclude.has(person.toLowerCase())) continue
       for (const member of inTree) {
         if (manager.toLowerCase() === member.toLowerCase()) {
           inTree.add(person)
@@ -102,6 +106,9 @@ function resolveOrg(rows: Row[], root: string): Set<string> {
       }
     }
     if (!grew) break
+  }
+  for (const person of [...inTree]) {
+    if (exclude.has(person.toLowerCase())) inTree.delete(person)
   }
   return inTree
 }
@@ -113,7 +120,11 @@ export async function readTimesheet(from?: string, to?: string): Promise<Timeshe
 
   const rows = await readAllRows(values['dataset.timesheet'], apiKey)
   const root = values['org.root']
-  const team = resolveOrg(rows, root)
+  const excludeList = (values['org.exclude'] ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const team = resolveOrg(rows, root, new Set(excludeList.map((s) => s.toLowerCase())))
 
   const roster = new Map<string, { person: string; department: string | null; manager: string | null }>()
   const entries: TimesheetEntry[] = []
@@ -157,6 +168,7 @@ export async function readTimesheet(from?: string, to?: string): Promise<Timeshe
   return {
     entries,
     roster: [...roster.values()].sort((a, b) => a.person.localeCompare(b.person)),
+    excluded: excludeList,
     root,
     span: { from: min, to: max },
     totalRowsScanned: rows.length,

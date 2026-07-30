@@ -42,6 +42,7 @@ interface Entry {
 interface TimesheetData {
   entries: Entry[];
   roster: { person: string; department: string | null; manager: string | null }[];
+  excluded: string[];
   root: string;
   span: { from: string | null; to: string | null };
   totalRowsScanned: number;
@@ -72,6 +73,7 @@ const T = {
     empty: "No entries in this range.",
     dataFrom: (a: string, b: string) => `data available ${a} → ${b}`,
     roster: "Included people",
+    excluded: "excluded",
     refresh: "Refresh",
   },
   zh: {
@@ -98,6 +100,7 @@ const T = {
     empty: "该区间内没有工时记录。",
     dataFrom: (a: string, b: string) => `可用数据 ${a} → ${b}`,
     roster: "纳入人员",
+    excluded: "已排除",
     refresh: "刷新",
   },
 };
@@ -280,6 +283,11 @@ export default function Timesheet() {
                     {r.person} · {r.department ?? "—"} · mgr {r.manager ?? "—"}
                   </div>
                 ))}
+                {data.excluded.length > 0 && (
+                  <div className="mt-1.5 border-t pt-1.5 text-muted-foreground">
+                    {t.excluded}: {data.excluded.join(", ")}
+                  </div>
+                )}
               </div>
             </TooltipContent>
           </Tooltip>

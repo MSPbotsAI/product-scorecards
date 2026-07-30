@@ -56,6 +56,18 @@ const FIELD: Record<string, { en: [string, string]; zh: [string, string] }> = {
     en: ["Subscription weekly metrics", "Tenant × week — drives BI / Bot / NextTicket / Attendance rows."],
     zh: ["订阅周指标", "租户×周——驱动 BI / Bot / NextTicket / Attendance 各行。"],
   },
+  "dataset.timesheet": {
+    en: ["Timesheet", "ClickUp logged hours — the labor side of every ROI row."],
+    zh: ["工时", "ClickUp 登记工时——每个 ROI 行的工时侧。"],
+  },
+  "org.root": {
+    en: ["Reporting-tree root", "Everyone at or below this person counts as the product org. Filtering by department would miss members who sit elsewhere."],
+    zh: ["汇报树根节点", "此人及其下属全部计为产品团队。按部门过滤会漏掉挂在其他部门的成员。"],
+  },
+  "org.exclude": {
+    en: ["Excluded people", "Comma-separated. For transfers the source data has not caught up with — their rows still carry the old manager."],
+    zh: ["排除人员", "逗号分隔。用于源数据尚未更新的人员变动——他们的记录仍挂着原上级。"],
+  },
 };
 
 const ORIGIN_LABEL: Record<string, { en: string; zh: string; tone: string }> = {
@@ -244,6 +256,58 @@ export default function SettingsPage() {
                           value={current}
                           onChange={(e) => setDraft((d) => ({ ...d, [item.key]: e.target.value }))}
                           className={cn("font-mono text-[13px]", changed && "border-amber-500/60")}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={current === item.default}
+                          onClick={() => setDraft((d) => ({ ...d, [item.key]: item.default }))}
+                          title={`${lang === "zh" ? "恢复默认" : "Reset to default"}: ${item.default}`}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">{lang === "zh" ? "团队范围" : "Team scope"}</CardTitle>
+              <CardDescription className="text-xs">
+                {lang === "zh"
+                  ? "决定工时页统计哪些人：以根节点为起点沿汇报链递归，再减去排除名单。"
+                  : "Decides whose hours the Timesheet counts: walk the manager chain down from the root, then subtract the exclusions."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {items
+                .filter((i) => i.key.startsWith("org."))
+                .map((item) => {
+                  const field = FIELD[item.key][lang];
+                  const origin = ORIGIN_LABEL[item.origin];
+                  const current = draft[item.key] ?? item.value;
+                  const changed = draft[item.key] != null && draft[item.key] !== item.value;
+                  return (
+                    <div key={item.key} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label htmlFor={item.key} className="text-sm">
+                          {field[0]}
+                        </Label>
+                        <Badge variant="outline" className={cn("h-5 px-1.5 text-[11px] font-normal", origin.tone)}>
+                          {origin[lang]}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">{field[1]}</p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id={item.key}
+                          value={current}
+                          onChange={(e) => setDraft((d) => ({ ...d, [item.key]: e.target.value }))}
+                          className={cn("text-[13px]", changed && "border-amber-500/60")}
                         />
                         <Button
                           type="button"

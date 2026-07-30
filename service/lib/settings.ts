@@ -28,6 +28,10 @@ export const SETTING_DEFS: SettingDef[] = [
   // product-team members who sit in other departments (Kevin in MSPbots.ai, Glenn in Asset - Core),
   // and filtering by manager alone would miss the root and second-level reports.
   { key: 'org.root', env: 'ORG_ROOT', default: 'Micus Zhang' },
+  // People to drop from the resolved tree, comma-separated. Needed because the timesheet source
+  // lags real transfers: Nora Li moved to the dev team but her rows still carry manager "Grace Guo"
+  // and department "Product", so the tree would keep counting her hours as product labor.
+  { key: 'org.exclude', env: 'ORG_EXCLUDE', default: 'Nora Li' },
 ]
 
 const DEFS = new Map(SETTING_DEFS.map((d) => [d.key, d]))
@@ -83,7 +87,9 @@ export async function writeSettings(patch: Record<string, string>, updatedBy: st
     const def = DEFS.get(key)
     if (!def) throw new Error(`unknown setting: ${key}`)
     const value = raw.trim()
-    if (!def.secret && value.length === 0) throw new Error(`${key} cannot be empty`)
+    // Secrets may be blank (means "keep"), and an empty exclusion list is a legitimate state.
+    const mayBeEmpty = def.secret || key === 'org.exclude'
+    if (!mayBeEmpty && value.length === 0) throw new Error(`${key} cannot be empty`)
     if (key.startsWith('dataset.') && !/^\d{6,25}$/.test(value)) {
       throw new Error(`${key} must be a numeric dataset id`)
     }
