@@ -77,6 +77,15 @@ const str = (v: unknown): string => (v == null ? '' : String(v))
 const flagOn = (v: unknown): boolean => v === true || num(v) > 0 || /^(t|true|yes|y)$/i.test(str(v))
 
 /**
+ * Upstream error messages are user-visible (they surface on nodata rows), and the reports API is
+ * known to ECHO THE FULL BEARER TOKEN inside "Invalid token: eyJ…" errors — scrub anything
+ * JWT-shaped and keep the message short before it can reach a browser or a log line.
+ */
+function sanitizeUpstream(msg: string): string {
+  return msg.replace(/eyJ[\w-]+\.[\w-]*\.?[\w-]*/g, '[token redacted]').slice(0, 220)
+}
+
+/**
  * The platform answers auth and query errors with HTTP 200 and a non-zero `code` in the envelope
  * (e.g. `{"code":"401","msg":"token not userID."}`). Treating that as an empty result is how a
  * broken read turns into a confident zero, so the envelope is checked before the rows are read.
@@ -84,7 +93,14 @@ const flagOn = (v: unknown): boolean => v === true || num(v) > 0 || /^(t|true|ye
 function unwrap(res: Record_, datasetId: string): Record_ {
   const code = res?.code
   if (code != null && !['0', '200', 'success'].includes(String(code).toLowerCase())) {
-    throw new Error(`dataset ${datasetId} refused the read (code ${code}): ${str(res?.msg) || 'no message'}`)
+    const msg = sanitizeUpstream(str(res?.msg) || 'no message')
+    const hint =
+      READ_MODE === 'token' && String(code) === '401'
+        ? ' — the forwarded platform token was rejected by the reports API. Agent-platform tokens ' +
+          'cannot read app.mspbots.ai datasets; set PUBLIC_API_KEY in the deployment environment ' +
+          'so the app reads with its own credential.'
+        : ''
+    throw new Error(`dataset ${datasetId} refused the read (code ${code}): ${msg}${hint}`)
   }
   return (res?.data ?? res) as Record_
 }

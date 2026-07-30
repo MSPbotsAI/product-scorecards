@@ -105,7 +105,9 @@ export function createMspbotsReportClient(options: ReportClientOptions = {}) {
       logger.debug('GET', url)
       const res = await fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json', ...headers } })
       if (!res.ok) {
-        const text = await res.text()
+        // Upstream error bodies can echo credentials (e.g. "Invalid token: eyJ…") — scrub anything
+        // JWT-shaped and truncate before the message can reach a log line or an API response.
+        const text = (await res.text()).replace(/eyJ[\w-]+\.[\w-]*\.?[\w-]*/g, '[token redacted]').slice(0, 300)
         logger.error(`API error ${res.status}: ${text}`)
         throw new Error(`MSPBots Report API error (${res.status}): ${text}`)
       }
