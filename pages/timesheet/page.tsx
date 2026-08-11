@@ -56,6 +56,7 @@ const T = {
       `Logged hours for the ${root} reporting tree — ${n} people, resolved from the manager chain rather than a department.`,
     week: "Week",
     day: "Day",
+    month: "Month",
     today: "Today",
     totalHours: "Total hours",
     people: "People",
@@ -87,6 +88,7 @@ const T = {
       `${root} 汇报树下的登记工时——${n} 人，按汇报链递归解析，而非按部门。`,
     week: "周",
     day: "日",
+    month: "月",
     today: "今天",
     totalHours: "总工时",
     people: "人数",
@@ -125,6 +127,24 @@ function weekStart(d: Date): Date {
 const addDays = (d: Date, n: number) => {
   const copy = new Date(d);
   copy.setUTCDate(copy.getUTCDate() + n);
+  return copy;
+};
+function monthStart(d: Date): Date {
+  const copy = new Date(d);
+  copy.setUTCDate(1);
+  return copy;
+}
+/** Last day of the anchor's month — day 0 of the following month. */
+function monthEnd(d: Date): Date {
+  const copy = new Date(d);
+  copy.setUTCMonth(copy.getUTCMonth() + 1, 0);
+  return copy;
+}
+/** Snaps to day 1 before shifting so a 31st can't overflow into the month after next. */
+const addMonths = (d: Date, n: number) => {
+  const copy = new Date(d);
+  copy.setUTCDate(1);
+  copy.setUTCMonth(copy.getUTCMonth() + n);
   return copy;
 };
 
@@ -228,7 +248,7 @@ function Breakdown({
 export default function Timesheet() {
   const lang = useLang();
   const t = T[lang];
-  const [mode, setMode] = useState<"week" | "day">("week");
+  const [mode, setMode] = useState<"week" | "day" | "month">("week");
   const [anchor, setAnchor] = useState(() => weekStart(new Date()));
   const [data, setData] = useState<TimesheetData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -239,8 +259,8 @@ export default function Timesheet() {
     setFilters((f) => ({ ...f, [dim]: f[dim] === key ? null : key }));
   const clearAll = () => setFilters({ project: null, person: null, category: null });
 
-  const from = mode === "week" ? iso(anchor) : iso(anchor);
-  const to = mode === "week" ? iso(addDays(anchor, 6)) : iso(anchor);
+  const from = mode === "month" ? iso(monthStart(anchor)) : iso(anchor);
+  const to = mode === "week" ? iso(addDays(anchor, 6)) : mode === "month" ? iso(monthEnd(anchor)) : iso(anchor);
 
   // One fetch covers the dataset's whole span; the visible range is sliced from it in the browser,
   // so paging weeks costs nothing. Only Refresh goes back to the upstream dataset.
@@ -291,7 +311,7 @@ export default function Timesheet() {
     .filter(Boolean) as { dim: Dim; value: string }[];
 
   const step = (dir: -1 | 1) => {
-    setAnchor((a) => addDays(a, dir * (mode === "week" ? 7 : 1)));
+    setAnchor((a) => (mode === "month" ? addMonths(a, dir) : addDays(a, dir * (mode === "week" ? 7 : 1))));
     clearAll();
   };
 
@@ -321,14 +341,15 @@ export default function Timesheet() {
       {/* range controls */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-md border bg-muted p-0.5">
-          {(["week", "day"] as const).map((m) => (
+          {(["week", "day", "month"] as const).map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => {
                 setMode(m);
-                // Switching to week view snaps the anchor to that week's Monday.
+                // Switching to week/month view snaps the anchor to that range's start.
                 if (m === "week") setAnchor((a) => weekStart(a));
+                if (m === "month") setAnchor((a) => monthStart(a));
               }}
               aria-pressed={mode === m}
               className={cn(
@@ -336,7 +357,7 @@ export default function Timesheet() {
                 mode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {m === "week" ? t.week : t.day}
+              {m === "week" ? t.week : m === "day" ? t.day : t.month}
             </button>
           ))}
         </div>
@@ -346,7 +367,7 @@ export default function Timesheet() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setAnchor(mode === "week" ? weekStart(new Date()) : new Date())}
+          onClick={() => setAnchor(mode === "week" ? weekStart(new Date()) : mode === "month" ? monthStart(new Date()) : new Date())}
         >
           {t.today}
         </Button>
@@ -355,7 +376,7 @@ export default function Timesheet() {
         </Button>
         <span className="ml-1 text-sm font-medium tabular-nums">
           {from}
-          {mode === "week" && ` — ${to}`}
+          {mode !== "day" && ` — ${to}`}
         </span>
         <Input
           type="date"
