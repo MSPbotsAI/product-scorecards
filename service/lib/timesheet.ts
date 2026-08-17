@@ -34,6 +34,12 @@ export interface TimesheetResult {
   root: string
   /** Full date span available in the dataset. */
   span: { from: string | null; to: string | null }
+  /**
+   * Href template for a ticket key, `{id}` marking the substitution point — sent once rather than
+   * resolved per row, because a URL on every one of thousands of entries is pure payload weight.
+   * Null when no template is configured, which is how the ticket column stays plain text.
+   */
+  ticketUrlTemplate: string | null
   /** When the upstream dataset was last read (epoch ms) — the page shows this as "synced". */
   fetchedAt: number
   totalRowsScanned: number
@@ -188,6 +194,7 @@ export async function readTimesheet(opts: { refresh?: boolean } = {}): Promise<T
     excluded: excludeList,
     root,
     span: { from: min, to: max },
+    ticketUrlTemplate: (values['clickup.ticket_url'] ?? '').trim() || null,
     fetchedAt: rowCache!.fetchedAt,
     totalRowsScanned: rows.length,
   }

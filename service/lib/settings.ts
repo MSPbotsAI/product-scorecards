@@ -24,6 +24,11 @@ export const SETTING_DEFS: SettingDef[] = [
   { key: 'dataset.ai_credit', env: 'AI_CREDIT_DATASET', default: '1985255723050872834' },
   { key: 'dataset.weekly_metrics', env: 'WEEKLY_METRICS_DATASET', default: '2082466110929776641' },
   { key: 'dataset.timesheet', env: 'TIMESHEET_DATASET', default: '2073966327621623809' },
+  // Deep-link template for a timesheet ticket. The dataset only carries the human ticket key
+  // (PRD-15944), not ClickUp's internal task id, so the link is built from the key — ClickUp
+  // resolves a Custom Task ID under /t/<workspace>/<key>. Kept as a template rather than a
+  // workspace id so the shape stays editable; blank turns the links back into plain text.
+  { key: 'clickup.ticket_url', env: 'CLICKUP_TICKET_URL', default: 'https://app.clickup.com/t/2280862/{id}' },
   // Root of the reporting tree that defines "our people". Filtering by department would miss
   // product-team members who sit in other departments (Kevin in MSPbots.ai, Glenn in Asset - Core),
   // and filtering by manager alone would miss the root and second-level reports.
@@ -87,11 +92,18 @@ export async function writeSettings(patch: Record<string, string>, updatedBy: st
     const def = DEFS.get(key)
     if (!def) throw new Error(`unknown setting: ${key}`)
     const value = raw.trim()
-    // Secrets may be blank (means "keep"), and an empty exclusion list is a legitimate state.
-    const mayBeEmpty = def.secret || key === 'org.exclude'
+    // Secrets may be blank (means "keep"), an empty exclusion list is a legitimate state, and a
+    // blank ticket-url template is how ticket links get switched off.
+    const mayBeEmpty = def.secret || key === 'org.exclude' || key === 'clickup.ticket_url'
     if (!mayBeEmpty && value.length === 0) throw new Error(`${key} cannot be empty`)
     if (key.startsWith('dataset.') && !/^\d{6,25}$/.test(value)) {
       throw new Error(`${key} must be a numeric dataset id`)
+    }
+    // A template without {id} would send every ticket to the same page — reject it rather than
+    // render links that all lie. http(s) only: the value becomes an href in the browser.
+    if (key === 'clickup.ticket_url' && value.length > 0) {
+      if (!/^https?:\/\//i.test(value)) throw new Error(`${key} must start with http:// or https://`)
+      if (!value.includes('{id}')) throw new Error(`${key} must contain the {id} placeholder`)
     }
     await db
       .insert(settings)

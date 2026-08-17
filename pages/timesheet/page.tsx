@@ -16,7 +16,7 @@ import {
   TooltipTrigger,
   cn,
 } from "@mspbots/ui";
-import { AlertTriangle, ChevronLeft, ChevronRight, FolderKanban, RefreshCw, Tag, User, Users, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, FolderKanban, RefreshCw, Tag, User, Users, X } from "lucide-react";
 import { LangToggle, StatTile } from "../../lib/board";
 import { useLang } from "../../lib/i18n";
 
@@ -46,8 +46,19 @@ interface TimesheetData {
   excluded: string[];
   root: string;
   span: { from: string | null; to: string | null };
+  ticketUrlTemplate: string | null;
   totalRowsScanned: number;
 }
+
+/**
+ * A linkable ticket key: a letter-led prefix, a hyphen, digits (PRD-15944, MB-11342). Anything else
+ * in the column — free text a person typed, a bare number — stays plain text, because a link that
+ * lands on "not found" is worse than no link.
+ */
+const TICKET_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+
+const ticketHref = (template: string | null, id: string | null): string | null =>
+  template && id && TICKET_KEY.test(id) ? template.replace("{id}", encodeURIComponent(id)) : null;
 
 const T = {
   en: {
@@ -81,6 +92,7 @@ const T = {
     ofTotal: (n: number) => `of ${n}`,
     refresh: "Refresh",
     synced: (t: string) => `synced ${t}`,
+    openTicket: (id: string) => `Open ${id} in ClickUp`,
   },
   zh: {
     title: "工时",
@@ -113,6 +125,7 @@ const T = {
     ofTotal: (n: number) => `/ 共 ${n}`,
     refresh: "刷新",
     synced: (t: string) => `同步于 ${t}`,
+    openTicket: (id: string) => `在 ClickUp 中打开 ${id}`,
   },
 };
 
@@ -506,32 +519,51 @@ export default function Timesheet() {
                       </tr>
                     </thead>
                     <tbody>
-                      {view.scoped.map((e, i) => (
-                        <tr key={`${e.date}-${e.person}-${i}`} className="border-b last:border-b-0 hover:bg-muted/40">
-                          <td className="whitespace-nowrap px-5 py-1.5 tabular-nums text-muted-foreground">{e.date}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[12px]">{e.ticketId ?? "—"}</td>
-                          <td className="max-w-[420px] truncate px-3 py-1.5">{e.subject ?? "—"}</td>
-                          <td
-                            onClick={() => toggle("project")(e.project)}
-                            className="cursor-pointer whitespace-nowrap px-3 py-1.5 text-muted-foreground hover:text-foreground hover:underline"
-                          >
-                            {e.project}
-                          </td>
-                          <td
-                            onClick={() => toggle("person")(e.person)}
-                            className="cursor-pointer whitespace-nowrap px-3 py-1.5 hover:underline"
-                          >
-                            {e.person}
-                          </td>
-                          <td
-                            onClick={() => toggle("category")(e.category)}
-                            className="cursor-pointer whitespace-nowrap px-3 py-1.5 text-muted-foreground hover:text-foreground hover:underline"
-                          >
-                            {e.category}
-                          </td>
-                          <td className="px-5 py-1.5 text-right font-medium tabular-nums">{e.hours}</td>
-                        </tr>
-                      ))}
+                      {view.scoped.map((e, i) => {
+                        const ticket = e.ticketId;
+                        const href = ticketHref(data.ticketUrlTemplate, ticket);
+                        return (
+                          <tr key={`${e.date}-${e.person}-${i}`} className="border-b last:border-b-0 hover:bg-muted/40">
+                            <td className="whitespace-nowrap px-5 py-1.5 tabular-nums text-muted-foreground">{e.date}</td>
+                            <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[12px]">
+                              {href && ticket ? (
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title={t.openTicket(ticket)}
+                                  className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"
+                                >
+                                  {ticket}
+                                  <ExternalLink className="h-3 w-3 opacity-60" />
+                                </a>
+                              ) : (
+                                (ticket ?? "—")
+                              )}
+                            </td>
+                            <td className="max-w-[420px] truncate px-3 py-1.5">{e.subject ?? "—"}</td>
+                            <td
+                              onClick={() => toggle("project")(e.project)}
+                              className="cursor-pointer whitespace-nowrap px-3 py-1.5 text-muted-foreground hover:text-foreground hover:underline"
+                            >
+                              {e.project}
+                            </td>
+                            <td
+                              onClick={() => toggle("person")(e.person)}
+                              className="cursor-pointer whitespace-nowrap px-3 py-1.5 hover:underline"
+                            >
+                              {e.person}
+                            </td>
+                            <td
+                              onClick={() => toggle("category")(e.category)}
+                              className="cursor-pointer whitespace-nowrap px-3 py-1.5 text-muted-foreground hover:text-foreground hover:underline"
+                            >
+                              {e.category}
+                            </td>
+                            <td className="px-5 py-1.5 text-right font-medium tabular-nums">{e.hours}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
