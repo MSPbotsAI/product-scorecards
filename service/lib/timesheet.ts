@@ -46,6 +46,16 @@ const numOr0 = (v: unknown): number => {
   const n = typeof v === 'number' ? v : Number(str(v).replace(/[^0-9.-]/g, ''))
   return Number.isFinite(n) ? n : 0
 }
+/**
+ * The source carries literal placeholder strings ("Null" appears as a ticket_id), which must not
+ * survive as data — a "Null" ticket would render as a link to a nonexistent task.
+ */
+const PLACEHOLDER = new Set(['null', 'undefined', 'none', 'n/a', 'na', '-', ''])
+const cleanStr = (v: unknown): string | null => {
+  const s = str(v)
+  return PLACEHOLDER.has(s.toLowerCase()) ? null : s
+}
+
 /** Dataset dates arrive as 'YYYY-MM-DD' or a full timestamp; keep the day only. */
 const dayOf = (v: unknown): string => {
   const s = str(v)
@@ -166,14 +176,14 @@ export async function readTimesheet(opts: { refresh?: boolean } = {}): Promise<T
 
     entries.push({
       date,
-      ticketId: str(r.ticket_id) || null,
-      subject: str(r.ticket_subject) || null,
+      ticketId: cleanStr(r.ticket_id),
+      subject: cleanStr(r.ticket_subject),
       // A blank timesheet_project stays "(unassigned)" — never fall back to list_name, a ClickUp
       // list is not a project (the reference app makes the same call).
       project: str(r.timesheet_project) || '(unassigned)',
       person,
       category: str(r.timesheet_category) || '(unassigned)',
-      client: str(r.timesheet_client) || null,
+      client: cleanStr(r.timesheet_client),
       department: str(r.department) || null,
       manager: str(r.manager) || null,
       hours: numOr0(r.hours_taken),

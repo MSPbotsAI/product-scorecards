@@ -16,7 +16,7 @@ import {
   TooltipTrigger,
   cn,
 } from "@mspbots/ui";
-import { AlertTriangle, ChevronLeft, ChevronRight, FolderKanban, RefreshCw, Tag, User, Users, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, FolderKanban, RefreshCw, Tag, User, Users, X } from "lucide-react";
 import { LangToggle, StatTile } from "../../lib/board";
 import { useLang } from "../../lib/i18n";
 
@@ -115,6 +115,20 @@ const T = {
     synced: (t: string) => `同步于 ${t}`,
   },
 };
+
+/**
+ * ClickUp workspace that owns these tickets (confirmed from the workspace's own doc links and the
+ * attachment host on PRD-16306). Custom ids (PRD-14555) resolve only under /t/<workspace>/<id>;
+ * native ids (86e2v6wty) resolve at /t/<id>, so the shape decides the form.
+ */
+const CLICKUP_WORKSPACE = "2280862";
+const CUSTOM_ID = /^[A-Za-z]+-[0-9]+$/;
+
+function ticketUrl(id: string): string {
+  return CUSTOM_ID.test(id)
+    ? `https://app.clickup.com/t/${CLICKUP_WORKSPACE}/${id}`
+    : `https://app.clickup.com/t/${id}`;
+}
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 /** Monday-based week start — the same boundary the scorecard uses. */
@@ -509,7 +523,22 @@ export default function Timesheet() {
                       {view.scoped.map((e, i) => (
                         <tr key={`${e.date}-${e.person}-${i}`} className="border-b last:border-b-0 hover:bg-muted/40">
                           <td className="whitespace-nowrap px-5 py-1.5 tabular-nums text-muted-foreground">{e.date}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[12px]">{e.ticketId ?? "—"}</td>
+                          <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[12px]">
+                            {e.ticketId ? (
+                              <a
+                                href={ticketUrl(e.ticketId)}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(ev) => ev.stopPropagation()}
+                                className="inline-flex items-center gap-1 text-primary hover:underline"
+                              >
+                                {e.ticketId}
+                                <ExternalLink className="h-3 w-3 opacity-60" />
+                              </a>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
                           <td className="max-w-[420px] truncate px-3 py-1.5">{e.subject ?? "—"}</td>
                           <td
                             onClick={() => toggle("project")(e.project)}
