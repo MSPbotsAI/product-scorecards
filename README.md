@@ -86,5 +86,10 @@ pnpm install && pnpm dev
 - R1 (roster / portfolio / stage alignment): **done**
 - R2 (per-product metric cards): **done** — cards 11/12 delegated to Kevin
 - R3 (metric spec + data source mapping): **done** — open TBDs listed inside `metrics.yaml`
-- R4 (dashboard build): **in progress** — framework skeleton deployable; next is capturing dashboard
-  SQL (see [HANDOFF.md](HANDOFF.md)) and building the scorecard views against `metrics.yaml`
+- R4 (dashboard build): **shipped, iterating** — published as `@app/product-scorecards`; L10 board,
+  by-owner, product cards and timesheet run on live data. Framework reference: `MSPbotsAI/tqa-gtm`;
+  deploys to the MSPbots agent platform. Sources and field-level provenance: [scorecard/data-map.md](scorecard/data-map.md)
+- L10 feedback round (2026-07-30) folded into `metrics.yaml` meta: kpi-vs-telemetry row split,
+  person-view rule (5±2 kpi rows + one territory tile), F4 escalation-justification metric,
+  per-card enhancement-request context row, v0 data fixes. Next: 1:1s with each owner to finalize
+  their rows; scorecard stays a recurring L10 agenda item until stable.

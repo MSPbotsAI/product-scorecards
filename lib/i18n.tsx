@@ -78,7 +78,7 @@ const EN = {
     // by-owner page
     ownerTitle: "By owner",
     ownerSubtitle:
-      "One owner per number. Asset rows are deliberately unowned — a red there goes to IDS for on-the-spot assignment rather than to a person.",
+      "One owner per number — the EOS rule the 2026-07-30 L10 applied to every row. Asset rows sit with an interim custodian who answers for red disposition at L10, not for doing the work.",
     accountable: "accountable",
     red: "red",
     loadBand: (n: number) => `${n} accountable rows — the workshop agreed 3–7 per owner`,
@@ -140,7 +140,7 @@ const ZH: UIStrings = {
     rows: "行",
     failed: "失败",
     ownerTitle: "按负责人",
-    ownerSubtitle: "一数一主。资产行有意不设负责人——红灯直接进 IDS 现场指派，而不是压给某个人。",
+    ownerSubtitle: "一数一主——2026-07-30 L10 对所有行统一适用的 EOS 规则。资产行挂在临时代管人名下，他负责红灯的处置闭环，而非亲自做资产工作。",
     accountable: "问责行",
     red: "红",
     loadBand: (n: number) => `${n} 行问责 — workshop 约定每人 3–7 行`,

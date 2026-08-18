@@ -21,7 +21,11 @@ export type Compare = 'gte' | 'lte' | 'eq' | 'no-decrease' | 'display'
 export interface RowDef {
   id: string
   name: string
-  /** Owner per the workshop. `null` = deliberately unowned (Asset monitoring → L10 IDS). */
+  /**
+   * Owner per the workshop. The 2026-07-30 L10 applied the EOS rule that every row carries exactly
+   * one name: Asset rows moved from unowned to Micus as INTERIM custodian — he answers for red
+   * disposition at L10, not for doing the asset work (Kevin may take it back; see metrics.yaml).
+   */
   owner: string | null
   /** Product card, or a non-product bucket. */
   group: string
@@ -176,7 +180,7 @@ const unsourcedRows: RowDef[] = [
   {
     id: 'B1',
     name: 'Asset — dependency coverage (template lineage)',
-    owner: null,
+    owner: 'Micus',
     group: 'asset_library',
     kind: 'unsourced',
     compare: 'display',
@@ -191,19 +195,19 @@ const unsourcedRows: RowDef[] = [
   {
     id: 'B2',
     name: 'Asset — tenants that dropped a dependency band',
-    owner: null,
+    owner: 'Micus',
     group: 'asset_library',
     kind: 'unsourced',
     compare: 'lte',
     target: 0,
     unit: 'count',
-    targetText: 'red at >=1 (named, to IDS)',
+    targetText: 'red at >=1 (named; custodian dispositions at L10)',
     note: 'Needs weekly per-tenant asset counts; no usage-event source yet.',
   },
   {
     id: 'B3',
     name: 'Asset — dead template inventory',
-    owner: null,
+    owner: 'Micus',
     group: 'asset_library',
     kind: 'pending',
     compare: 'display',
