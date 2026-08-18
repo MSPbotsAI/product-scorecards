@@ -60,6 +60,16 @@ const FIELD: Record<string, { en: [string, string]; zh: [string, string] }> = {
     en: ["Timesheet", "ClickUp logged hours — the labor side of every ROI row."],
     zh: ["工时", "ClickUp 登记工时——每个 ROI 行的工时侧。"],
   },
+  "clickup.ticket_url": {
+    en: [
+      "Ticket link template",
+      "Makes the Timesheet ticket column clickable. {id} is replaced with the ticket key (PRD-15944); ClickUp resolves a Custom Task ID at /t/<workspace>/<key>. Leave blank for plain text.",
+    ],
+    zh: [
+      "工单链接模板",
+      "让工时页的工单列可点击。{id} 会被替换成工单号（PRD-15944）；ClickUp 的 /t/<workspace>/<工单号> 能直接解析自定义工单号。留空则不生成链接。",
+    ],
+  },
   "org.root": {
     en: ["Reporting-tree root", "Everyone at or below this person counts as the product org. Filtering by department would miss members who sit elsewhere."],
     zh: ["汇报树根节点", "此人及其下属全部计为产品团队。按部门过滤会漏掉挂在其他部门的成员。"],
@@ -253,6 +263,58 @@ export default function SettingsPage() {
                         <Input
                           id={item.key}
                           inputMode="numeric"
+                          value={current}
+                          onChange={(e) => setDraft((d) => ({ ...d, [item.key]: e.target.value }))}
+                          className={cn("font-mono text-[13px]", changed && "border-amber-500/60")}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={current === item.default}
+                          onClick={() => setDraft((d) => ({ ...d, [item.key]: item.default }))}
+                          title={`${lang === "zh" ? "恢复默认" : "Reset to default"}: ${item.default}`}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">{lang === "zh" ? "链接" : "Links"}</CardTitle>
+              <CardDescription className="text-xs">
+                {lang === "zh"
+                  ? "工时数据里只有工单号，没有 ClickUp 内部 task id，所以链接由工单号拼出来。"
+                  : "The timesheet data carries the ticket key only, not ClickUp's internal task id — so the link is built from the key."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {items
+                .filter((i) => i.key.startsWith("clickup."))
+                .map((item) => {
+                  const field = FIELD[item.key][lang];
+                  const origin = ORIGIN_LABEL[item.origin];
+                  const current = draft[item.key] ?? item.value;
+                  const changed = draft[item.key] != null && draft[item.key] !== item.value;
+                  return (
+                    <div key={item.key} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label htmlFor={item.key} className="text-sm">
+                          {field[0]}
+                        </Label>
+                        <Badge variant="outline" className={cn("h-5 px-1.5 text-[11px] font-normal", origin.tone)}>
+                          {origin[lang]}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">{field[1]}</p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id={item.key}
                           value={current}
                           onChange={(e) => setDraft((d) => ({ ...d, [item.key]: e.target.value }))}
                           className={cn("font-mono text-[13px]", changed && "border-amber-500/60")}

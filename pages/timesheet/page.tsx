@@ -46,8 +46,27 @@ interface TimesheetData {
   excluded: string[];
   root: string;
   span: { from: string | null; to: string | null };
+  ticketUrlTemplate: string | null;
   totalRowsScanned: number;
 }
+
+/**
+ * A linkable ticket key: a letter-led prefix, a hyphen, digits (PRD-15944, MB-11342). Anything else
+ * in the column — free text a person typed, a bare number — stays plain text, because a link that
+ * lands on "not found" is worse than no link.
+ */
+const TICKET_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+
+const NATIVE_ID = /^[a-z0-9]{6,12}$/;
+
+const ticketHref = (template: string | null, id: string | null): string | null => {
+  if (!template || !id) return null;
+  if (TICKET_KEY.test(id)) return template.replace("{id}", encodeURIComponent(id));
+  // Native ids (86e2990m1) must NOT go through the workspace-scoped template — ClickUp resolves
+  // them bare at /t/<id>. Four of the 335 distinct ids in the live data are this shape.
+  if (NATIVE_ID.test(id)) return `https://app.clickup.com/t/${encodeURIComponent(id)}`;
+  return null;
+};
 
 const T = {
   en: {
@@ -81,6 +100,7 @@ const T = {
     ofTotal: (n: number) => `of ${n}`,
     refresh: "Refresh",
     synced: (t: string) => `synced ${t}`,
+    openTicket: (id: string) => `Open ${id} in ClickUp`,
   },
   zh: {
     title: "工时",
@@ -113,22 +133,9 @@ const T = {
     ofTotal: (n: number) => `/ 共 ${n}`,
     refresh: "刷新",
     synced: (t: string) => `同步于 ${t}`,
+    openTicket: (id: string) => `在 ClickUp 中打开 ${id}`,
   },
 };
-
-/**
- * ClickUp workspace that owns these tickets (confirmed from the workspace's own doc links and the
- * attachment host on PRD-16306). Custom ids (PRD-14555) resolve only under /t/<workspace>/<id>;
- * native ids (86e2v6wty) resolve at /t/<id>, so the shape decides the form.
- */
-const CLICKUP_WORKSPACE = "2280862";
-const CUSTOM_ID = /^[A-Za-z]+-[0-9]+$/;
-
-function ticketUrl(id: string): string {
-  return CUSTOM_ID.test(id)
-    ? `https://app.clickup.com/t/${CLICKUP_WORKSPACE}/${id}`
-    : `https://app.clickup.com/t/${id}`;
-}
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 /** Monday-based week start — the same boundary the scorecard uses. */
@@ -520,47 +527,51 @@ export default function Timesheet() {
                       </tr>
                     </thead>
                     <tbody>
-                      {view.scoped.map((e, i) => (
-                        <tr key={`${e.date}-${e.person}-${i}`} className="border-b last:border-b-0 hover:bg-muted/40">
-                          <td className="whitespace-nowrap px-5 py-1.5 tabular-nums text-muted-foreground">{e.date}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[12px]">
-                            {e.ticketId ? (
-                              <a
-                                href={ticketUrl(e.ticketId)}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={(ev) => ev.stopPropagation()}
-                                className="inline-flex items-center gap-1 text-primary hover:underline"
-                              >
-                                {e.ticketId}
-                                <ExternalLink className="h-3 w-3 opacity-60" />
-                              </a>
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-                          <td className="max-w-[420px] truncate px-3 py-1.5">{e.subject ?? "—"}</td>
-                          <td
-                            onClick={() => toggle("project")(e.project)}
-                            className="cursor-pointer whitespace-nowrap px-3 py-1.5 text-muted-foreground hover:text-foreground hover:underline"
-                          >
-                            {e.project}
-                          </td>
-                          <td
-                            onClick={() => toggle("person")(e.person)}
-                            className="cursor-pointer whitespace-nowrap px-3 py-1.5 hover:underline"
-                          >
-                            {e.person}
-                          </td>
-                          <td
-                            onClick={() => toggle("category")(e.category)}
-                            className="cursor-pointer whitespace-nowrap px-3 py-1.5 text-muted-foreground hover:text-foreground hover:underline"
-                          >
-                            {e.category}
-                          </td>
-                          <td className="px-5 py-1.5 text-right font-medium tabular-nums">{e.hours}</td>
-                        </tr>
-                      ))}
+                      {view.scoped.map((e, i) => {
+                        const ticket = e.ticketId;
+                        const href = ticketHref(data.ticketUrlTemplate, ticket);
+                        return (
+                          <tr key={`${e.date}-${e.person}-${i}`} className="border-b last:border-b-0 hover:bg-muted/40">
+                            <td className="whitespace-nowrap px-5 py-1.5 tabular-nums text-muted-foreground">{e.date}</td>
+                            <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[12px]">
+                              {href && ticket ? (
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title={t.openTicket(ticket)}
+                                  className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"
+                                >
+                                  {ticket}
+                                  <ExternalLink className="h-3 w-3 opacity-60" />
+                                </a>
+                              ) : (
+                                (ticket ?? "—")
+                              )}
+                            </td>
+                            <td className="max-w-[420px] truncate px-3 py-1.5">{e.subject ?? "—"}</td>
+                            <td
+                              onClick={() => toggle("project")(e.project)}
+                              className="cursor-pointer whitespace-nowrap px-3 py-1.5 text-muted-foreground hover:text-foreground hover:underline"
+                            >
+                              {e.project}
+                            </td>
+                            <td
+                              onClick={() => toggle("person")(e.person)}
+                              className="cursor-pointer whitespace-nowrap px-3 py-1.5 hover:underline"
+                            >
+                              {e.person}
+                            </td>
+                            <td
+                              onClick={() => toggle("category")(e.category)}
+                              className="cursor-pointer whitespace-nowrap px-3 py-1.5 text-muted-foreground hover:text-foreground hover:underline"
+                            >
+                              {e.category}
+                            </td>
+                            <td className="px-5 py-1.5 text-right font-medium tabular-nums">{e.hours}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
