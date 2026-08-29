@@ -7,7 +7,7 @@
     "icon": "🚦",
     "platform": "node"
   },
-  "author": "tom.lan",
+  "author": "grace.guo",
   "files": [
     "**/*",
     "!node_modules",

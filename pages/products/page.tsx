@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
 import { Alert, AlertDescription, Badge, Card, CardContent, Skeleton, cn } from "@mspbots/ui";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, ArrowRight, Handshake } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Delta, LangToggle, NoteHint, Sparkline, StatusIcon } from "../../lib/board";
 import { groupLabel, rowName, rowShort, rowTarget, useLang, useT } from "../../lib/i18n";
 import { RowDetailDialog } from "../../lib/row-dialog";
 import { formatValue, useScorecard, type ScorecardRow } from "../../lib/scorecard-client";
+import { useIntakeSummary } from "../../lib/intake-client";
 
 export const meta = {
   label: "Product Cards",
@@ -33,6 +35,54 @@ const STAGE_BADGE: Record<string, string> = {
   wrap: "border-blue-500/40 text-blue-700 dark:text-blue-400",
   eos: "border-amber-500/40 text-amber-700 dark:text-amber-400",
 };
+
+/**
+ * Cards that have a companion report page.
+ *
+ * The scorecard row answers "is the number bad?"; the report answers "which client, and what do I do
+ * on Monday?". Intake is the only card with one so far, so this is a map rather than a flag — Glenn's
+ * funnel is the first of several these cards should reach.
+ */
+const REPORT_LINK: Record<string, { to: string; icon: typeof Handshake }> = {
+  ticket_intake: { to: "/intake", icon: Handshake },
+};
+
+/**
+ * Entry point to a card's companion report, in the card's top-right corner.
+ *
+ * Sits beside the title rather than under the metrics on purpose: it is a way *out* of the card, and
+ * putting it below the coverage bar buried it under the numbers it is meant to explain. The client
+ * count rides along so the link is a fact, not just a label; the full breakdown is on hover.
+ */
+function ReportLink({ group }: { group: string }) {
+  const link = REPORT_LINK[group];
+  const lang = useLang();
+  // Headline counts only — see useIntakeSummary. Free once the report page itself has been visited.
+  const report = useIntakeSummary();
+  if (!link) return null;
+
+  const Icon = link.icon;
+  const summary = report?.summary;
+  const label = lang === "zh" ? "客户互动" : "Client engagement";
+  const title = summary
+    ? lang === "zh"
+      ? `${summary.clients} 家客户 · ${summary.lost} 家已失败 · ${summary.inProduction} 家进入生产`
+      : `${summary.clients} clients · ${summary.lost} lost · ${summary.inProduction} in production`
+    : label;
+
+  return (
+    <Link
+      to={link.to}
+      title={title}
+      className="flex shrink-0 items-center gap-1 rounded-md border px-1.5 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-foreground"
+    >
+      <Icon className="h-3 w-3 shrink-0" />
+      <span className="max-lg:sr-only">{label}</span>
+      {summary && <span className="font-mono tabular-nums">{summary.clients}</span>}
+      <ArrowRight className="h-3 w-3 shrink-0" />
+    </Link>
+  );
+}
 
 /** The card leads with its activity metric — the first row that actually has a series. */
 function pickHero(rows: ScorecardRow[]): ScorecardRow | null {
@@ -156,6 +206,7 @@ function ProductCard({ group, label, rows, onSelect }: { group: string; label: s
               )}
             </div>
           </div>
+          {REPORT_LINK[group] && <ReportLink group={group} />}
         </div>
 
         {/* hero metric */}

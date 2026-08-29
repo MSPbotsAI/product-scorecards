@@ -89,6 +89,32 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
+// AI Ticket Intake — client engagement. Served from a dated snapshot rather than a dataset: the
+// pipeline rung is a human judgement (see service/lib/intake.ts), so there is nothing to query. The
+// response carries `asOf` and `ageDays` and the page leads with them — a snapshot that cannot say
+// how old it is would be indistinguishable from live data, which is the failure mode to avoid.
+app.get("/api/intake", async (c) => {
+  const { buildIntakeReport } = await import("./lib/intake.ts");
+  try {
+    return c.json(buildIntakeReport());
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 500);
+  }
+});
+
+// Headline counts only. The Product Cards page shows these on the Intake card's entry link, and the
+// full report is ~350 KB — too much to pull for a one-line label on a page most visitors never
+// click through from.
+app.get("/api/intake/summary", async (c) => {
+  const { buildIntakeReport } = await import("./lib/intake.ts");
+  try {
+    const { asOf, ageDays, summary } = buildIntakeReport();
+    return c.json({ asOf, ageDays, summary });
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 500);
+  }
+});
+
 app.get("/api/timesheet", async (c) => {
   const { readTimesheet } = await import("./lib/timesheet.ts");
   try {
