@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.mspbots.scorecard.weekly-publish</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/noahbombom/AIcursor/product scorecard/product-scorecards/scripts/weekly-publish.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/noahbombom/AIcursor/product scorecard/product-scorecards</string>
+
+    <!-- Wednesday 14:30 Asia/Shanghai, ahead of the Thursday 10:30 Product-Platform L10.
+         14:30 rather than any earlier slot because the ATI repo's own auto-pull lands at 14:00 —
+         this reads the data half an hour after it arrives, and still leaves the whole Wednesday
+         afternoon to click the "New Version" badge that the platform step requires. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Weekday</key><integer>3</integer>
+        <key>Hour</key><integer>14</integer>
+        <key>Minute</key><integer>30</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/scorecard-weekly-publish.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/scorecard-weekly-publish.log</string>
+
+    <!-- Deliberately false. This job publishes a new app version, so a run triggered by a reload,
+         a login, or a reboot would ship a release nobody asked for. It fires on the schedule only.
+         If the Mac is asleep or off at 14:30, launchd runs it once at the next wake. -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
