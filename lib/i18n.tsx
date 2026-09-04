@@ -111,6 +111,13 @@ const EN = {
     manualSaveError: "Couldn't save",
     manuallyEntered: "Manually entered",
     manualSignInRequired: "Sign in to edit weekly values.",
+    // runtime-editable threshold (row detail dialog)
+    thresholdEditTitle: "Threshold",
+    thresholdGreenLabel: "Green at",
+    thresholdYellowLabel: "Yellow at",
+    thresholdSave: "Save threshold",
+    thresholdSaved: "Saved",
+    thresholdSaveError: "Couldn't save",
 };
 
 /** Widen EN's literal strings so the zh table type-checks against the same shape. */
@@ -178,6 +185,12 @@ const ZH: UIStrings = {
     manualSaveError: "保存失败",
     manuallyEntered: "人工填报",
     manualSignInRequired: "请登录后再编辑每周数值。",
+    thresholdEditTitle: "阈值",
+    thresholdGreenLabel: "绿灯起点",
+    thresholdYellowLabel: "黄灯起点",
+    thresholdSave: "保存阈值",
+    thresholdSaved: "已保存",
+    thresholdSaveError: "保存失败",
 };
 
 const UI: Record<Lang, UIStrings> = { en: EN, zh: ZH };

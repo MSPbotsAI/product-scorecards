@@ -10,6 +10,11 @@ import { upIsGood, type RowStatus, type ScorecardRow } from "./scorecard-client"
 
 /* ── status: reserved traffic-light styles, always dot + label ── */
 
+/** Group-level caveats shown above a group's rows, wherever that group is rendered (product card, owner card). */
+export const GROUP_NOTES: Record<string, string> = {
+  internal_automations: "Scorecard metrics can be purposely different from product/project level success metrics to be weekly-actionable.",
+};
+
 export const STATUS_META: Record<RowStatus, { dot: string; text: string; row?: string }> = {
   red: { dot: "bg-red-500", text: "text-red-700 dark:text-red-400", row: "border-l-red-500" },
   yellow: { dot: "bg-amber-500", text: "text-amber-700 dark:text-amber-400", row: "border-l-amber-500" },

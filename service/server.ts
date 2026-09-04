@@ -7,9 +7,11 @@ import { fileURLToPath } from "node:url";
 import { buildScorecard, readMode } from "./lib/scorecard.ts";
 import { GROUP_LABELS, ROWS } from "./lib/rows.ts";
 import { writeManualValues } from "./lib/manual-metrics.ts";
+import { writeThresholdOverride } from "./lib/thresholds.ts";
 import { SETTING_DEFS, invalidateSettings, maskSecret, readSettings, writeSettings } from "./lib/settings.ts";
 
 const MANUAL_ROW_IDS = new Set(ROWS.filter((r) => r.kind === "manual").map((r) => r.id));
+const THRESHOLD_EDITABLE_IDS = new Set(ROWS.filter((r) => r.thresholdEditable).map((r) => r.id));
 
 const serverDir = dirname(fileURLToPath(import.meta.url));
 
@@ -89,6 +91,35 @@ app.put("/api/manual-metrics/:metricId", async (c) => {
 
   try {
     await writeManualValues(metricId, entries, c.req.header("x-user-email") ?? null);
+    return c.json({ ok: true });
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 502);
+  }
+});
+
+/**
+ * Runtime target/yellowMin override for a `thresholdEditable` row (Internal Automations' "New
+ * releases" row today). Same auth gate as the other write routes.
+ */
+app.put("/api/metric-thresholds/:metricId", async (c) => {
+  const token = c.req.header("authorization")?.replace(/^Bearer /i, "") ?? c.req.header("token") ?? "";
+  if (!token) return c.json({ error: "sign in to edit the threshold" }, 401);
+
+  const metricId = c.req.param("metricId");
+  if (!THRESHOLD_EDITABLE_IDS.has(metricId)) return c.json({ error: "this metric's threshold isn't editable" }, 404);
+
+  const body = (await c.req.json().catch(() => null)) as { target?: number; yellowMin?: number } | null;
+  const target = body?.target;
+  const yellowMin = body?.yellowMin;
+  if (!Number.isInteger(target) || (target as number) < 0) {
+    return c.json({ error: "target must be a non-negative integer" }, 400);
+  }
+  if (yellowMin != null && (!Number.isInteger(yellowMin) || yellowMin < 0 || yellowMin >= (target as number))) {
+    return c.json({ error: "yellowMin must be a non-negative integer below target" }, 400);
+  }
+
+  try {
+    await writeThresholdOverride(metricId, { target: target as number, yellowMin: yellowMin ?? null }, c.req.header("x-user-email") ?? null);
     return c.json({ ok: true });
   } catch (error) {
     return c.json({ error: (error as Error).message }, 502);

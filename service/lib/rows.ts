@@ -16,7 +16,7 @@ export type RowKind =
   | 'manual'
 
 /** How a value is judged against its target. `display` rows are never red or green. */
-export type Compare = 'gte' | 'lte' | 'eq' | 'no-decrease' | 'display' | 'band'
+export type Compare = 'gte' | 'lte' | 'eq' | 'no-decrease' | 'display' | 'band' | 'band-hi'
 
 export interface RowDef {
   id: string
@@ -35,6 +35,20 @@ export interface RowDef {
   target: number | null
   /** Upper bound of the yellow band; only used with `compare: 'band'` (value <= target -> green, <= yellowMax -> yellow, else red). */
   yellowMax?: number
+  /** Lower bound of the yellow band; only used with `compare: 'band-hi'` (value >= target -> green, >= yellowMin -> yellow, else red). */
+  yellowMin?: number
+  /**
+   * When true, `target`/`yellowMin` can be overridden at runtime from the row's own dialog
+   * (persisted in `metric_thresholds`, applied on top of these code defaults in buildScorecard()).
+   * Only meaningful with `compare: 'band'` / `'band-hi'`.
+   */
+  thresholdEditable?: boolean
+  /**
+   * True for a row that is deliberately deferred (e.g. a "coming soon" placeholder with a known
+   * future ship date) rather than an open gap to close. Still shown in Gaps, but excluded from
+   * H1/H3 and the coverage tile's denominator — it isn't yet an accountability number.
+   */
+  excludeFromCoverage?: boolean
   unit?: 'percent' | 'count' | 'score' | 'ratio' | 'days'
   /** Target as written in the workshop, shown verbatim in the UI. */
   targetText: string
@@ -318,7 +332,74 @@ const mpdRows: RowDef[] = [
   },
 ]
 
-export const ROWS: RowDef[] = [...aiRows, ...subscriptionRows, ...engagementRows, ...unsourcedRows, ...mpdRows]
+/**
+ * Internal Automations — Kevin's second card, defined 2026-09-04. IA1/IA2 are manually logged
+ * every Thursday, higher-is-better; IA3/IA4 are locked placeholders until CSM task dispatch ships
+ * (target: Oct 2026).
+ */
+const internalAutomationsRows: RowDef[] = [
+  {
+    id: 'IA1',
+    name: 'Weekly active users (Client Success Hub)',
+    owner: 'Kevin',
+    group: 'internal_automations',
+    kind: 'manual',
+    compare: 'band-hi',
+    target: 100,
+    yellowMin: 21,
+    unit: 'percent',
+    targetText: '100% green · 21-80% yellow · <=20% red',
+  },
+  {
+    id: 'IA2',
+    name: 'New releases (Automations, Custom Reports, Skills & App Features)',
+    owner: 'Kevin',
+    group: 'internal_automations',
+    kind: 'manual',
+    compare: 'band-hi',
+    target: 2,
+    yellowMin: 1,
+    unit: 'count',
+    thresholdEditable: true,
+    targetText: '>1 green · 1 yellow · 0 red',
+    note: 'Counts new Automations, Custom Reports, Skills, or App Features shipped in the week.',
+  },
+  {
+    id: 'IA3',
+    name: 'CSM task dispatch — accepted count',
+    owner: 'Kevin',
+    group: 'internal_automations',
+    kind: 'pending',
+    compare: 'display',
+    target: null,
+    unit: 'count',
+    targetText: 'coming soon — Oct 2026',
+    note: 'Higher is better. Threshold and manual entry land with CSM task dispatch (target: Oct 2026).',
+    excludeFromCoverage: true,
+  },
+  {
+    id: 'IA4',
+    name: 'CSM task dispatch — dismissal rate by inaccuracy',
+    owner: 'Kevin',
+    group: 'internal_automations',
+    kind: 'pending',
+    compare: 'display',
+    target: null,
+    unit: 'percent',
+    targetText: 'coming soon — Oct 2026',
+    note: 'Lower is better. Threshold and manual entry land with CSM task dispatch (target: Oct 2026).',
+    excludeFromCoverage: true,
+  },
+]
+
+export const ROWS: RowDef[] = [
+  ...aiRows,
+  ...subscriptionRows,
+  ...engagementRows,
+  ...unsourcedRows,
+  ...mpdRows,
+  ...internalAutomationsRows,
+]
 
 export const GROUP_LABELS: Record<string, string> = {
   tqa: 'TicketQA',
@@ -332,6 +413,7 @@ export const GROUP_LABELS: Record<string, string> = {
   asset_library: 'Asset Library',
   micus_hop: 'Head of Product',
   mpd: 'Evolve MPD',
+  internal_automations: 'Internal Automations',
 }
 
 /** Timesheet Project options, pulled live from the ClickUp workspace field on 2026-07-29. */

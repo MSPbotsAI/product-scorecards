@@ -10,6 +10,7 @@
 
 import { createMspbotsReportClient, type AuthHeaders } from './mspbots-report.ts'
 import { readManualSeries } from './manual-metrics.ts'
+import { readThresholdOverrides } from './thresholds.ts'
 import { readSettings } from './settings.ts'
 import { ROWS, type Compare, type RowDef } from './rows.ts'
 
@@ -227,9 +228,39 @@ function judge(value: number | null, previous: number | null, def: RowDef): RowS
       if (target == null) return 'display'
       if (value <= target) return 'green'
       return def.yellowMax != null && value <= def.yellowMax ? 'yellow' : 'red'
+    case 'band-hi':
+      if (target == null) return 'display'
+      if (value >= target) return 'green'
+      return def.yellowMin != null && value >= def.yellowMin ? 'yellow' : 'red'
     default:
       return 'display'
   }
+}
+
+/** Formats a number the way a row's `unit` displays it, for the regenerated band targetText. */
+function fmtUnit(n: number, unit: RowDef['unit']): string {
+  return unit === 'percent' ? `${n}%` : String(n)
+}
+
+/**
+ * `'band'`/`'band-hi'` targetText is regenerated from the row's (possibly overridden) numbers
+ * rather than kept as a static string, so a threshold edit is reflected immediately. Every other
+ * compare keeps its literal `def.targetText`.
+ */
+function bandTargetText(def: RowDef): string {
+  if (def.compare === 'band') {
+    const g = fmtUnit(def.target ?? 0, def.unit)
+    return def.yellowMax != null
+      ? `<=${g} green · <=${fmtUnit(def.yellowMax, def.unit)} yellow · red above`
+      : `<=${g} green · red above`
+  }
+  if (def.compare === 'band-hi') {
+    const g = fmtUnit(def.target ?? 0, def.unit)
+    return def.yellowMin != null
+      ? `>=${g} green · >=${fmtUnit(def.yellowMin, def.unit)} yellow · red below`
+      : `>=${g} green · red below`
+  }
+  return def.targetText
 }
 
 /** AI products: active tenants and silent paid tenants, off the credit dataset. */
@@ -518,11 +549,12 @@ export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult
     }
   }
 
-  const [aiRows, productRows, aiWeeklyRows, manual] = await Promise.all([
+  const [aiRows, productRows, aiWeeklyRows, manual, overrides] = await Promise.all([
     load(values['dataset.ai_credit']),
     load(values['dataset.weekly_metrics']),
     load(values['dataset.ai_weekly']),
     readManualSeries(),
+    readThresholdOverrides(),
   ])
 
   const ai = aiRows ? resolveAi(aiRows) : null
@@ -531,7 +563,16 @@ export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult
   const subMap = sub?.out ?? null
   const week = sub?.current ?? ''
 
-  const rows: ScorecardRow[] = ROWS.map((def) => {
+  const rows: ScorecardRow[] = ROWS.map((rawDef) => {
+    // A runtime threshold override wins over the code default; `'band'`/`'band-hi'` targetText is
+    // then regenerated from the effective numbers so an edit is reflected immediately.
+    const override = overrides.get(rawDef.id)
+    const merged: RowDef = override
+      ? { ...rawDef, target: override.target, yellowMin: override.yellowMin ?? rawDef.yellowMin }
+      : rawDef
+    const def: RowDef =
+      merged.compare === 'band' || merged.compare === 'band-hi' ? { ...merged, targetText: bandTargetText(merged) } : merged
+
     // The weekly series is the spec's own definition for the AI active rows, so it wins there;
     // the credit snapshot keeps the silent-paid rows and serves as fallback when weekly fails.
     const hit = aiWeekly?.get(def.id) ?? ai?.get(def.id) ?? subMap?.get(def.id) ?? null
@@ -584,8 +625,9 @@ export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult
     }
   })
 
-  // H1 / H3 describe the board itself, so they are computed from it.
-  const judged = rows.filter((r) => r.status !== 'display')
+  // H1 / H3 describe the board itself, so they are computed from it. Deliberately-deferred rows
+  // (excludeFromCoverage) are still shown in Gaps but don't count as an accountability gap yet.
+  const judged = rows.filter((r) => r.status !== 'display' && !r.excludeFromCoverage)
   const withData = judged.filter((r) => r.status !== 'nodata')
   const completeness = judged.length ? Math.round((withData.length / judged.length) * 1000) / 10 : null
   const onTrack = withData.length

@@ -38,3 +38,17 @@ export const metricValues = app.table(
 )
 
 export type MetricValue = typeof metricValues.$inferSelect
+
+/**
+ * Runtime overrides for a `thresholdEditable` row's target/yellowMin (service/lib/rows.ts) —
+ * edited from the row's own dialog when the code default needs to move without a redeploy.
+ */
+export const metricThresholds = app.table('metric_thresholds', {
+  metricId: varchar('metric_id', { length: 32 }).primaryKey(),
+  target: integer('target').notNull(),
+  yellowMin: integer('yellow_min'),
+  updatedBy: text('updated_by'),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
+
+export type MetricThreshold = typeof metricThresholds.$inferSelect

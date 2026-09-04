@@ -8,13 +8,19 @@ export interface ScorecardRow {
   owner: string | null;
   group: string;
   kind: "computed" | "pending" | "unsourced" | "manual";
-  compare: "gte" | "lte" | "eq" | "no-decrease" | "display" | "band";
+  compare: "gte" | "lte" | "eq" | "no-decrease" | "display" | "band" | "band-hi";
   value: number | null;
   previous: number | null;
   status: RowStatus;
   target: number | null;
   /** Upper bound of the yellow band; only set when compare is 'band'. */
   yellowMax?: number;
+  /** Lower bound of the yellow band; only set when compare is 'band-hi'. */
+  yellowMin?: number;
+  /** True when target/yellowMin can be edited from this row's dialog (PUT /api/metric-thresholds/:id). */
+  thresholdEditable?: boolean;
+  /** True for a deliberately-deferred row (e.g. "coming soon") — shown in Gaps but excluded from coverage denominators. */
+  excludeFromCoverage?: boolean;
   targetText: string;
   unit?: "percent" | "count" | "score" | "ratio" | "days";
   /** Weekly series, oldest → newest. AI rows carry two relative points (p7d/l7d) for now. */
@@ -30,11 +36,31 @@ export function upIsGood(row: Pick<ScorecardRow, "compare">): boolean {
   return row.compare !== "lte" && row.compare !== "band";
 }
 
-/** Client-side mirror of judge()'s 'band' case, for live coloring while a value is being typed. */
-export function bandStatus(value: number | null, row: Pick<ScorecardRow, "target" | "yellowMax">): RowStatus {
+/**
+ * Client-side mirror of judge(), for live coloring while a value is being typed into a manual
+ * row's dialog. Manual rows aren't all 'band'/'band-hi' (e.g. H2 is 'gte'), so every case judge()
+ * handles is mirrored here rather than assuming lower-is-better.
+ */
+export function bandStatus(
+  value: number | null,
+  row: Pick<ScorecardRow, "compare" | "target" | "yellowMax" | "yellowMin">,
+): RowStatus {
   if (value == null || !Number.isFinite(value) || row.target == null) return "nodata";
-  if (value <= row.target) return "green";
-  return row.yellowMax != null && value <= row.yellowMax ? "yellow" : "red";
+  const { compare, target, yellowMax, yellowMin } = row;
+  switch (compare) {
+    case "gte":
+      return value >= target ? "green" : value >= target * 0.9 ? "yellow" : "red";
+    case "lte":
+      return value <= target ? "green" : "red";
+    case "eq":
+      return value === target ? "green" : "red";
+    case "band":
+      return value <= target ? "green" : yellowMax != null && value <= yellowMax ? "yellow" : "red";
+    case "band-hi":
+      return value >= target ? "green" : yellowMin != null && value >= yellowMin ? "yellow" : "red";
+    default:
+      return "nodata";
+  }
 }
 
 export interface ScorecardData {

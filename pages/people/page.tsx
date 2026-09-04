@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Alert, AlertDescription, Avatar, AvatarFallback, Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Skeleton, cn } from "@mspbots/ui";
 import { AlertTriangle } from "lucide-react";
-import { Delta, LangToggle, LoadMeter, Sparkline, StatusIcon } from "../../lib/board";
+import { Delta, GROUP_NOTES, LangToggle, LoadMeter, Sparkline, StatusIcon } from "../../lib/board";
 import { groupLabel, rowName, rowTarget, useLang, useT } from "../../lib/i18n";
 import { RowDetailDialog } from "../../lib/row-dialog";
 import { formatValue, useScorecard, type ScorecardRow } from "../../lib/scorecard-client";
@@ -18,9 +18,12 @@ function OwnerCard({ owner, rows, groups, onSelect }: { owner: string; rows: Sco
   const t = useT();
   const lang = useLang();
   const reds = rows.filter((r) => r.status === "red").length;
-  const accountable = rows.filter((r) => r.status !== "display").length;
+  // Deliberately-deferred rows (excludeFromCoverage) aren't yet an accountability number either —
+  // same exclusion as the L10 Board's H1/H3/coverage denominators.
+  const accountable = rows.filter((r) => r.status !== "display" && !r.excludeFromCoverage).length;
   const over = accountable > 7;
   const isBucket = owner.startsWith("Unowned") || owner.startsWith("无主");
+  const notes = [...new Set(rows.map((r) => GROUP_NOTES[r.group]).filter(Boolean))];
 
   return (
     <Card className={cn(reds > 0 && "border-red-500/30")}>
@@ -53,6 +56,11 @@ function OwnerCard({ owner, rows, groups, onSelect }: { owner: string; rows: Sco
         {!isBucket && <LoadMeter count={accountable} />}
       </CardHeader>
       <CardContent className="space-y-1">
+        {notes.map((note) => (
+          <p key={note} className="pb-1 text-[11px] italic leading-relaxed text-muted-foreground/80">
+            {note}
+          </p>
+        ))}
         {rows.map((row) => (
           <div
             key={row.id}
@@ -84,7 +92,10 @@ function OwnerCard({ owner, rows, groups, onSelect }: { owner: string; rows: Sco
 export default function ByOwner() {
   const { data, error, loading, reload } = useScorecard();
   const t = useT();
-  const [selected, setSelected] = useState<ScorecardRow | null>(null);
+  // Track just the id: after a save reloads the scorecard, deriving the row from fresh `data`
+  // (rather than holding onto the pre-save row object) keeps the open dialog's numbers current.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = selectedId ? (data?.rows.find((r) => r.id === selectedId) ?? null) : null;
 
   const byOwner = useMemo(() => {
     if (!data) return null;
@@ -132,10 +143,10 @@ export default function ByOwner() {
         <>
           <div className="grid gap-4 lg:grid-cols-2">
             {byOwner.map(([owner, rows]) => (
-              <OwnerCard key={owner} owner={owner} rows={rows} groups={data.groups} onSelect={setSelected} />
+              <OwnerCard key={owner} owner={owner} rows={rows} groups={data.groups} onSelect={(row) => setSelectedId(row.id)} />
             ))}
           </div>
-          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelected(null)} onSaved={reload} />
+          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelectedId(null)} onSaved={reload} />
         </>
       )}
     </div>

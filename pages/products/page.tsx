@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Alert, AlertDescription, Badge, Card, CardContent, Skeleton, cn } from "@mspbots/ui";
 import { AlertTriangle } from "lucide-react";
-import { Delta, LangToggle, NoteHint, Sparkline, StatusIcon } from "../../lib/board";
+import { Delta, GROUP_NOTES, LangToggle, NoteHint, Sparkline, StatusIcon } from "../../lib/board";
 import { groupLabel, rowName, rowShort, rowTarget, useLang, useT } from "../../lib/i18n";
 import { RowDetailDialog } from "../../lib/row-dialog";
 import { formatValue, useScorecard, type ScorecardRow } from "../../lib/scorecard-client";
@@ -27,6 +27,7 @@ const STAGE: Record<string, { business: string; release: string; firstLine: stri
   asset_library: { business: "Sustain", release: "GA", firstLine: "monitoring only" },
   micus_hop: { business: "—", release: "—", firstLine: "Micus" },
   mpd: { business: "—", release: "—", firstLine: "Kevin" },
+  internal_automations: { business: "—", release: "—", firstLine: "Kevin" },
 };
 
 const STAGE_BADGE: Record<string, string> = {
@@ -117,7 +118,10 @@ function ProductCard({ group, label, rows, onSelect }: { group: string; label: s
   const t = useT();
   const stage = STAGE[group];
   const reds = rows.filter((r) => r.status === "red").length;
-  const sourced = rows.filter((r) => r.status !== "nodata").length;
+  // Deliberately-deferred rows (excludeFromCoverage) don't count toward this card's coverage bar —
+  // same exclusion as the L10 Board's H1/H3/coverage tile and the By Owner accountable count.
+  const coverageRows = rows.filter((r) => !r.excludeFromCoverage);
+  const sourced = coverageRows.filter((r) => r.status !== "nodata").length;
   const hero = pickHero(rows);
   const rest = hero ? rows.filter((r) => r !== hero) : rows;
   const firstLine = stage?.firstLine === "monitoring only" ? t.monitoringOnly : stage?.firstLine;
@@ -159,6 +163,8 @@ function ProductCard({ group, label, rows, onSelect }: { group: string; label: s
           </div>
         </div>
 
+        {GROUP_NOTES[group] && <p className="mb-2.5 text-[11px] italic leading-relaxed text-muted-foreground/80">{GROUP_NOTES[group]}</p>}
+
         {/* hero metric */}
         {hero && <Hero row={hero} onSelect={onSelect} />}
 
@@ -172,10 +178,13 @@ function ProductCard({ group, label, rows, onSelect }: { group: string; label: s
         {/* coverage footer */}
         <div className="mt-2.5 flex items-center gap-2 border-t pt-2.5">
           <div className="flex h-1 flex-1 gap-px overflow-hidden rounded-full bg-muted">
-            <div className="h-full rounded-full bg-foreground/35" style={{ width: `${(sourced / rows.length) * 100}%` }} />
+            <div
+              className="h-full rounded-full bg-foreground/35"
+              style={{ width: coverageRows.length ? `${(sourced / coverageRows.length) * 100}%` : "0%" }}
+            />
           </div>
           <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
-            {sourced}/{rows.length}
+            {sourced}/{coverageRows.length}
           </span>
         </div>
       </CardContent>
@@ -187,7 +196,10 @@ export default function ProductCards() {
   const { data, error, loading, reload } = useScorecard();
   const t = useT();
   const lang = useLang();
-  const [selected, setSelected] = useState<ScorecardRow | null>(null);
+  // Track just the id: after a save reloads the scorecard, deriving the row from fresh `data`
+  // (rather than holding onto the pre-save row object) keeps the open dialog's numbers current.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = selectedId ? (data?.rows.find((r) => r.id === selectedId) ?? null) : null;
 
   const cards = useMemo(() => {
     if (!data) return null;
@@ -230,10 +242,16 @@ export default function ProductCards() {
         <>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {cards.map(([group, rows]) => (
-              <ProductCard key={group} group={group} label={groupLabel(group, data.groups[group] ?? group, lang)} rows={rows} onSelect={setSelected} />
+              <ProductCard
+                key={group}
+                group={group}
+                label={groupLabel(group, data.groups[group] ?? group, lang)}
+                rows={rows}
+                onSelect={(row) => setSelectedId(row.id)}
+              />
             ))}
           </div>
-          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelected(null)} onSaved={reload} />
+          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelectedId(null)} onSaved={reload} />
         </>
       )}
     </div>

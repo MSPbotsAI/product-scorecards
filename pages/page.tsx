@@ -127,12 +127,17 @@ function Section({
 export default function L10Board() {
   const { data, error, loading, reload, fetchedAt } = useScorecard();
   const t = useT();
-  const [selected, setSelected] = useState<ScorecardRow | null>(null);
+  // Track just the id: after a save reloads the scorecard, deriving the row from fresh `data`
+  // (rather than holding onto the pre-save row object) keeps the open dialog's numbers current.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = selectedId ? (data?.rows.find((r) => r.id === selectedId) ?? null) : null;
 
   const view = useMemo(() => {
     if (!data) return null;
     const rows = data.rows;
-    const judged = rows.filter((r) => r.status !== "display");
+    // Deliberately-deferred rows (excludeFromCoverage) still show up in Gaps but don't count
+    // toward the coverage denominator — they aren't an open gap yet, just not built.
+    const judged = rows.filter((r) => r.status !== "display" && !r.excludeFromCoverage);
     return {
       act: rows.filter((r) => r.status === "red" || r.status === "yellow"),
       ok: rows.filter((r) => r.status === "green"),
@@ -141,7 +146,7 @@ export default function L10Board() {
       reds: rows.filter((r) => r.status === "red").length,
       greens: rows.filter((r) => r.status === "green").length,
       coverage: judged.length
-        ? Math.round(((judged.length - rows.filter((r) => r.status === "nodata").length) / judged.length) * 100)
+        ? Math.round(((judged.length - judged.filter((r) => r.status === "nodata").length) / judged.length) * 100)
         : null,
       onTrack: rows.find((r) => r.id === "H3")?.value ?? null,
     };
@@ -201,12 +206,12 @@ export default function L10Board() {
             <StatTile label={t.onTrackTile} value={view.onTrack != null ? `${view.onTrack}%` : "—"} hint={t.onTrackHint} />
           </div>
 
-          <Section title={t.actNow} sub={t.actNowSub} rows={view.act} groups={data.groups} tone="red" empty={t.actNowEmpty} onSelect={setSelected} />
-          <Section title={t.onTrack} rows={view.ok} groups={data.groups} empty={t.onTrackEmpty} onSelect={setSelected} />
-          <Section title={t.trends} sub={t.trendsSub} rows={view.trend} groups={data.groups} onSelect={setSelected} />
-          <Section title={t.gaps(view.gaps.length)} sub={t.gapsSub} rows={view.gaps} groups={data.groups} tone="dashed" onSelect={setSelected} />
+          <Section title={t.actNow} sub={t.actNowSub} rows={view.act} groups={data.groups} tone="red" empty={t.actNowEmpty} onSelect={(row) => setSelectedId(row.id)} />
+          <Section title={t.onTrack} rows={view.ok} groups={data.groups} empty={t.onTrackEmpty} onSelect={(row) => setSelectedId(row.id)} />
+          <Section title={t.trends} sub={t.trendsSub} rows={view.trend} groups={data.groups} onSelect={(row) => setSelectedId(row.id)} />
+          <Section title={t.gaps(view.gaps.length)} sub={t.gapsSub} rows={view.gaps} groups={data.groups} tone="dashed" onSelect={(row) => setSelectedId(row.id)} />
 
-          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelected(null)} onSaved={reload} />
+          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelectedId(null)} onSaved={reload} />
 
           {data.sources.length > 0 && (
             <>

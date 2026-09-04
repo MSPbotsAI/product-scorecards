@@ -348,6 +348,34 @@ products:
           managed accordingly; unmanaged expectations show up here.
         status: manual
 
+  internal_automations:   # Kevin's second card, finalized 2026-09-04 (service/lib/rows.ts `internalAutomationsRows`)
+    kind: internal tooling, independent
+    owner: Kevin
+    metrics:
+      - id: IA1
+        name: Weekly active users (Client Success Hub)
+        def: share of Client Success Hub users active in the week, logged weekly every Thursday
+        target: "100% green; 21-80% yellow; <=20% red"
+        status: manual
+      - id: IA2
+        name: New releases (Automations, Custom Reports, Skills & App Features)
+        def: count of new Automations, Custom Reports, Skills, or App Features shipped in the week,
+          logged weekly every Thursday
+        target: ">1 green; 1 yellow; 0 red"
+        note: green/yellow boundary is runtime-editable from the row's dialog (metric_thresholds
+          table) — this is the code default, not necessarily the live value
+        status: manual
+      - id: IA3
+        name: CSM task dispatch — accepted count
+        def: higher is better; not yet sourced
+        target: "coming soon — Oct 2026"
+        status: tbd
+      - id: IA4
+        name: CSM task dispatch — dismissal rate by inaccuracy
+        def: lower is better; not yet sourced
+        target: "coming soon — Oct 2026"
+        status: tbd
+
   csm_internal_tool:
     stage: {business: explore-internal, release: prototype}
     owner: Kevin

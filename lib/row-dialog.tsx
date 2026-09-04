@@ -41,6 +41,10 @@ export function RowDetailDialog({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [thresholdDraft, setThresholdDraft] = useState({ target: "", yellowMin: "" });
+  const [thresholdSaving, setThresholdSaving] = useState(false);
+  const [thresholdSaveError, setThresholdSaveError] = useState<string | null>(null);
+  const [thresholdSaved, setThresholdSaved] = useState(false);
 
   // Reset the edit draft whenever a different row is opened.
   useEffect(() => {
@@ -48,6 +52,10 @@ export function RowDetailDialog({
     setSaving(false);
     setSaveError(null);
     setSaved(false);
+    setThresholdDraft({ target: String(row?.target ?? ""), yellowMin: String(row?.yellowMin ?? "") });
+    setThresholdSaving(false);
+    setThresholdSaveError(null);
+    setThresholdSaved(false);
   }, [row?.id]);
 
   if (!row) return null;
@@ -96,6 +104,34 @@ export function RowDetailDialog({
     }
   };
 
+  const saveThreshold = async () => {
+    const target = Number(thresholdDraft.target.trim());
+    const yellowMinRaw = thresholdDraft.yellowMin.trim();
+    if (!Number.isInteger(target) || target < 0) {
+      setThresholdSaveError("target must be a whole number, 0 or higher");
+      return;
+    }
+    const yellowMin = yellowMinRaw === "" ? null : Number(yellowMinRaw);
+    setThresholdSaving(true);
+    setThresholdSaveError(null);
+    setThresholdSaved(false);
+    try {
+      const res = await $fetch(`/api/metric-thresholds/${row.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target, yellowMin }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error ?? `save failed (${res.status})`);
+      setThresholdSaved(true);
+      onSaved?.();
+    } catch (err) {
+      setThresholdSaveError(err instanceof Error ? err.message : "failed to save");
+    } finally {
+      setThresholdSaving(false);
+    }
+  };
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent container={root()} className="max-w-lg">
@@ -141,6 +177,50 @@ export function RowDetailDialog({
         {/* weekly history / manual entry */}
         {row.kind === "manual" ? (
           <div>
+            {row.thresholdEditable && (
+              <div className="mb-3 rounded-md border bg-muted/30 p-3">
+                <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t.thresholdEditTitle}</div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                    {t.thresholdGreenLabel}
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={thresholdDraft.target}
+                      onChange={(e) => setThresholdDraft((d) => ({ ...d, target: e.target.value }))}
+                      className="h-7 w-20"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-[11px] text-muted-foreground">
+                    {t.thresholdYellowLabel}
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={thresholdDraft.yellowMin}
+                      onChange={(e) => setThresholdDraft((d) => ({ ...d, yellowMin: e.target.value }))}
+                      className="h-7 w-20"
+                    />
+                  </label>
+                  <Button size="sm" variant="outline" onClick={saveThreshold} disabled={thresholdSaving}>
+                    <Save className={cn("mr-1.5 h-3.5 w-3.5", thresholdSaving && "animate-pulse")} />
+                    {t.thresholdSave}
+                  </Button>
+                  {thresholdSaved && !thresholdSaveError && (
+                    <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {t.thresholdSaved}
+                    </span>
+                  )}
+                  {thresholdSaveError && (
+                    <span className="text-xs text-red-700 dark:text-red-400">
+                      {t.thresholdSaveError}: {thresholdSaveError}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t.manualEditTitle}</div>
             <p className="mb-1.5 text-[11px] text-muted-foreground">{t.manualEditHint}</p>
             <div className="max-h-52 overflow-y-auto rounded-md border">
