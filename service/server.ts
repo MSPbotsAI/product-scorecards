@@ -5,8 +5,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildScorecard, readMode } from "./lib/scorecard.ts";
-import { GROUP_LABELS } from "./lib/rows.ts";
+import { GROUP_LABELS, ROWS } from "./lib/rows.ts";
+import { writeManualValues } from "./lib/manual-metrics.ts";
 import { SETTING_DEFS, invalidateSettings, maskSecret, readSettings, writeSettings } from "./lib/settings.ts";
+
+const MANUAL_ROW_IDS = new Set(ROWS.filter((r) => r.kind === "manual").map((r) => r.id));
 
 const serverDir = dirname(fileURLToPath(import.meta.url));
 
@@ -63,6 +66,31 @@ app.put("/api/settings", async (c) => {
     return c.json({ ok: true, mode: await readMode() });
   } catch (error) {
     // A failed write must not look like a success: the page reports exactly why nothing was saved.
+    return c.json({ error: (error as Error).message }, 502);
+  }
+});
+
+/**
+ * Weekly values for `kind: 'manual'` rows (Kevin's Evolve MPD card today). Same auth gate as
+ * /api/settings: writing accountability numbers must not be reachable anonymously.
+ */
+app.put("/api/manual-metrics/:metricId", async (c) => {
+  const token = c.req.header("authorization")?.replace(/^Bearer /i, "") ?? c.req.header("token") ?? "";
+  if (!token) return c.json({ error: "sign in to edit weekly values" }, 401);
+
+  const metricId = c.req.param("metricId");
+  if (!MANUAL_ROW_IDS.has(metricId)) return c.json({ error: "unknown manual metric" }, 404);
+
+  const body = (await c.req.json().catch(() => null)) as { values?: { week: string; value: number }[] } | null;
+  const entries = (body?.values ?? []).filter(
+    (v) => v && /^\d{4}-\d{2}-\d{2}$/.test(v.week) && Number.isInteger(v.value) && v.value >= 0,
+  );
+  if (!entries.length) return c.json({ error: "no valid weekly values in the request" }, 400);
+
+  try {
+    await writeManualValues(metricId, entries, c.req.header("x-user-email") ?? null);
+    return c.json({ ok: true });
+  } catch (error) {
     return c.json({ error: (error as Error).message }, 502);
   }
 });

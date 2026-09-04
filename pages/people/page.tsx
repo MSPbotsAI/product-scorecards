@@ -82,7 +82,7 @@ function OwnerCard({ owner, rows, groups, onSelect }: { owner: string; rows: Sco
 }
 
 export default function ByOwner() {
-  const { data, error, loading } = useScorecard();
+  const { data, error, loading, reload } = useScorecard();
   const t = useT();
   const [selected, setSelected] = useState<ScorecardRow | null>(null);
 
@@ -135,7 +135,7 @@ export default function ByOwner() {
               <OwnerCard key={owner} owner={owner} rows={rows} groups={data.groups} onSelect={setSelected} />
             ))}
           </div>
-          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelected(null)} />
+          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelected(null)} onSaved={reload} />
         </>
       )}
     </div>

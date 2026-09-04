@@ -16,7 +16,7 @@ export type RowKind =
   | 'manual'
 
 /** How a value is judged against its target. `display` rows are never red or green. */
-export type Compare = 'gte' | 'lte' | 'eq' | 'no-decrease' | 'display'
+export type Compare = 'gte' | 'lte' | 'eq' | 'no-decrease' | 'display' | 'band'
 
 export interface RowDef {
   id: string
@@ -33,6 +33,8 @@ export interface RowDef {
   compare: Compare
   /** Numeric target where one was agreed; null when the row is observation-only. */
   target: number | null
+  /** Upper bound of the yellow band; only used with `compare: 'band'` (value <= target -> green, <= yellowMax -> yellow, else red). */
+  yellowMax?: number
   unit?: 'percent' | 'count' | 'score' | 'ratio' | 'days'
   /** Target as written in the workshop, shown verbatim in the UI. */
   targetText: string
@@ -278,7 +280,45 @@ const unsourcedRows: RowDef[] = [
   },
 ]
 
-export const ROWS: RowDef[] = [...aiRows, ...subscriptionRows, ...engagementRows, ...unsourcedRows]
+/**
+ * Evolve MPD — Kevin's own card, defined 2026-09-04. Both rows are manually logged (no dataset
+ * backs custom delivery work), entered weekly every Thursday from the row's edit dialog.
+ */
+const mpdRows: RowDef[] = [
+  {
+    id: 'M1',
+    name: 'Committed deliverables (quarter to date)',
+    owner: 'Kevin',
+    group: 'mpd',
+    kind: 'manual',
+    compare: 'band',
+    target: 3,
+    yellowMax: 5,
+    unit: 'count',
+    targetText: '<=3 green · <=5 yellow · >5 red',
+    note:
+      'At the stage of the project where it is generally released with a fixed payment from ' +
+      'ConnectWise, the less effort we keep them happy the better.',
+    anchor: 'Unit: features per quarter or major meeting milestone — 1 feature scoped to 1-5 business days max',
+  },
+  {
+    id: 'M2',
+    name: 'CEO/Daniel escalations (last week)',
+    owner: 'Kevin',
+    group: 'mpd',
+    kind: 'manual',
+    compare: 'band',
+    target: 0,
+    yellowMax: 1,
+    unit: 'count',
+    targetText: '0 green · 1 yellow · >1 red',
+    note:
+      'Balancing metric for M1: limiting deliverables only works if expectations are managed ' +
+      'accordingly. Red means no action was taken after the initial escalation.',
+  },
+]
+
+export const ROWS: RowDef[] = [...aiRows, ...subscriptionRows, ...engagementRows, ...unsourcedRows, ...mpdRows]
 
 export const GROUP_LABELS: Record<string, string> = {
   tqa: 'TicketQA',
@@ -291,6 +331,7 @@ export const GROUP_LABELS: Record<string, string> = {
   attendance: 'Attendance',
   asset_library: 'Asset Library',
   micus_hop: 'Head of Product',
+  mpd: 'Evolve MPD',
 }
 
 /** Timesheet Project options, pulled live from the ClickUp workspace field on 2026-07-29. */

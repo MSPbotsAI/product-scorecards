@@ -327,13 +327,26 @@ products:
          source: {system: warehouse, ref: BI usage dashboard 1796382716256718850}}
       - {id: BI3, name: BI ROI, owner: Frank, target: observation, status: auto}
 
-  mpd:
+  mpd:   # Evolve MPD — Kevin's card, finalized 2026-09-04 (kept in code as service/lib/rows.ts `mpdRows`)
     kind: custom delivery, independent
     owner: Kevin
-    delegated: true   # Kevin finalizes his own card; drafts below are the starting point
     metrics:
-      - {id: M1, name: Due-commitment keep rate (kept or re-decided on record before date), target: 100%, status: auto}
-      - {id: M2, name: Longest client-side blocked wait (days), target: "<=5", status: manual}
+      - id: M1
+        name: Committed deliverables (quarter to date)
+        def: cumulative count, logged weekly every Thursday, of features (or major meeting
+          milestones) committed for delivery this quarter; one feature is scoped to 1-5 business
+          days max
+        target: "<=3 green; <=5 yellow; >5 red"
+        note: At the stage of the project where it is generally released with a fixed payment from
+          ConnectWise, the less effort we keep them happy the better.
+        status: manual
+      - id: M2
+        name: CEO/Daniel escalations (last week)
+        def: count of escalations to the CEO/Daniel in the prior week, logged weekly every Thursday
+        target: "0 green; 1 yellow; >1 red (red = no action taken after the initial escalation)"
+        note: Balancing metric for M1 — limiting deliverables only works if expectations are
+          managed accordingly; unmanaged expectations show up here.
+        status: manual
 
   csm_internal_tool:
     stage: {business: explore-internal, release: prototype}

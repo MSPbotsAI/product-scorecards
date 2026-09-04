@@ -88,7 +88,7 @@ const EN = {
     // product cards page
     productsTitle: "Product cards",
     productsSubtitle:
-      "Twelve products on two axes — business stage (Explore / Grow / Sustain / Sunset) and release stage. Cards for MPD and the CSM internal tool are Kevin's to define and are not rendered yet.",
+      "Twelve products on two axes — business stage (Explore / Grow / Sustain / Sunset) and release stage, plus Evolve MPD, Kevin's manually-logged delivery card.",
     firstLine: "first line",
     noSourceRows: (n: number, total: number) => `${n} of ${total} rows have no source yet`,
     monitoringOnly: "monitoring only",
@@ -103,6 +103,14 @@ const EN = {
     noHistory: "No history yet — this row currently has a single reading.",
     noSourceYet: "No data source wired yet.",
     updatedAt: (time: string) => `data as of ${time}`,
+    // manual weekly entry (edit dialog)
+    manualEditTitle: "Weekly entries",
+    manualEditHint: "Enter each week's number — the dot recolors from the thresholds as you type.",
+    manualSave: "Save",
+    manualSaved: "Saved",
+    manualSaveError: "Couldn't save",
+    manuallyEntered: "Manually entered",
+    manualSignInRequired: "Sign in to edit weekly values.",
 };
 
 /** Widen EN's literal strings so the zh table type-checks against the same shape. */
@@ -149,7 +157,7 @@ const ZH: UIStrings = {
     unownedBucket: "无主 — 升级至 L10 IDS",
     productsTitle: "产品卡",
     productsSubtitle:
-      "12 个产品按双轴定位——业务轴（Explore / Grow / Sustain / Sunset）与发布轴。MPD 与 CSM 内部工具由 Kevin 自定，暂不渲染。",
+      "12 个产品按双轴定位——业务轴（Explore / Grow / Sustain / Sunset）与发布轴，另加 Evolve MPD——Kevin 手动记录的交付卡。",
     firstLine: "一线",
     noSourceRows: (n: number, total: number) => `${total} 行中 ${n} 行暂无数据源`,
     monitoringOnly: "仅监控",
@@ -163,6 +171,13 @@ const ZH: UIStrings = {
     noHistory: "暂无历史——该行目前只有单点读数。",
     noSourceYet: "尚未接入数据源。",
     updatedAt: (time: string) => `数据截至 ${time}`,
+    manualEditTitle: "每周填报",
+    manualEditHint: "逐周填写数字——圆点会按阈值实时变色。",
+    manualSave: "保存",
+    manualSaved: "已保存",
+    manualSaveError: "保存失败",
+    manuallyEntered: "人工填报",
+    manualSignInRequired: "请登录后再编辑每周数值。",
 };
 
 const UI: Record<Lang, UIStrings> = { en: EN, zh: ZH };

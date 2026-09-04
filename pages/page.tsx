@@ -206,7 +206,7 @@ export default function L10Board() {
           <Section title={t.trends} sub={t.trendsSub} rows={view.trend} groups={data.groups} onSelect={setSelected} />
           <Section title={t.gaps(view.gaps.length)} sub={t.gapsSub} rows={view.gaps} groups={data.groups} tone="dashed" onSelect={setSelected} />
 
-          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelected(null)} />
+          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelected(null)} onSaved={reload} />
 
           {data.sources.length > 0 && (
             <>

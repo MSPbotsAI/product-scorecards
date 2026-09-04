@@ -26,6 +26,7 @@ const STAGE: Record<string, { business: string; release: string; firstLine: stri
   attendance: { business: "Sustain — end of sale", release: "GA", firstLine: "Frank", accent: "eos" },
   asset_library: { business: "Sustain", release: "GA", firstLine: "monitoring only" },
   micus_hop: { business: "—", release: "—", firstLine: "Micus" },
+  mpd: { business: "—", release: "—", firstLine: "Kevin" },
 };
 
 const STAGE_BADGE: Record<string, string> = {
@@ -183,7 +184,7 @@ function ProductCard({ group, label, rows, onSelect }: { group: string; label: s
 }
 
 export default function ProductCards() {
-  const { data, error, loading } = useScorecard();
+  const { data, error, loading, reload } = useScorecard();
   const t = useT();
   const lang = useLang();
   const [selected, setSelected] = useState<ScorecardRow | null>(null);
@@ -232,7 +233,7 @@ export default function ProductCards() {
               <ProductCard key={group} group={group} label={groupLabel(group, data.groups[group] ?? group, lang)} rows={rows} onSelect={setSelected} />
             ))}
           </div>
-          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelected(null)} />
+          <RowDetailDialog row={selected} groups={data.groups} onClose={() => setSelected(null)} onSaved={reload} />
         </>
       )}
     </div>

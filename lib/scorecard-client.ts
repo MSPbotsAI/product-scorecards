@@ -8,11 +8,13 @@ export interface ScorecardRow {
   owner: string | null;
   group: string;
   kind: "computed" | "pending" | "unsourced" | "manual";
-  compare: "gte" | "lte" | "eq" | "no-decrease" | "display";
+  compare: "gte" | "lte" | "eq" | "no-decrease" | "display" | "band";
   value: number | null;
   previous: number | null;
   status: RowStatus;
   target: number | null;
+  /** Upper bound of the yellow band; only set when compare is 'band'. */
+  yellowMax?: number;
   targetText: string;
   unit?: "percent" | "count" | "score" | "ratio" | "days";
   /** Weekly series, oldest → newest. AI rows carry two relative points (p7d/l7d) for now. */
@@ -23,9 +25,16 @@ export interface ScorecardRow {
   anchor?: string;
 }
 
-/** For delta coloring: on lte-rows (silent counts, target 0) a rise is bad news. */
+/** For delta coloring: on lte-rows (silent counts) and band-rows (Kevin's manual KPIs), a rise is bad news. */
 export function upIsGood(row: Pick<ScorecardRow, "compare">): boolean {
-  return row.compare !== "lte";
+  return row.compare !== "lte" && row.compare !== "band";
+}
+
+/** Client-side mirror of judge()'s 'band' case, for live coloring while a value is being typed. */
+export function bandStatus(value: number | null, row: Pick<ScorecardRow, "target" | "yellowMax">): RowStatus {
+  if (value == null || !Number.isFinite(value) || row.target == null) return "nodata";
+  if (value <= row.target) return "green";
+  return row.yellowMax != null && value <= row.yellowMax ? "yellow" : "red";
 }
 
 export interface ScorecardData {

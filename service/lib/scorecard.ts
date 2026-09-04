@@ -9,6 +9,7 @@
 //   - Pagination is never silently truncated: hitting the cap is reported as an error on the row.
 
 import { createMspbotsReportClient, type AuthHeaders } from './mspbots-report.ts'
+import { readManualSeries } from './manual-metrics.ts'
 import { readSettings } from './settings.ts'
 import { ROWS, type Compare, type RowDef } from './rows.ts'
 
@@ -222,6 +223,10 @@ function judge(value: number | null, previous: number | null, def: RowDef): RowS
     case 'no-decrease':
       if (previous == null) return 'display'
       return value >= previous ? 'green' : 'red'
+    case 'band':
+      if (target == null) return 'display'
+      if (value <= target) return 'green'
+      return def.yellowMax != null && value <= def.yellowMax ? 'yellow' : 'red'
     default:
       return 'display'
   }
@@ -513,10 +518,11 @@ export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult
     }
   }
 
-  const [aiRows, productRows, aiWeeklyRows] = await Promise.all([
+  const [aiRows, productRows, aiWeeklyRows, manual] = await Promise.all([
     load(values['dataset.ai_credit']),
     load(values['dataset.weekly_metrics']),
     load(values['dataset.ai_weekly']),
+    readManualSeries(),
   ])
 
   const ai = aiRows ? resolveAi(aiRows) : null
@@ -530,7 +536,16 @@ export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult
     // the credit snapshot keeps the silent-paid rows and serves as fallback when weekly fails.
     const hit = aiWeekly?.get(def.id) ?? ai?.get(def.id) ?? subMap?.get(def.id) ?? null
 
-    if (def.kind === 'unsourced' || def.kind === 'manual' || def.kind === 'pending') {
+    if (def.kind === 'manual') {
+      const series = manual.get(def.id)
+      if (!series?.length) {
+        return { ...def, value: null, previous: null, status: 'nodata', reason: 'no weekly entry yet — open this row to log one' }
+      }
+      const latest = series[series.length - 1]
+      const previous = series.length > 1 ? series[series.length - 2].value : null
+      return { ...def, value: latest.value, previous, status: judge(latest.value, previous, def), history: series }
+    }
+    if (def.kind === 'unsourced' || def.kind === 'pending') {
       return { ...def, value: null, previous: null, status: 'nodata', reason: def.note ?? 'no source yet' }
     }
     if (!hasValue(hit)) {

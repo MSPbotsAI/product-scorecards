@@ -1,0 +1,109 @@
+{
+  "id": "e40d7128-fce4-4ef9-83cc-1f6e52291b4a",
+  "prevId": "9f9fd405-2749-4e26-a229-74d12fd87f39",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "yke0x6nvil03yca1cx686ioxx6wbi4fg.metric_values": {
+      "name": "metric_values",
+      "schema": "yke0x6nvil03yca1cx686ioxx6wbi4fg",
+      "columns": {
+        "metric_id": {
+          "name": "metric_id",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "week": {
+          "name": "week",
+          "type": "varchar(10)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "metric_values_metric_id_week_pk": {
+          "name": "metric_values_metric_id_week_pk",
+          "columns": [
+            "metric_id",
+            "week"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "yke0x6nvil03yca1cx686ioxx6wbi4fg.settings": {
+      "name": "settings",
+      "schema": "yke0x6nvil03yca1cx686ioxx6wbi4fg",
+      "columns": {
+        "key": {
+          "name": "key",
+          "type": "varchar(128)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

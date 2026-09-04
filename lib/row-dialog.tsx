@@ -1,10 +1,13 @@
 // The per-row detail dialog: full definition, weekly history as a table (the chart's table view),
 // named tenants, and which dataset the number came from. Opened by clicking any row.
 
-import { Badge, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Separator, cn, root } from "@mspbots/ui";
-import { Delta, Sparkline, StatusChip } from "./board";
+import { useEffect, useState } from "react";
+import { Badge, Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Input, Separator, cn, root } from "@mspbots/ui";
+import { CheckCircle2, Save } from "lucide-react";
+import { Delta, Sparkline, StatusChip, STATUS_META } from "./board";
 import { groupLabel, rowName, rowNote, rowTarget, useLang, useT } from "./i18n";
-import { formatValue, upIsGood, type ScorecardRow } from "./scorecard-client";
+import { recentThursdays } from "./manual-weeks";
+import { bandStatus, formatValue, upIsGood, type ScorecardRow } from "./scorecard-client";
 
 /** Which dataset feeds which rows (see scorecard/data-map.md). Client-side map for display only. */
 const SOURCES: { ids: string[]; dataset: string; label: string }[] = [
@@ -25,13 +28,28 @@ export function RowDetailDialog({
   row,
   groups,
   onClose,
+  onSaved,
 }: {
   row: ScorecardRow | null;
   groups: Record<string, string>;
   onClose: () => void;
+  onSaved?: () => void;
 }) {
   const t = useT();
   const lang = useLang();
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  // Reset the edit draft whenever a different row is opened.
+  useEffect(() => {
+    setDraft({});
+    setSaving(false);
+    setSaveError(null);
+    setSaved(false);
+  }, [row?.id]);
+
   if (!row) return null;
 
   const note = rowNote(row.id, row.note, lang);
@@ -42,6 +60,41 @@ export function RowDetailDialog({
   const table = [...history]
     .map((p, i) => ({ ...p, diff: i > 0 ? p.value - history[i - 1].value : null }))
     .reverse();
+
+  // Manual rows (Kevin's Evolve MPD card, today): every Thursday since last week, plus any older
+  // recorded week so nothing already logged ever disappears from view.
+  const manualWeeks =
+    row.kind === "manual"
+      ? [...new Set([...recentThursdays(14), ...history.map((p) => p.week)])].sort().reverse()
+      : [];
+  const valueFor = (week: string) => draft[week] ?? String(history.find((p) => p.week === week)?.value ?? "");
+
+  const saveManual = async () => {
+    const values = manualWeeks
+      .map((week) => ({ week, value: valueFor(week).trim() }))
+      .filter((v) => v.value !== "")
+      .map((v) => ({ week: v.week, value: Number(v.value) }));
+    if (!values.length) return;
+    setSaving(true);
+    setSaveError(null);
+    setSaved(false);
+    try {
+      const res = await $fetch(`/api/manual-metrics/${row.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ values }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error ?? `save failed (${res.status})`);
+      setDraft({});
+      setSaved(true);
+      onSaved?.();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -85,7 +138,65 @@ export function RowDetailDialog({
           <Sparkline row={row} width={150} height={44} />
         </div>
 
-        {/* weekly history */}
+        {/* weekly history / manual entry */}
+        {row.kind === "manual" ? (
+          <div>
+            <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t.manualEditTitle}</div>
+            <p className="mb-1.5 text-[11px] text-muted-foreground">{t.manualEditHint}</p>
+            <div className="max-h-52 overflow-y-auto rounded-md border">
+              <table className="w-full text-xs tabular-nums">
+                <thead className="sticky top-0 bg-muted/80 text-muted-foreground backdrop-blur">
+                  <tr>
+                    <th className="px-3 py-1.5 text-left font-medium">{t.weekCol}</th>
+                    <th className="px-3 py-1.5 text-right font-medium">{t.value}</th>
+                    <th className="w-8 px-3 py-1.5" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {manualWeeks.map((week) => {
+                    const current = valueFor(week);
+                    const status = bandStatus(current.trim() === "" ? null : Number(current), row);
+                    return (
+                      <tr key={week} className="border-t">
+                        <td className="px-3 py-1.5 text-muted-foreground">{week}</td>
+                        <td className="px-3 py-1.5 text-right">
+                          <Input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={current}
+                            onChange={(e) => setDraft((d) => ({ ...d, [week]: e.target.value }))}
+                            className="ml-auto h-7 w-20 text-right"
+                          />
+                        </td>
+                        <td className="px-3 py-1.5">
+                          <span className={cn("mx-auto block h-2 w-2 rounded-full", STATUS_META[status].dot)} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-2 flex items-center gap-3">
+              <Button size="sm" onClick={saveManual} disabled={saving}>
+                <Save className={cn("mr-1.5 h-3.5 w-3.5", saving && "animate-pulse")} />
+                {t.manualSave}
+              </Button>
+              {saved && !saveError && (
+                <span className="inline-flex items-center gap-1 text-xs text-emerald-700 dark:text-emerald-400">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {t.manualSaved}
+                </span>
+              )}
+              {saveError && (
+                <span className="text-xs text-red-700 dark:text-red-400">
+                  {t.manualSaveError}: {saveError}
+                </span>
+              )}
+            </div>
+          </div>
+        ) : (
         <div>
           <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t.detailHistory}</div>
           {table.length ? (
@@ -127,6 +238,7 @@ export function RowDetailDialog({
             <p className="text-xs italic text-muted-foreground">{t.noHistory}</p>
           )}
         </div>
+        )}
 
         {/* named tenants */}
         {row.names && row.names.length > 0 && (
@@ -155,7 +267,9 @@ export function RowDetailDialog({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
           <span>
             {t.detailSource}:{" "}
-            {source ? (
+            {row.kind === "manual" ? (
+              <span className="italic">{t.manuallyEntered}</span>
+            ) : source ? (
               <span className="font-mono">
                 {source.label} ({source.dataset})
               </span>
