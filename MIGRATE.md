@@ -40,6 +40,27 @@ pnpm dev                 # backend (tsx watch) + frontend (vite)
 
 DB-backed apps additionally need a reachable Postgres and a passing `pnpm migrate`.
 
+## Migration — legacy direct DB / platform auth → tenant-db / Logto
+
+Apps scaffolded before `417.0.0-beta.27` used a **direct per-app Postgres role** (`user_<id>` / `pass_<id>`,
+provisioned by the retired `agentint` platform) and the **legacy platform JWT** (a public key baked into
+`service/lib/auth.ts`, login at `/apps/mb-platform-user/login`). Both services are gone. `mspack update` syncs the
+docs, skills and `.env.example`; the code below is yours to change:
+
+- [ ] **`service/lib/db.ts`** → replace the postgres-js singleton with the `mb-database` skill's `reference/db.ts`
+      (`@mspbots/tenant-db`: `pnpm add @mspbots/tenant-db postgres`). Use `db(me.tenantId)` in handlers and call
+      `closeAll()` in `shutdown()`. *Symptom of the old code:* `password authentication failed for user "user_<id>"`.
+- [ ] **`drizzle.config.ts`** (SEED — not overwritten): drop the `user_<id>` / `pass_<id>` fallbacks; take the
+      template's version (dev DB coordinates + `mb_dev`, password from env).
+- [ ] **`service/lib/auth.ts`** → replace with the `mb-auth` skill's `reference/auth.ts` (`pnpm add @mspbots/auth`).
+      `requireRolesMw([...])` becomes `requireUser()` / `requireAdmin()` / `requirePlatformAdmin()`; `authorizeToken`
+      is gone — use `isAdmin` / `isPlatformAdmin`. Cross-tenant endpoints **must** use `requirePlatformAdmin()`.
+- [ ] **`vite.config.ts`** (kept as-is): set `auth: { mode: 'logto' }`; remove any custom `target` that pointed at
+      `mb-platform-user`.
+- [ ] **`.env.local`**: copy the new `.env.example`; set `DB_PASSWORD` (dev DB) and `ENV=dev`. Deployed env is injected
+      (`AUTH_PROVIDER`, `LOGTO_*`, `REDIS_*`, `DB_PROXY_*`).
+- [ ] **Role names** in `meta.route` / `meta.menu` are case-sensitive: `superAdmin`.
+
 ---
 
 ### For AI assistants

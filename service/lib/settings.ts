@@ -1,13 +1,15 @@
 // App settings: the values the Settings page owns.
 //
-// Resolution order per key: database → environment variable → built-in default.
-// The database is what makes a value survive a version update — the dist bundle is replaced on
+// Resolution order per key: database -> environment variable -> built-in default.
+// The database is what makes a value survive a version update: the dist bundle is replaced on
 // every publish, but the app's Postgres schema (named after the stable package.json id) is not.
 // The env fallback keeps the app working before anything has been saved, and keeps local dev
 // running without a database.
+//
+// Every tenant has its own database (@mspbots/tenant-db), so every read and write is for ONE tenant,
+// the one on the caller's token, and the cache is keyed by tenant too.
 
-import { eq } from 'drizzle-orm'
-import { getDb } from './db.ts'
+import { db } from './db.ts'
 import { settings } from '../schema.ts'
 
 export interface SettingDef {
@@ -25,7 +27,7 @@ export const SETTING_DEFS: SettingDef[] = [
   { key: 'dataset.weekly_metrics', env: 'WEEKLY_METRICS_DATASET', default: '2082466110929776641' },
   { key: 'dataset.timesheet', env: 'TIMESHEET_DATASET', default: '2073966327621623809' },
   // Deep-link template for a timesheet ticket. The dataset only carries the human ticket key
-  // (PRD-15944), not ClickUp's internal task id, so the link is built from the key — ClickUp
+  // (PRD-15944), not ClickUp's internal task id, so the link is built from the key: ClickUp
   // resolves a Custom Task ID under /t/<workspace>/<key>. Kept as a template rather than a
   // workspace id so the shape stays editable; blank turns the links back into plain text.
   { key: 'clickup.ticket_url', env: 'CLICKUP_TICKET_URL', default: 'https://app.clickup.com/t/2280862/{id}' },
@@ -49,7 +51,8 @@ export interface SettingsSnapshot {
   storageError: string | null
 }
 
-let cache: SettingsSnapshot | null = null
+/** One snapshot per tenant, until a write for that tenant invalidates it. */
+const cache = new Map<string, SettingsSnapshot>()
 
 function fromEnvOrDefault(): SettingsSnapshot {
   const values: Record<string, string> = {}
@@ -62,13 +65,14 @@ function fromEnvOrDefault(): SettingsSnapshot {
   return { values, origin, storageError: null }
 }
 
-/** Read every setting, layering the database over env/defaults. Cached until a write invalidates it. */
-export async function readSettings(): Promise<SettingsSnapshot> {
-  if (cache) return cache
+/** Read every setting of one tenant, layering its database over env/defaults. Cached until a write invalidates it. */
+export async function readSettings(tenantId: string): Promise<SettingsSnapshot> {
+  const hit = cache.get(tenantId)
+  if (hit) return hit
 
   const snapshot = fromEnvOrDefault()
   try {
-    const rows = await getDb().select().from(settings)
+    const rows = await (await db(tenantId)).select().from(settings)
     for (const row of rows) {
       if (!DEFS.has(row.key)) continue // ignore keys this version doesn't know about
       if (row.value.length === 0) continue
@@ -81,13 +85,13 @@ export async function readSettings(): Promise<SettingsSnapshot> {
     snapshot.storageError = (error as Error).message.slice(0, 200)
   }
 
-  cache = snapshot
+  cache.set(tenantId, snapshot)
   return snapshot
 }
 
-/** Persist one or more settings. Throws when there is no database — a silent no-op would be worse. */
-export async function writeSettings(patch: Record<string, string>, updatedBy: string | null): Promise<void> {
-  const db = getDb()
+/** Persist one or more settings for one tenant. Throws when there is no database: a silent no-op would be worse. */
+export async function writeSettings(tenantId: string, patch: Record<string, string>, updatedBy: string | null): Promise<void> {
+  const conn = await db(tenantId)
   for (const [key, raw] of Object.entries(patch)) {
     const def = DEFS.get(key)
     if (!def) throw new Error(`unknown setting: ${key}`)
@@ -99,26 +103,28 @@ export async function writeSettings(patch: Record<string, string>, updatedBy: st
     if (key.startsWith('dataset.') && !/^\d{6,25}$/.test(value)) {
       throw new Error(`${key} must be a numeric dataset id`)
     }
-    // A template without {id} would send every ticket to the same page — reject it rather than
+    // A template without {id} would send every ticket to the same page: reject it rather than
     // render links that all lie. http(s) only: the value becomes an href in the browser.
     if (key === 'clickup.ticket_url' && value.length > 0) {
       if (!/^https?:\/\//i.test(value)) throw new Error(`${key} must start with http:// or https://`)
       if (!value.includes('{id}')) throw new Error(`${key} must contain the {id} placeholder`)
     }
-    await db
+    await conn
       .insert(settings)
       .values({ key, value, updatedBy })
       .onConflictDoUpdate({ target: settings.key, set: { value, updatedBy, updatedAt: new Date() } })
   }
-  cache = null
+  cache.delete(tenantId)
 }
 
-export function invalidateSettings(): void {
-  cache = null
+/** Drop the cached snapshot of one tenant (or of every tenant when none is given). */
+export function invalidateSettings(tenantId?: string): void {
+  if (tenantId) cache.delete(tenantId)
+  else cache.clear()
 }
 
-/** Never send a secret back to the browser — a length-aware hint is enough to confirm it is set. */
+/** Never send a secret back to the browser: a length-aware hint is enough to confirm it is set. */
 export function maskSecret(value: string): string {
   if (!value) return ''
-  return value.length <= 8 ? '••••' : `${value.slice(0, 4)}••••${value.slice(-4)}`
+  return value.length <= 8 ? '****' : `${value.slice(0, 4)}****${value.slice(-4)}`
 }

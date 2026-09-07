@@ -77,10 +77,17 @@ const dayOf = (v: unknown): string => {
  * nothing: the range is applied to already-fetched rows (the client slices them locally too).
  */
 const CACHE_TTL_MS = 10 * 60 * 1000
-let rowCache: { datasetId: string; rows: Row[]; fetchedAt: number } | null = null
+interface RowCache {
+  datasetId: string
+  rows: Row[]
+  fetchedAt: number
+}
+/** One cache per tenant: each tenant reads with its own key and may point at its own dataset. */
+const rowCaches = new Map<string, RowCache>()
 
-export function invalidateTimesheet(): void {
-  rowCache = null
+export function invalidateTimesheet(tenantId?: string): void {
+  if (tenantId) rowCaches.delete(tenantId)
+  else rowCaches.clear()
 }
 
 async function readAllRows(datasetId: string, apiKey: string): Promise<Row[]> {
@@ -143,16 +150,18 @@ function resolveOrg(rows: Row[], root: string, exclude: Set<string>): Set<string
   return inTree
 }
 
-export async function readTimesheet(opts: { refresh?: boolean } = {}): Promise<TimesheetResult> {
-  const { values } = await readSettings()
+export async function readTimesheet(tenantId: string, opts: { refresh?: boolean } = {}): Promise<TimesheetResult> {
+  const { values } = await readSettings(tenantId)
   const apiKey = values.public_api_key
   if (!apiKey) throw new Error('no API key configured — set it on the Settings page')
 
   const datasetId = values['dataset.timesheet']
+  let rowCache = rowCaches.get(tenantId)
   const fresh =
     rowCache && rowCache.datasetId === datasetId && Date.now() - rowCache.fetchedAt < CACHE_TTL_MS
   if (opts.refresh || !fresh) {
     rowCache = { datasetId, rows: await readAllRows(datasetId, apiKey), fetchedAt: Date.now() }
+    rowCaches.set(tenantId, rowCache)
   }
   const rows = rowCache!.rows
   const root = values['org.root']

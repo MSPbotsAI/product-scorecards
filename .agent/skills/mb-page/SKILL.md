@@ -84,6 +84,7 @@ A `layout.tsx` wraps its directory's `page` and every route beneath it, and comp
 | `order` | `number` | Sort order in the sidebar. |
 | `menu` | `boolean \| string[] \| (roles) => boolean` | Show in the sidebar. `string[]` = visible if the user holds one of those roles. |
 | `route` | `boolean \| string[] \| (roles) => boolean` | Allow navigation. Fails → redirect to `/403`. |
+| `public` | `boolean` | **Reachable without a login** (a shared form, a public report). On this page nobody is redirected to Logto, `useAccess()` reports an anonymous state (a signed-in visitor still gets their identity), `meta.route` is not checked, and the login flow starts only when the user navigates to a non-public page. Pair it with `fullscreen: true` and `menu: false`. Its data must come from `/api/public/*` endpoints (see the **mb-auth** skill): `$fetch` sends those **without** a token, and the server must not guard them. Literal boolean only. |
 | `fullscreen` | `boolean` | While ON this page, hide the sidebar **and the header bar**, letting the page fill the content area (focus views, wide dashboards, full-canvas tools). The page still appears in the sidebar. Add `breadcrumb: true` to keep the header bar. |
 | `breadcrumb` | `boolean` | On a `fullscreen` page, set `true` to show the header bar (breadcrumb), which is otherwise hidden. No effect on non-fullscreen pages (shown by default). |
 | `header` | `boolean` | Set `false` to **always** hide the header bar (breadcrumb) on this page — highest priority, overrides `breadcrumb`. |

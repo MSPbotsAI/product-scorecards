@@ -32,8 +32,8 @@ Apps no longer install the old `@tools/*` packages.
 
 | Skill | Capability | Replaces | Underlying deps |
 |---|---|---|---|
-| [mb-database](mb-database/SKILL.md) | PostgreSQL persistence (Drizzle ORM) | `@tools/database` | `drizzle-orm`\*, `postgres` |
-| [mb-auth](mb-auth/SKILL.md) | JWT auth + role guards (backend) | `@tools/auth` | `jose`\* |
+| [mb-database](mb-database/SKILL.md) | PostgreSQL persistence (Drizzle ORM) — per-tenant DB via pg-proxy, shared dev DB locally | `@tools/database` | `drizzle-orm`\*, `@mspbots/tenant-db`, `postgres` |
+| [mb-auth](mb-auth/SKILL.md) | Logto JWT + tenant API keys + role guards + install gate (backend) | `@tools/auth` | `@mspbots/auth` |
 | [mb-ai](mb-ai/SKILL.md) | LLM via MSPBots AI Gateway + LangChain | `@tools/langchain-sdk` | `langchain`, `@langchain/core`, `@langchain/openai` |
 | [mb-report](mb-report/SKILL.md) | MSPBots dataset / widget data | `@tools/common` | none (`fetch`) |
 | [mb-logs](mb-logs/SKILL.md) | Azure Monitor logs — managed identity + DCR (preferred) **or** shared key + HMAC | `@tools/applogs-sdk`, `@tools/azure-monitor-sdk` | `@azure/identity` + `@azure/monitor-ingestion` & `@azure/monitor-query-logs` (DCR) **or** `@azure/monitor-query` (shared key) |

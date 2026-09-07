@@ -92,18 +92,6 @@ export function formatValue(row: Pick<ScorecardRow, "value" | "unit">): string {
 }
 
 /**
- * The report API needs the tenant alongside the token. `tokenPayload` is typed as an open record,
- * so the claim name is not knowable statically — try the plausible ones.
- */
-function tenantCodeOf(payload: Record<string, unknown> | null | undefined): string {
-  for (const key of ["tenantCode", "tenant_code", "tenantId", "tenant_id", "tenant", "tid"]) {
-    const v = payload?.[key];
-    if (v != null && String(v).length > 0) return String(v);
-  }
-  return "";
-}
-
-/**
  * Module-level cache shared by all pages: the scorecard is a weekly number, so navigating between
  * views must not refetch it. One fetch fills every page; only the Refresh button forces a new read.
  */
@@ -120,32 +108,20 @@ export function invalidateScorecard(): void {
   emitCache();
 }
 
-async function fetchScorecard(tenantCode: string, payload: Record<string, unknown> | null | undefined): Promise<ScorecardData> {
-  const res = await $fetch(`/api/scorecard${tenantCode ? `?tenantCode=${encodeURIComponent(tenantCode)}` : ""}`, {
-    headers: tenantCode ? { tenantCode } : undefined,
-  });
+/**
+ * The server resolves the tenant from the platform token that `$fetch` attaches, so the request
+ * carries nothing else: no tenant header, no tenant query parameter.
+ */
+async function fetchScorecard(): Promise<ScorecardData> {
+  const res = await $fetch("/api/scorecard");
   const body = await res.json();
-  if (!res.ok) {
-    // A 400 means the server wanted a tenant it didn't get. The tenant claim's name isn't
-    // knowable statically, so name the claims the token does carry (names only, never values).
-    if (res.status === 400 && !tenantCode) {
-      const keys = payload ? Object.keys(payload) : [];
-      throw new Error(
-        `${body?.error ?? "missing tenantCode"} — the token carries no tenant claim under a known name. ` +
-          `Claims present: ${keys.join(", ") || "(none)"}. Add the right one to tenantCodeOf() in lib/scorecard-client.ts.`,
-      );
-    }
-    throw new Error(body?.error ?? `request failed (${res.status})`);
-  }
+  if (!res.ok) throw new Error(body?.error ?? `request failed (${res.status})`);
   return body as ScorecardData;
 }
 
 export function useScorecard() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(!cached);
-  const access = useAccess();
-  const payload = access?.tokenPayload;
-  const tenantCode = tenantCodeOf(payload);
 
   const data = useSyncExternalStore(
     (fn) => {
@@ -164,7 +140,7 @@ export function useScorecard() {
       }
       // Deduplicate: several pages mounting at once must not issue parallel reads.
       if (!inflight) {
-        inflight = fetchScorecard(tenantCode, payload).finally(() => {
+        inflight = fetchScorecard().finally(() => {
           inflight = null;
         });
       }
@@ -181,7 +157,7 @@ export function useScorecard() {
         setLoading(false);
       }
     },
-    [tenantCode, payload],
+    [],
   );
 
   useEffect(() => {

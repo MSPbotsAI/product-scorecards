@@ -1,35 +1,33 @@
 // Copy to: service/lib/db.ts
 //
-// Lazily-initialised singleton Drizzle client (postgres-js driver) for an MSPBots
-// Node app. Connection details come from the DB_* env vars (.env.local) plus the
-// platform-injected APP_ID. Migrated tables are owned by the per-app restricted
-// role `user_<APP_ID>` / `pass_<APP_ID>`.
+// Multi-tenant Postgres access for an MSPBots Node app, via the shared SDK @mspbots/tenant-db:
+//   - getDb(tenantId)  → Drizzle client for that tenant's database. Connection params are fetched from
+//                        pg-proxy (tenant-mgr) by tenant id and pooled/cached per tenant.
+//   - getDirectDb()    → Drizzle client on the DB_* connection: the shared dev database locally, or the
+//                        fallback when no pg-proxy is configured.
+//   - getSql(tenantId) → raw postgres client for DDL/migrations.
+//   - closeAll()       → drain every pool (call from the server's shutdown()).
+// The tenant id comes from the authenticated user (AuthUser.tenantId — mb-auth skill); this module never parses tokens.
 //
-// Requires: pnpm add postgres   (drizzle-orm ships with the template)
+// Requires: pnpm add @mspbots/tenant-db postgres   (drizzle-orm ships with the template)
+// Env: DB_PROXY_BASE_URL + DB_PROXY_API_KEY (deployed, injected) · DB_HOST/PORT/NAME/USER/PASSWORD (local / fallback)
 
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
+import { createTenantDb } from '@mspbots/tenant-db'
+import * as schema from '../schema.ts'
 
-function connectionUrl(): string {
-  const appId = process.env.APP_ID ?? ''
-  const host = process.env.DB_HOST ?? '127.0.0.1'
-  const port = process.env.DB_PORT ?? '5432'
-  const database = process.env.DB_NAME
-  // .env.local sets DB_USER/DB_PASSWORD to the full per-app role; fall back to
-  // deriving them from APP_ID if only that is present.
-  const user = process.env.DB_USER ?? `user_${appId}`
-  const password = process.env.DB_PASSWORD ?? `pass_${appId}`
-  if (!database) throw new Error('Missing DB_NAME environment variable')
-  return `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}?sslmode=disable`
-}
+// Tables are declared under pgSchema('<app id>') in service/schema.ts, so they are already schema-qualified.
+const tenant = createTenantDb({ schema })
 
-let db: ReturnType<typeof drizzle> | null = null
+export const getDb = tenant.getDb
+export const getSql = tenant.getSql
+export const getDirectDb = tenant.getDirectDb
+export const closeAll = tenant.closeAll
 
-/** Get the shared Drizzle database client (created on first call). */
-export function getDb(): ReturnType<typeof drizzle> {
-  if (!db) {
-    const client = postgres(connectionUrl(), { connection: { timezone: 'UTC' } })
-    db = drizzle(client)
-  }
-  return db
+/**
+ * Pick the right client for a request: per-tenant through pg-proxy when it is configured (deployed),
+ * otherwise the direct DB_* connection (local development on the shared dev database).
+ */
+export function db(tenantId?: string) {
+  if (process.env.DB_PROXY_BASE_URL && tenantId) return getDb(tenantId)
+  return getDirectDb()
 }

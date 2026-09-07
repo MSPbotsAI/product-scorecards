@@ -1,0 +1,36 @@
+# dependencies & build outputs (rebuilt inside the image)
+node_modules
+service/node_modules
+dist
+.vite
+*.tsbuildinfo
+
+# env & secrets — never bake into the image
+.env
+.env.*
+!.env.example
+*.pem
+
+# vcs & tooling
+.git
+.gitignore
+.gitattributes
+.husky
+.vscode
+.cursor
+.windsurf
+.agent
+.claude
+
+# docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# logs & misc
+logs
+*.log
+.DS_Store
+Thumbs.db
+storage
+coverage

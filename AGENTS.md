@@ -45,8 +45,8 @@ Skills live in `.claude/skills/` (Claude Code) with an identical mirror in `.age
 
 | Skill | Use it to… | Underlying deps |
 |---|---|---|
-| `mb-database` | Persist data (Drizzle + PostgreSQL) | `postgres` (`drizzle-orm` ships already) |
-| `mb-auth` | Protect routes / read the user (platform JWT) | `jose` (ships already) |
+| `mb-database` | Persist data — Drizzle + PostgreSQL via `@mspbots/tenant-db` (per-tenant DB through pg-proxy; shared dev DB locally) | `@mspbots/tenant-db`, `postgres` (`drizzle-orm` ships already) |
+| `mb-auth` | Protect routes / read the user & tenant — Logto JWT, tenant API keys, install gate via `@mspbots/auth` | `@mspbots/auth` |
 | `mb-ai` | Call an LLM via the MSPBots AI Gateway (LangChain) | `langchain@^1`, `@langchain/core`, `@langchain/openai` |
 | `mb-report` | Read MSPBots dataset / widget data | — (`fetch`) |
 | `mb-logs` | Ship logs to Azure Monitor / Log Analytics — managed identity + DCR (preferred), or shared key + HMAC | `@azure/identity` + `@azure/monitor-ingestion`/`@azure/monitor-query-logs` (DCR) or `@azure/monitor-query` (shared key) |
@@ -72,19 +72,19 @@ The app's name/title, auth redirect, theme, and layout are passed as **flat** to
 ```ts
 react({
   app:  { name: 'MSPbots AI', title: 'My App' },
-  auth: true, // or false; enables the login redirect using the plugin's default target
+  auth: { mode: 'logto' }, // platform Logto SSO (also what `auth: true` means); `false` for a public/embedded app
   theme:  { preset: 'blue', radius: '0.75rem' }, // preset = a brand hue name (blue/celery/orange/cyan/…), default blue
   layout: { sidebar: { account: true } },
 })
 ```
 
-`auth` accepts three forms — `boolean` (toggle only, default target), `({ mode, dev, prod }) => string` (enable + custom redirect), or `{ enabled?, target? }` (explicit; `target` optional). **`target` is optional and defaults to a value the plugin provides** — local dev redirects to the full platform env (`https://agentint.mspbots.ai/apps/mb-platform-user/login`), production redirects to the same-origin relative path (`/apps/mb-platform-user/login`, matching the current domain automatically). Only pass `target` to override this. The template's `vite.config.ts` uses the plain `auth: false` form.
+`auth` forms — `{ mode: 'logto', logto? }` (**platform Logto SSO**: one shared OIDC client and a fixed callback; the app writes nothing else — the template's default), `true` (same as Logto mode), `false` (no login), or `({ mode, dev, prod }) => string` / `{ enabled, target }` for an app with its **own** login page (custom redirect target). Identity is Logto: each tenant is a Logto organization and the JWT carries `tenantId` + roles (`admin`/`user` per organization, `superAdmin`/`dev` global). In local dev no real OIDC runs — the backend `ENV=dev` mock user is used (→ `mb-auth`).
 
 Logos/favicon are **auto-discovered** from `public/` (`logo.light.*`, `logo.dark.*`, `logo.*`, `favicon.*`) — not configured here.
 
 ### Local dev proxy
 
-The plugin **auto-injects** a dev proxy for platform services (merged with your own `server.proxy`): `/apps/mb-platform-user/*` forwards to `https://agentint.mspbots.ai` (`changeOrigin` + set-cookie domain rewrite, to avoid cross-origin credential issues). You don't configure this — it's how Login-As (the account menu's tenant switcher) reaches the full platform environment from local dev. Your `vite.config.ts` only needs to add the business backend proxy: `^/(api|ws|sse)` → `http://127.0.0.1:${PORT}`.
+Your `vite.config.ts` proxies only the business backend: `^/(api|ws|sse)` → `http://127.0.0.1:${PORT}`. Nothing else is proxied in dev — there is no separate platform user service anymore; auth is Logto (no OIDC runs locally, the backend uses the `ENV=dev` mock user), and other platform apps are reached from the **backend** through `PLATFORM_URL` (`/apps/<name>/...`), never from the browser in dev.
 
 **App init & route guards** live in the project-root `app.ts` (formerly `app.router.ts`; the old name still works and `mspack update` renames it). Named-export `setup` for one-time startup init — it runs after the runtime globals are installed and before the first render, the right place for `registerMenu(...)` — and/or `beforeEach` / `afterEach` for route guards (a `default` export is ignored). Import the guard types from the main entry:
 
@@ -119,6 +119,7 @@ export const afterEach: AfterEach = (ctx: RouteContext) => { /* after navigation
 ├── tsup.config.ts         # Backend bundling (service/server.ts → ESM, node22, deps inlined)
 ├── drizzle.config.ts      # Drizzle Kit (postgresql; schemaFilter = package.json id)
 ├── tsconfig.json          # Extends @mspbots/tsconfig/react; excludes .claude/.agent
+├── .env.example           # Env template (shared dev DB pre-filled) — copy to .env.local
 ├── .env.local             # Local deployment config (DB, keys; gitignored)
 ├── .claude/skills/        # Skills (page, ui, fetch, server, + capabilities) — Claude Code reads these
 ├── .agent/skills/         # Identical mirror of .claude/skills for other agents
@@ -144,7 +145,7 @@ pnpm dev         # Vite frontend + Hono backend (mspack picks a free backend por
 |---|---|---|
 | `pnpm dev` | `mspack dev` | Dev server (env check → identity → migrate if schema → backend `tsx watch` + Vite). `--port 5180` sets the frontend port. |
 | `pnpm build` | `mspack build` | `vite build` → migrate (if schema) → `tsup` bundle → copy `drizzle/` into `dist/`. |
-| `pnpm migrate` | `mspack migrate` | `drizzle-kit generate` + `migrate` (provisions schema + restricted role `user_<id>`). Needs `DB_*`. |
+| `pnpm migrate` | `mspack migrate` | `drizzle-kit generate` + `migrate` against `DB_*` (locally the shared dev DB; the migration creates the app schema `<id>` itself — no provisioning step). Per-tenant rollout of the same `drizzle/` files is done by App Publish. |
 | `mspack publish` | — | Login → identity check vs registry → version bump → write `dist/package.json` (`@app/<name>`) → publish. `--dry-run`, `--bump`, `--tag`. (Don't use `pnpm publish`.) |
 | `mspack update` | — | Re-sync an app with the latest template (and migrate Deno → Node). Force-syncs `AGENTS.md`, configs, and the skills. |
 
@@ -167,9 +168,14 @@ pnpm dev         # Vite frontend + Hono backend (mspack picks a free backend por
 |---|---|---|
 | `PORT` | Backend listen port | Prod (dev auto-assigns from 3000) |
 | `NODE_ENV` | `production` enables static serving + SPA fallback | Prod |
-| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | DB connection (`user_<id>` / `pass_<id>` role) | When a schema exists |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Direct DB connection — locally the shared dev DB with the `mb_dev` role (pre-filled in `.env.example`, only the password to add); deployed: injected | When a schema exists |
+| `DB_PROXY_BASE_URL` / `DB_PROXY_API_KEY` | Per-tenant DB access through pg-proxy (tenant-mgr) — deployed only, injected | Deployed, when a schema exists |
+| `AUTH_PROVIDER=logto`, `LOGTO_ISSUER` / `LOGTO_APP_ID` / `LOGTO_AUDIENCE` / `LOGTO_ADMIN_ROLES` | Logto JWT verification (`@mspbots/auth`) — deployed only, injected by App Publish | Deployed |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` / `REDIS_DB` | Tenant API keys + per-tenant install gate (`@mspbots/auth`) | Deployed |
+| `PLATFORM_URL` | Gateway base for backend calls to other platform apps (`/apps/<name>/...`) | Deployed |
+| `ENV=dev` | **Local only** — empty token → superAdmin mock user. Never deployed. | Local |
 
-Capability skills introduce their own env (e.g. `APP_MODE_KEY`/`APP_MODEL_NAME` for `ai`, `AZURE_*` for logging, `ENV=dev` for the `auth` dev mock) — see each skill. `.env*` are gitignored; never commit secrets.
+Start from `.env.example` (`cp .env.example .env.local`). Capability skills introduce their own env (e.g. `APP_MODE_KEY`/`APP_MODEL_NAME` for `ai`, `AZURE_*` for logging) — see each skill. `.env*` are gitignored (the example is tracked); never commit secrets.
 
 ## Validation
 

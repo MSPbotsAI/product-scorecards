@@ -33,12 +33,16 @@ export default defineConfig({
 
   tablesFilter: ['!__drizzle_migrations'],
 
+  // Local development targets the shared MSPBots dev database (disposable, no sensitive data) with the
+  // common `mb_dev` role, so `pnpm migrate` needs only DB_PASSWORD (copy .env.example → .env.local).
+  // The migration creates the app schema itself (CREATE SCHEMA IF NOT EXISTS <id>) — no provisioning step.
+  // Deployed apps get DB_* injected by the platform; per-tenant access goes through pg-proxy (mb-database skill).
   dbCredentials: {
     host: env('DB_HOST', '20.241.40.252'),
     port: Number(env('DB_PORT', '15432')),
-    user: env('DB_USER', `user_${id}`),
-    password: env('DB_PASSWORD', `pass_${id}`),
     database: env('DB_NAME', 'mb_app_agentint'),
+    user: env('DB_USER', 'mb_dev'),
+    password: env('DB_PASSWORD', ''),
   },
 
   verbose: true,

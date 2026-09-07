@@ -76,9 +76,9 @@ function reportClient(apiKey: string) {
  */
 export type ReadMode = 'public' | 'token'
 
-/** The mode implied by the currently configured settings. */
-export async function readMode(): Promise<ReadMode> {
-  const { values } = await readSettings()
+/** The mode implied by one tenant's currently configured settings. */
+export async function readMode(tenantId: string): Promise<ReadMode> {
+  const { values } = await readSettings(tenantId)
   return values.public_api_key ? 'public' : 'token'
 }
 
@@ -122,8 +122,8 @@ function unwrap(res: Record_, datasetId: string, mode: ReadMode): Record_ {
 }
 
 /** Dev-only: the envelope's keys, the row-array key, one row's field names, and the total. No values. */
-export async function probeShape(datasetId: string, size = 1) {
-  const { values } = await readSettings()
+export async function probeShape(tenantId: string, datasetId: string, size = 1) {
+  const { values } = await readSettings(tenantId)
   if (!values.public_api_key) throw new Error('shape probe is public-mode only')
   const res = (await reportClient(values.public_api_key).getPublicDatasetData(datasetId, {
     current: 1,
@@ -148,8 +148,8 @@ export async function probeShape(datasetId: string, size = 1) {
 }
 
 /** Dev-only: distinct values (with counts) for the given columns — used to design filters. */
-export async function probeFacets(datasetId: string, cols: string[]) {
-  const { values } = await readSettings()
+export async function probeFacets(tenantId: string, datasetId: string, cols: string[]) {
+  const { values } = await readSettings(tenantId)
   const client = reportClient(values.public_api_key)
   const rows: Record_[] = []
   for (let page = 1; page <= 6; page++) {
@@ -526,10 +526,11 @@ function hasValue(hit: Hit | null | undefined): hit is Hit & { value: number } {
   return hit != null && hit.value != null
 }
 
-export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult> {
+/** Build one tenant's scorecard: its settings, its manual values and threshold overrides, its key or its token. */
+export async function buildScorecard(tenantId: string, auth: AuthHeaders): Promise<ScorecardResult> {
   const sources: ScorecardResult['sources'] = []
 
-  const { values } = await readSettings()
+  const { values } = await readSettings(tenantId)
   const ctx: ReadContext = {
     mode: values.public_api_key ? 'public' : 'token',
     apiKey: values.public_api_key,
@@ -553,8 +554,8 @@ export async function buildScorecard(auth: AuthHeaders): Promise<ScorecardResult
     load(values['dataset.ai_credit']),
     load(values['dataset.weekly_metrics']),
     load(values['dataset.ai_weekly']),
-    readManualSeries(),
-    readThresholdOverrides(),
+    readManualSeries(tenantId),
+    readThresholdOverrides(tenantId),
   ])
 
   const ai = aiRows ? resolveAi(aiRows) : null

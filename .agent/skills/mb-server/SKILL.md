@@ -80,8 +80,8 @@ A compact REST + SSE + WS reference is in [`reference/server.example.ts`](refere
 
 Don't reinvent these — each is its own skill with copy-in reference code:
 
-- **Protect a route / read the user** → `mb-auth` skill (`requireRolesMw`, `getUser`). Always enforce on the server, not just the UI.
-- **Persist/query data** → `mb-database` skill (Drizzle + Postgres, `service/schema.ts`).
+- **Protect a route / read the user or tenant** → `mb-auth` skill (`@mspbots/auth`: `requireUser` / `requireAdmin` / `requirePlatformAdmin`, `getUser`). Always enforce on the server, not just the UI; scope queries to the caller's `tenantId`.
+- **Persist/query data** → `mb-database` skill (Drizzle + Postgres via `@mspbots/tenant-db`: per-tenant DB through pg-proxy, shared dev DB locally; `service/schema.ts`). Call `closeAll()` in `shutdown()`.
 - **Call an LLM** → `mb-ai` skill (LangChain + MSPBots AI Gateway).
 - **Read MSPBots datasets/widgets** → `mb-report` skill.
 - **Centralized logging** → `mb-logs` skill (Azure Monitor — DCR or shared-key mode).
