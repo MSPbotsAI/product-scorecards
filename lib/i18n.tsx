@@ -248,6 +248,14 @@ const ROW_NAME_ZH: Record<string, string> = {
   H1: "L10 时记分卡数据完整性",
   H2: "红灯处置闭环（上周）",
   H3: "团队达标占比",
+  P1: "合格 alpha 候选客户（具名，在谈）",
+  P2: "客户探索/演示通话（本周）",
+  P3: "管道新鲜度 — 7 天内更新过的在谈客户占比",
+  P4: "Gate-1 证据项关闭数（本周）",
+  P5: "阻塞开发的问题 24 小时内答复率",
+  P6: "交付物一次通过率（U1）",
+  P7: "冻结后每个 story 的 AC 变更数（M-SPEC）",
+  P8: "可开发储备（周）",
 };
 
 const TARGET_ZH: Record<string, string> = {
@@ -289,6 +297,13 @@ const TARGET_ZH: Record<string, string> = {
   H1: "100%",
   H2: "100%",
   H3: "仅展示趋势（永不问责）",
+  P1: "爬升到 10 家（Client Engagement SOP §1 标准）",
+  P2: ">=3（先导指标，不参与评价）",
+  P3: "100%",
+  P4: ">=1 项/周；连续两周零进展转黄",
+  P5: "100%",
+  P6: ">=80%（Q1 仅观察）",
+  P7: "<=1",
 };
 
 const NOTE_ZH: Record<string, string> = {
@@ -315,6 +330,14 @@ const NOTE_ZH: Record<string, string> = {
   TR4: "待 Grace 确认：人工改判事件遥测是否存在。",
   H1: "周边界为周一（见 data-map.md）；现有 scorecard 并非周日快照。",
   H2: "需要落库的处置状态；本应用尚未持久化。",
+  P1: "在 HubSpot 里数的 ICP 匹配、在谈候选客户。口径判的是「有没有往上走」而不是「到没到 10 家」——10 是目标位，所以周环比下降才是红。规范里「连续两周持平转黄」需要两周回看，本应用不按此判色。",
+  P2: "本周开的 SAP 相关客户通话，录音在 Fathom。设计规则 2：先导活动量指标永不判红绿。",
+  P3: "在谈候选客户里，7 天内更新过阶段/下一步的占比（HubSpot）。",
+  P4: "Prototype->Alpha 清单上本周关闭的证据项，记录在 ClickUp gate records。本应用按单周判色，规范里「连续两周零进展」的升级没有编码——零进展的一周在这里直接判红。",
+  P5: "取自 SAP story 上的 ClickUp 评论时间戳。",
+  P6: "取自 AI reviewer 日志。Q1 内仅观察——universal layer 把 P6 列为其唯一「可行动」例外，观察期结束后把 compare 改成 gte。",
+  P7: "冻结点 = 状态变为「5c - ready for dev」；数据来自 ClickUp 状态历史 ＋ AC 修改历史。规范规定 SAP 进入 story 流程后此行才启用，在那之前它还不是问责数字。",
+  P8: "停在「5b - ready for groom」/「5c - ready for dev」且未开工的 story 数，除以滚动 4 周的开发消耗。低于 1 周时，L10 的 IDS 议题是 Grace 在 Intake 与 SAP 之间的分配。",
 };
 
 /** Short row names for dense card lists: [en, zh]. Full names stay in tooltips. */
@@ -357,6 +380,14 @@ const ROW_SHORT: Record<string, [string, string]> = {
   H1: ["Data completeness", "数据完整性"],
   H2: ["Red-light closure", "红灯处置闭环"],
   H3: ["On-track share", "达标占比"],
+  P1: ["Alpha candidates", "Alpha 候选客户"],
+  P2: ["Discovery calls", "客户通话"],
+  P3: ["Pipeline freshness", "管道新鲜度"],
+  P4: ["Gate-1 evidence", "Gate-1 证据"],
+  P5: ["Blocker answers <=24h", "阻塞问题 24h 答复"],
+  P6: ["First-pass rate", "一次通过率"],
+  P7: ["Post-freeze AC changes", "冻结后 AC 变更"],
+  P8: ["Dev-ready runway", "可开发储备"],
 };
 
 export function rowShort(id: string, fallback: string, l: Lang): string {
@@ -378,6 +409,7 @@ export function rowNote(id: string, fallback: string | undefined, l: Lang): stri
 /* ── group labels (server sends English) ── */
 
 const GROUP_ZH: Record<string, string> = {
+  sap: "SOP Agent Platform",
   tqa: "TicketQA",
   sentiment_max: "Sentiment Max",
   triage: "AI Triage",
