@@ -37,6 +37,11 @@ export const SETTING_DEFS: SettingDef[] = [
   // lags real transfers: Nora Li moved to the dev team but her rows still carry manager "Grace Guo"
   // and department "Product", so the tree would keep counting her hours as product labor.
   { key: 'org.exclude', env: 'ORG_EXCLUDE', default: 'Nora Li' },
+  // The SOP Agent engagement store — the markdown repo `/sopagent-sync` writes and the ClickUp
+  // client-engagement board mirrors. Cloned at runtime and pulled every 5 minutes, so a store push
+  // reaches this app without a republish. The token is a repo-scoped PAT; the repo is private.
+  { key: 'store.git_url', env: 'STORE_GIT_URL', default: 'https://github.com/MSPbotsAI/sop-agent-engagement.git' },
+  { key: 'store.git_token', env: 'STORE_GIT_TOKEN', default: '', secret: true },
 ]
 
 const DEFS = new Map(SETTING_DEFS.map((d) => [d.key, d]))

@@ -396,11 +396,16 @@ const internalAutomationsRows: RowDef[] = [
  * SOP Agent Platform (SAP) — metrics.yaml `sap`, rows P1-P8. The card was settled in R2/R3 but was
  * never mirrored here, so the app carried no Agent Platform rows at all.
  *
- * Every source the spec names for this card — HubSpot, Fathom, ClickUp gate records, AI-reviewer
- * logs — is a system this app does not read; its data plane is the MSPbots warehouse. So the rows
- * a named owner can produce by hand are `manual`, entered weekly from the row dialog exactly like
- * Kevin's cards, and the one row the spec has not activated yet stays `pending`. Nothing here is
- * wired to a dataset, and no row may render a zero it did not measure.
+ * **No row on this card is hand-entered.** The customer-side rows (P1-P3) are computed from the
+ * SOP Agent engagement store (`MSPbotsAI/sop-agent-engagement`) — the markdown repo the
+ * `/sopagent-sync` routine writes 2-4x a day and the ClickUp client-engagement board mirrors, so
+ * a number here and a column count on that board are one measurement rather than two to
+ * reconcile. See `sap-funnel.ts` for the field-level derivation and the Funnel page for the whole
+ * ladder.
+ *
+ * The R&D-side rows (P4-P8) describe ClickUp story state and AI-reviewer output, which no source
+ * this app reads carries. They stay `unsourced`/`pending`: the row names what it would take, and
+ * renders "no source" rather than a box for someone to type a number into.
  */
 const sapRows: RowDef[] = [
   {
@@ -408,15 +413,16 @@ const sapRows: RowDef[] = [
     name: 'Qualified alpha candidates (named, in active conversation)',
     owner: 'Micus',
     group: 'sap',
-    kind: 'manual',
+    kind: 'computed',
     compare: 'no-decrease',
     target: null,
     unit: 'count',
     targetText: 'climb to 10 (Client Engagement SOP §1 standard)',
     note:
-      'ICP-matched candidates in active conversation, counted in HubSpot. The spec judges movement, ' +
-      'not level — 10 is the destination, so a week-over-week drop is the red. Its "flat two weeks ' +
-      '-> yellow" rule needs a two-week look-back this app does not judge on.',
+      'Engagement store: clients at `qualifying` or beyond — the ladder rungs that mean the client ' +
+      'wants to continue. The spec judges movement, not level (10 is the destination), so a ' +
+      'week-over-week drop is the red; its "flat two weeks -> yellow" rule needs a two-week ' +
+      'look-back this app does not judge on.',
     anchor: 'Client Engagement PM SOP §1',
   },
   {
@@ -424,66 +430,71 @@ const sapRows: RowDef[] = [
     name: 'Customer discovery / demo calls (this week)',
     owner: 'Micus',
     group: 'sap',
-    kind: 'manual',
+    kind: 'computed',
     compare: 'display',
     target: null,
     unit: 'count',
     targetText: '>=3 (leading indicator — excluded from evaluation)',
     note:
-      'SAP-related customer calls held this week; the recordings are in Fathom. Design rule 2: ' +
-      'leading activity counts are never red or green.',
+      'Engagement store: held external calls this ISO week whose `relevance` is high or medium — ' +
+      'the routine\'s own judgement that the call was about the SOP Agent. Design rule 2: leading ' +
+      'activity counts are never red or green.',
   },
   {
     id: 'P3',
     name: 'Pipeline freshness — active candidates updated <=7d',
     owner: 'Micus',
     group: 'sap',
-    kind: 'manual',
+    kind: 'computed',
     compare: 'gte',
     target: 100,
     unit: 'percent',
     targetText: '100%',
-    note: 'Share of active candidates whose stage / next step was touched within 7 days (HubSpot).',
+    note:
+      'Engagement store: of the clients past outreach and not disqualified, the share whose newest ' +
+      'movement date (`stage_at` / `last_response` / `last_updated`) is within 7 days.',
   },
   {
     id: 'P4',
     name: 'Gate-1 evidence items closed (this week)',
     owner: 'Micus',
     group: 'sap',
-    kind: 'manual',
+    kind: 'unsourced',
     compare: 'gte',
     target: 1,
     unit: 'count',
     targetText: '>=1 item/week; two weeks zero progress -> yellow',
     note:
-      'Closed items on the Prototype->Alpha checklist, tracked in the ClickUp gate records. This ' +
-      'app judges one week at a time, so the spec\'s two-weeks-of-zero escalation is not encoded — ' +
-      'a zero week reads red here.',
+      'The Prototype->Alpha checklist lives in the ClickUp gate records, which neither the warehouse ' +
+      'datasets nor the engagement store carry. Sourceable once the gate items exist as ClickUp ' +
+      'tasks in a list this app can read.',
   },
   {
     id: 'P5',
     name: 'Dev-blocking questions answered <=24h',
     owner: 'Grace',
     group: 'sap',
-    kind: 'manual',
+    kind: 'unsourced',
     compare: 'gte',
     target: 100,
     unit: 'percent',
     targetText: '100%',
-    note: 'Measured from ClickUp comment timestamps on the SAP stories.',
+    note:
+      'Needs ClickUp comment timestamps on the SAP stories — question asked vs. first answer. No ' +
+      'source this app reads carries comment-level history.',
   },
   {
     id: 'P6',
     name: 'Deliverable first-pass rate (U1)',
     owner: 'Grace',
     group: 'sap',
-    kind: 'manual',
+    kind: 'unsourced',
     compare: 'display',
     target: 80,
     unit: 'percent',
     targetText: '>=80% (Q1 observe only)',
     note:
-      'From the AI-reviewer logs. Observation only through Q1 — the universal layer names P6 as its ' +
+      'Needs the AI-reviewer logs. Observation only through Q1 — the universal layer names P6 as its ' +
       'action-testable exception, so switch compare to gte once that period ends.',
     anchor: 'metrics.yaml universal_layer (U1)',
   },
@@ -508,14 +519,15 @@ const sapRows: RowDef[] = [
     name: 'Dev-ready runway (weeks)',
     owner: 'Grace',
     group: 'sap',
-    kind: 'manual',
+    kind: 'unsourced',
     compare: 'band-hi',
     target: 2,
     yellowMin: 1,
     targetText: '>=2 weeks',
     note:
-      'Stories sitting in "5b - ready for groom" / "5c - ready for dev" and not started, divided by ' +
-      'rolling-4w dev consumption. Below one week the L10 IDS question is Grace\'s Intake/SAP split.',
+      'Stories in "5b - ready for groom" / "5c - ready for dev" and not started, over rolling-4w dev ' +
+      'consumption. Needs the Product-space story list; below one week the L10 IDS question is ' +
+      "Grace's Intake/SAP split.",
   },
 ]
 

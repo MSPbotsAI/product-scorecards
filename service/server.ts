@@ -126,6 +126,23 @@ app.put("/api/metric-thresholds/:metricId", async (c) => {
   }
 });
 
+/**
+ * The SOP Agent (Agent Platform) engagement funnel, computed from the engagement store.
+ * `?refresh=1` forces a `git pull` instead of waiting out the 5-minute interval.
+ *
+ * Read-only and unauthenticated for the same reason /api/scorecard is: the store carries client
+ * names, and the platform gateway is what puts a session in front of this app.
+ */
+app.get("/api/sap-funnel", async (c) => {
+  const { buildSapFunnel } = await import("./lib/sap-funnel.ts");
+  try {
+    return c.json(await buildSapFunnel(c.req.query("refresh") === "1"));
+  } catch (error) {
+    // 503, not 500: the computation is fine, the source is not reachable — and the page says which.
+    return c.json({ error: (error as Error).message }, 503);
+  }
+});
+
 // Shape probe, dev only. Reports the response envelope and the row's field NAMES — never values —
 // so the resolvers can be checked against the real payload without exporting any data.
 if (process.env.NODE_ENV !== "production") {
