@@ -70,6 +70,20 @@ const FIELD: Record<string, { en: [string, string]; zh: [string, string] }> = {
       "让工时页的工单列可点击。{id} 会被替换成工单号（PRD-15944）；ClickUp 的 /t/<workspace>/<工单号> 能直接解析自定义工单号。留空则不生成链接。",
     ],
   },
+  "store.git_url": {
+    en: [
+      "Repository URL",
+      "The markdown data repo the /sopagent-sync routine writes. Cloned at runtime and pulled every 5 minutes — a store push reaches the funnel without a republish.",
+    ],
+    zh: [
+      "仓库地址",
+      "/sopagent-sync 例程写入的 markdown 数据仓库。运行时克隆、每 5 分钟拉取——store 推送后无需重新发布即可反映到漏斗页。",
+    ],
+  },
+  "store.git_token": {
+    en: ["Access token", "A PAT with read access to that private repo. Without it the clone fails and the funnel page reports the source unreachable."],
+    zh: ["访问令牌", "能读取该私有仓库的 PAT。不配置则克隆失败,漏斗页会提示源不可达。"],
+  },
   "org.root": {
     en: ["Reporting-tree root", "Everyone at or below this person counts as the product org. Filtering by department would miss members who sit elsewhere."],
     zh: ["汇报树根节点", "此人及其下属全部计为产品团队。按部门过滤会漏掉挂在其他部门的成员。"],
@@ -299,6 +313,88 @@ export default function SettingsPage() {
                 .map((item) => {
                   const field = FIELD[item.key][lang];
                   const origin = ORIGIN_LABEL[item.origin];
+                  const current = draft[item.key] ?? item.value;
+                  const changed = draft[item.key] != null && draft[item.key] !== item.value;
+                  return (
+                    <div key={item.key} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <Label htmlFor={item.key} className="text-sm">
+                          {field[0]}
+                        </Label>
+                        <Badge variant="outline" className={cn("h-5 px-1.5 text-[11px] font-normal", origin.tone)}>
+                          {origin[lang]}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">{field[1]}</p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id={item.key}
+                          value={current}
+                          onChange={(e) => setDraft((d) => ({ ...d, [item.key]: e.target.value }))}
+                          className={cn("font-mono text-[13px]", changed && "border-amber-500/60")}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={current === item.default}
+                          onClick={() => setDraft((d) => ({ ...d, [item.key]: item.default }))}
+                          title={`${lang === "zh" ? "恢复默认" : "Reset to default"}: ${item.default}`}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">{lang === "zh" ? "SOP Agent 数据仓库" : "Engagement store"}</CardTitle>
+              <CardDescription className="text-xs">
+                {lang === "zh"
+                  ? "SOP Agent 漏斗页和 Agent Platform 卡的数据源——ClickUp 客户跟进板镜像的同一个仓库。"
+                  : "The source behind the SOP Agent Funnel page and the Agent Platform card — the same repo the ClickUp client-engagement board mirrors."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {items
+                .filter((i) => i.key.startsWith("store."))
+                .map((item) => {
+                  const field = FIELD[item.key][lang];
+                  const origin = ORIGIN_LABEL[item.origin];
+                  if (item.secret) {
+                    return (
+                      <div key={item.key} className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <Label htmlFor={item.key} className="text-sm">
+                            {field[0]}
+                          </Label>
+                          <Badge variant="outline" className={cn("h-5 px-1.5 text-[11px] font-normal", origin.tone)}>
+                            {origin[lang]}
+                          </Badge>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">{field[1]}</p>
+                        <Input
+                          id={item.key}
+                          type="password"
+                          autoComplete="off"
+                          placeholder={
+                            item.configured
+                              ? `${lang === "zh" ? "当前" : "current"}: ${item.hint} — ${lang === "zh" ? "留空则不修改" : "leave blank to keep"}`
+                              : lang === "zh"
+                                ? "尚未配置"
+                                : "not configured yet"
+                          }
+                          value={draft[item.key] ?? ""}
+                          onChange={(e) => setDraft((d) => ({ ...d, [item.key]: e.target.value }))}
+                          className="font-mono"
+                        />
+                      </div>
+                    );
+                  }
                   const current = draft[item.key] ?? item.value;
                   const changed = draft[item.key] != null && draft[item.key] !== item.value;
                   return (
