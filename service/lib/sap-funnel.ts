@@ -41,7 +41,9 @@ function frontmatter(path: string): Front | null {
   const end = text.indexOf('\n---', 3)
   if (end < 0) return null
   const out: Front = {}
-  for (const line of text.slice(4, end).split('\n')) {
+  // Split on \r?\n: a CRLF checkout (Windows local dev) leaves \r on every line otherwise,
+  // and `.`/`$` in the key regex both refuse to cross it — every key silently fails to parse.
+  for (const line of text.slice(4, end).split(/\r?\n/)) {
     const m = /^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/.exec(line)
     if (!m) continue // continuation line of a multi-line value; the keys we read are single-line
     out[m[1]] = m[2].trim().replace(/^"(.*)"$/, '$1')
