@@ -21,17 +21,17 @@ importers:
         specifier: ^1.3.0
         version: 1.3.1(@hono/node-server@1.19.17(hono@4.12.32))(hono@4.12.32)
       '@mspbots/auth':
-        specifier: 417.0.0-beta.41
-        version: 417.0.0-beta.41(hono@4.12.32)(ioredis@5.11.1)(jose@6.2.4)
+        specifier: 428.0.0
+        version: 428.0.0(hono@4.12.32)(ioredis@5.11.1)(jose@6.2.4)
       '@mspbots/layout':
-        specifier: 417.0.0-beta.41
-        version: 417.0.0-beta.41(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)
+        specifier: 428.0.0
+        version: 428.0.0(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)
       '@mspbots/tenant-db':
-        specifier: 417.0.0-beta.41
-        version: 417.0.0-beta.41(drizzle-orm@0.45.2(postgres@3.4.9))(postgres@3.4.9)
+        specifier: 428.0.0
+        version: 428.0.0(drizzle-orm@0.45.2(postgres@3.4.9))(postgres@3.4.9)
       '@mspbots/ui':
-        specifier: 417.0.0-beta.41
-        version: 417.0.0-beta.41(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)
+        specifier: 428.0.0
+        version: 428.0.0(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)
       drizzle-orm:
         specifier: ^0.45.1
         version: 0.45.2(postgres@3.4.9)
@@ -48,8 +48,8 @@ importers:
         specifier: ^0.577.0
         version: 0.577.0(react@19.2.8)
       mspack:
-        specifier: 417.0.0-beta.41
-        version: 417.0.0-beta.41(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(postcss@8.5.24)(postgres@3.4.9)(react@19.2.8)(typescript@6.0.3)
+        specifier: 428.0.0
+        version: 428.0.0(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(postcss@8.5.24)(postgres@3.4.9)(react@19.2.8)(typescript@6.0.3)
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -73,14 +73,14 @@ importers:
         version: 2.1.0
     devDependencies:
       '@mspbots/react':
-        specifier: 417.0.0-beta.41
-        version: 417.0.0-beta.41(@mspbots/layout@417.0.0-beta.41(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(redux@5.0.1)(wujie@2.1.0))(@mspbots/ui@417.0.0-beta.41(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react@19.2.8)(redux@5.0.1)(wujie@2.1.0))(jose@6.2.4)(js-cookie@3.0.8)(lucide-react@0.577.0(react@19.2.8))(next-themes@0.4.6(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(userpilot@1.4.3)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))(wujie@2.1.0)
+        specifier: 428.0.0
+        version: 428.0.0(@mspbots/layout@428.0.0(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(redux@5.0.1)(wujie@2.1.0))(@mspbots/ui@428.0.0(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react@19.2.8)(redux@5.0.1)(wujie@2.1.0))(jose@6.2.4)(js-cookie@3.0.8)(lucide-react@0.577.0(react@19.2.8))(next-themes@0.4.6(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))(wujie@2.1.0)
       '@mspbots/routes':
-        specifier: 417.0.0-beta.41
-        version: 417.0.0-beta.41(react@19.2.8)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))
+        specifier: 428.0.0
+        version: 428.0.0(react@19.2.8)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))
       '@mspbots/tsconfig':
-        specifier: 417.0.0-beta.41
-        version: 417.0.0-beta.41(@types/node@22.20.1)(@vitejs/plugin-vue@6.0.8(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))(vue@3.5.40(typescript@6.0.3)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))
+        specifier: 428.0.0
+        version: 428.0.0(@types/node@22.20.1)(@vitejs/plugin-vue@6.0.8(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))(vue@3.5.40(typescript@6.0.3)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))
       '@tailwindcss/typography':
         specifier: ^0.5.19
         version: 0.5.20(tailwindcss@4.3.3)
@@ -239,6 +239,59 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  '@biomejs/biome@2.5.13':
+    resolution: {integrity: sha512-+SEC/mFk1a+5mvUANZgbZTaiZXs1nj4iMhL/PHiqDT5TPUEPFIlliEtkKKZB4N862yylHC3UI+/Sj2I0HJEqhA==}
+    engines: {node: '>=14.21.3'}
+    hasBin: true
+
+  '@biomejs/cli-darwin-arm64@2.5.13':
+    resolution: {integrity: sha512-nYSuDJ6zgVqZUkAkJkvhXxsF2PYIrUk/g638K4voCXz7foI9f7b6C2/7+oAihsHQlivZNMUrm/y8ywlcHQtZOw==}
+    engines: {node: '>=14.21.3'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@biomejs/cli-darwin-x64@2.5.13':
+    resolution: {integrity: sha512-KVy1ceEDuJ3AzFxjT9kkxbVy+UANw1pjEMUS6lvKfxjJ+fmkRvc7sQn1Xo6ETgseEI7wUQoV03KSga3XfE8YRQ==}
+    engines: {node: '>=14.21.3'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@biomejs/cli-linux-arm64-musl@2.5.13':
+    resolution: {integrity: sha512-CH32xpep3dNS5EVJpAHlYchkBYznxyVZQrx0b6YYYlPL9u9ZeD2NtqiK/6s64+HFS2a7hGnryLlqqZAOh8ax5g==}
+    engines: {node: '>=14.21.3'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@biomejs/cli-linux-arm64@2.5.13':
+    resolution: {integrity: sha512-VlNMtoxOqs0dUR6drxxHr18SNUvI7xxAuHZlH4s/dstYSf3g6RaqVgo8JRnhcOhKz9afWrvtJTboNG1JuYlIDQ==}
+    engines: {node: '>=14.21.3'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@biomejs/cli-linux-x64-musl@2.5.13':
+    resolution: {integrity: sha512-F3pmwl+VHoUuVJN/tbNLKeLt0SVK3EIyN1jXlMcNyQGYRQQTVqXF+GgkP0/CjGXFN87e/mv0sBfUnWqWza5PKQ==}
+    engines: {node: '>=14.21.3'}
+    cpu: [x64]
+    os: [linux]
+
+  '@biomejs/cli-linux-x64@2.5.13':
+    resolution: {integrity: sha512-Fi6gIxbUaJ3ZCIXeG3ggIBPF76O2DjDN67WrPX/ODRv54GeXPm2gbEPC96Yb0yrJoiH0Eax1JLx1Pi0XbsNFZQ==}
+    engines: {node: '>=14.21.3'}
+    cpu: [x64]
+    os: [linux]
+
+  '@biomejs/cli-win32-arm64@2.5.13':
+    resolution: {integrity: sha512-+WD13qshXrr0Icv4BfsAdzm8Fs3TL+nZ59zEQxsYNd8lcgZJ0A5+OrlwsL1PipVCmWeRpxgIPD6DAcEd7smkCQ==}
+    engines: {node: '>=14.21.3'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@biomejs/cli-win32-x64@2.5.13':
+    resolution: {integrity: sha512-VOofU/nW761XWzUeUNE8zzYNyPrxuMuNFMizL0qz7J75yeV8N7WFheUlk1/K6dOkaFpH9wJ+lDKlwjAbw0346w==}
+    engines: {node: '>=14.21.3'}
+    cpu: [x64]
+    os: [win32]
 
   '@clack/core@1.4.3':
     resolution: {integrity: sha512-/kr3UWNtdJfxZtPgDqUOmG2pvwlmcLGheex5yiZKdwbzZJxhV+HMNR9QNmyY5cGwTNV6LrR7Jtp+KjhUAP1qBQ==}
@@ -1013,26 +1066,26 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@mspbots/auth@417.0.0-beta.41':
-    resolution: {integrity: sha512-KDwJzc56KKN22jb5p9w8VlKaTuyCWSAPFeWWCPN0SIaM1YwVYmti9W0pFZJcXxmjkarFSDo5TXUSHWgI7ZFD6Q==}
+  '@mspbots/auth@428.0.0':
+    resolution: {integrity: sha512-MJxQUJ5c+vgn7ME0b0tKpdfFPJPhau+45z3HUMEEwNDXXis666vFw2Et29H8iHvo6VrdL6FTdZaX5UmWntJ5Iw==}
     peerDependencies:
       hono: ^4.0.0
       ioredis: ^5.0.0
       jose: ^6.0.0
 
-  '@mspbots/layout@417.0.0-beta.41':
-    resolution: {integrity: sha512-/+fOfsVEAwA3MaxGwLXQ9vpwIQe0yw8qmmKy6VOVkA/pffhLlX/qq5xpmNQHvJXjewZ8JBHxlMWAnMDhWy7kTA==}
+  '@mspbots/layout@428.0.0':
+    resolution: {integrity: sha512-qxsYutd2v8mjHCxdex66WLLiQjgEZTnIAOKJiJRCx2wf8H53/hSDN3EyfI5T2ooDhJr2sxYxG8MLYFRNeI8rlQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
       react-router-dom: ^7.0.0
 
-  '@mspbots/react@417.0.0-beta.41':
-    resolution: {integrity: sha512-fDM83SXDp8DyRSV5AU4lJRQ4DD0ImzYLCSvxQ7yd5ooZrTn7OhMGPaNhikLWqQZrNCYpNFVDAo/eg0jTVxZtaQ==}
+  '@mspbots/react@428.0.0':
+    resolution: {integrity: sha512-8QYi3DK9hwv8EbSotGvTp2TuTpYaLjzhOP6GH/aaQkQiquwTEyQmMRbTlc6EfNbEeiqyc+P2WD3UfyWFCGKyVg==}
     peerDependencies:
-      '@mspbots/layout': 417.0.0-beta.41
-      '@mspbots/ui': 417.0.0-beta.41
+      '@mspbots/layout': 428.0.0
+      '@mspbots/ui': 428.0.0
       jose: ^6.0.0
       js-cookie: ^3.0.5
       lucide-react: ^0.577.0
@@ -1040,26 +1093,25 @@ packages:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
       react-router-dom: ^7.0.0
-      userpilot: ^1.4.0
       vite: ^7.0.0
       wujie: ^2.1.0
     peerDependenciesMeta:
       wujie:
         optional: true
 
-  '@mspbots/routes@417.0.0-beta.41':
-    resolution: {integrity: sha512-KtWRlfzbEasUZyErRFOhg19XdOfadRzJMbE/GBWQQscXU+1/lmNK35XMvG2gR6fb4HnEQnH3FXlcXR9nHaGP0w==}
+  '@mspbots/routes@428.0.0':
+    resolution: {integrity: sha512-gjx7vKsRgmmn/h+GX9Zf6zYo4qbGZLpXnORwpsyU2AXv+ez5RGwaClptz1/gg2CD4SB/XlqhvkTnglo1Itan3Q==}
     peerDependencies:
       vite: ^7.0.0
 
-  '@mspbots/tenant-db@417.0.0-beta.41':
-    resolution: {integrity: sha512-yW3j8lyWb+Gfz0pL+q79oz4FEjH97nbffJ6JRjdINuCW93UaZXQzdYZnW8z1d8GTlr7L6rB4KFf9txQqlpFeVA==}
+  '@mspbots/tenant-db@428.0.0':
+    resolution: {integrity: sha512-nPWm5rg4tzWVAqUL6Zmt8v5lf8hweFAfAgny3WoUjaPgjbHDVtObDMf633ivaa+4d5GL3H6vFQADoNVGC4eI2w==}
     peerDependencies:
       drizzle-orm: ^0.45.0
       postgres: ^3.4.0
 
-  '@mspbots/tsconfig@417.0.0-beta.41':
-    resolution: {integrity: sha512-sBjp9WjSGx4PqQJSGszIlSCautzwqvF3XCvOo14HgDVC8Fjcgp8KtSLtPiNA1GovXKCkpVwMo2AMwCct3yLU1w==}
+  '@mspbots/tsconfig@428.0.0':
+    resolution: {integrity: sha512-ZORzImmBpuLM1RUIMWuE6+uCCmj+G+m3lNKSiU3f+AwHej4sY1qE81DFVg81uOOWu4lURnQd4iCOkrDUMO62/w==}
     peerDependencies:
       '@types/node': '>=18'
       '@vitejs/plugin-vue': '>=5'
@@ -1067,13 +1119,13 @@ packages:
       react-dom: '>=18'
       vite: '>=5'
 
-  '@mspbots/type@417.0.0-beta.41':
-    resolution: {integrity: sha512-DS2QKH8W1R0U8eRf9aVSf2u38w3Wv8SIt0JwlET8q0zZ/+Ma63wXkK9wc+4kzP2ievZRKOgCdvIKdGZWZNrWuw==}
+  '@mspbots/type@428.0.0':
+    resolution: {integrity: sha512-tVK8eynm2910YAypOlBbua8zYwmeuPeq4W9nkX4Mu53xQGj3WJ6Qob4g7lhwxk97xfTTr99m2nIBCKpRVL053A==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
-  '@mspbots/ui@417.0.0-beta.41':
-    resolution: {integrity: sha512-4mwWqRxuxjFn9/Ojdz9j09K8toRRJJa5L7aOJkpaQTCTNXKfNT8GDYZ/kwp+SO/L2LMlnMlvzcCIUBfvNww8Ug==}
+  '@mspbots/ui@428.0.0':
+    resolution: {integrity: sha512-Yz1u6XAypINnmU5CV2MMVQvTOmtJqx2pJ4QTd/P5KsI+LrYUJtYHby7rPyNNvC05fiUfExBxP3TfpxsSY8QfeQ==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
@@ -3237,8 +3289,8 @@ packages:
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
-  mspack@417.0.0-beta.41:
-    resolution: {integrity: sha512-j9DtrguShnhS6LIg/mimMgmZlx6QeGVV16G4XuNp2NgA7EEyi5LjpTczkkZ8w78UKYugKZ3FtAV088uAXG5rHQ==}
+  mspack@428.0.0:
+    resolution: {integrity: sha512-vODrhS3OORLA8vho1L40UiK7GutPiAMp2sK1BHWKr4LFV8x1OP08cdQZzIsnjezkifc1pSuvjZyhqPN6n9yd+g==}
     engines: {node: '>=22.18.0'}
     hasBin: true
 
@@ -4150,6 +4202,41 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.17
 
+  '@biomejs/biome@2.5.13':
+    optionalDependencies:
+      '@biomejs/cli-darwin-arm64': 2.5.13
+      '@biomejs/cli-darwin-x64': 2.5.13
+      '@biomejs/cli-linux-arm64': 2.5.13
+      '@biomejs/cli-linux-arm64-musl': 2.5.13
+      '@biomejs/cli-linux-x64': 2.5.13
+      '@biomejs/cli-linux-x64-musl': 2.5.13
+      '@biomejs/cli-win32-arm64': 2.5.13
+      '@biomejs/cli-win32-x64': 2.5.13
+
+  '@biomejs/cli-darwin-arm64@2.5.13':
+    optional: true
+
+  '@biomejs/cli-darwin-x64@2.5.13':
+    optional: true
+
+  '@biomejs/cli-linux-arm64-musl@2.5.13':
+    optional: true
+
+  '@biomejs/cli-linux-arm64@2.5.13':
+    optional: true
+
+  '@biomejs/cli-linux-x64-musl@2.5.13':
+    optional: true
+
+  '@biomejs/cli-linux-x64@2.5.13':
+    optional: true
+
+  '@biomejs/cli-win32-arm64@2.5.13':
+    optional: true
+
+  '@biomejs/cli-win32-x64@2.5.13':
+    optional: true
+
   '@clack/core@1.4.3':
     dependencies:
       fast-wrap-ansi: 0.2.2
@@ -4587,16 +4674,16 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@mspbots/auth@417.0.0-beta.41(hono@4.12.32)(ioredis@5.11.1)(jose@6.2.4)':
+  '@mspbots/auth@428.0.0(hono@4.12.32)(ioredis@5.11.1)(jose@6.2.4)':
     dependencies:
       hono: 4.12.32
       ioredis: 5.11.1
       jose: 6.2.4
 
-  '@mspbots/layout@417.0.0-beta.41(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)':
+  '@mspbots/layout@428.0.0(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)':
     dependencies:
-      '@mspbots/type': 417.0.0-beta.41(react@19.2.8)
-      '@mspbots/ui': 417.0.0-beta.41(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)
+      '@mspbots/type': 428.0.0(react@19.2.8)
+      '@mspbots/ui': 428.0.0(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)
       clsx: 2.1.1
       jwt-decode: 4.0.0
       lucide-react: 0.577.0(react@19.2.8)
@@ -4635,12 +4722,12 @@ snapshots:
       - wujie
       - yup
 
-  '@mspbots/react@417.0.0-beta.41(@mspbots/layout@417.0.0-beta.41(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(redux@5.0.1)(wujie@2.1.0))(@mspbots/ui@417.0.0-beta.41(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react@19.2.8)(redux@5.0.1)(wujie@2.1.0))(jose@6.2.4)(js-cookie@3.0.8)(lucide-react@0.577.0(react@19.2.8))(next-themes@0.4.6(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(userpilot@1.4.3)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))(wujie@2.1.0)':
+  '@mspbots/react@428.0.0(@mspbots/layout@428.0.0(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(redux@5.0.1)(wujie@2.1.0))(@mspbots/ui@428.0.0(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react@19.2.8)(redux@5.0.1)(wujie@2.1.0))(jose@6.2.4)(js-cookie@3.0.8)(lucide-react@0.577.0(react@19.2.8))(next-themes@0.4.6(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react-dom@19.2.8(react@19.2.8))(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))(wujie@2.1.0)':
     dependencies:
-      '@mspbots/layout': 417.0.0-beta.41(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)
-      '@mspbots/routes': 417.0.0-beta.41(react@19.2.8)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))
-      '@mspbots/type': 417.0.0-beta.41(react@19.2.8)
-      '@mspbots/ui': 417.0.0-beta.41(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)
+      '@mspbots/layout': 428.0.0(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react-router-dom@7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8))(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)
+      '@mspbots/routes': 428.0.0(react@19.2.8)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))
+      '@mspbots/type': 428.0.0(react@19.2.8)
+      '@mspbots/ui': 428.0.0(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)
       '@vitejs/plugin-react': 5.2.0(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))
       jose: 6.2.4
       js-cookie: 3.0.8
@@ -4650,16 +4737,15 @@ snapshots:
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)
       react-router-dom: 7.18.2(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      userpilot: 1.4.3
       vite: 7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13)
     optionalDependencies:
       wujie: 2.1.0
     transitivePeerDependencies:
       - supports-color
 
-  '@mspbots/routes@417.0.0-beta.41(react@19.2.8)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))':
+  '@mspbots/routes@428.0.0(react@19.2.8)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))':
     dependencies:
-      '@mspbots/type': 417.0.0-beta.41(react@19.2.8)
+      '@mspbots/type': 428.0.0(react@19.2.8)
       fast-glob: 3.3.3
       oxc-parser: 0.138.0
       path-to-regexp: 8.4.2
@@ -4668,12 +4754,12 @@ snapshots:
     transitivePeerDependencies:
       - react
 
-  '@mspbots/tenant-db@417.0.0-beta.41(drizzle-orm@0.45.2(postgres@3.4.9))(postgres@3.4.9)':
+  '@mspbots/tenant-db@428.0.0(drizzle-orm@0.45.2(postgres@3.4.9))(postgres@3.4.9)':
     dependencies:
       drizzle-orm: 0.45.2(postgres@3.4.9)
       postgres: 3.4.9
 
-  '@mspbots/tsconfig@417.0.0-beta.41(@types/node@22.20.1)(@vitejs/plugin-vue@6.0.8(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))(vue@3.5.40(typescript@6.0.3)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))':
+  '@mspbots/tsconfig@428.0.0(@types/node@22.20.1)(@vitejs/plugin-vue@6.0.8(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))(vue@3.5.40(typescript@6.0.3)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))':
     dependencies:
       '@types/node': 22.20.1
       '@vitejs/plugin-vue': 6.0.8(vite@7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13))(vue@3.5.40(typescript@6.0.3))
@@ -4681,11 +4767,11 @@ snapshots:
       react-dom: 19.2.8(react@19.2.8)
       vite: 7.3.6(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13)
 
-  '@mspbots/type@417.0.0-beta.41(react@19.2.8)':
+  '@mspbots/type@428.0.0(react@19.2.8)':
     dependencies:
       react: 19.2.8
 
-  '@mspbots/ui@417.0.0-beta.41(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)':
+  '@mspbots/ui@428.0.0(@date-fns/tz@1.5.0)(@standard-schema/spec@1.1.0)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(ajv-formats@2.1.1(ajv@8.20.0))(ajv@8.20.0)(react-dom@19.2.8(react@19.2.8))(react-is@19.2.8)(react@19.2.8)(redux@5.0.1)(wujie@2.1.0)':
     dependencies:
       '@base-ui/react': 1.6.0(@date-fns/tz@1.5.0)(@types/react@19.2.17)(date-fns@4.4.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@fontsource-variable/inter': 5.3.0
@@ -6798,11 +6884,12 @@ snapshots:
 
   ms@2.1.3: {}
 
-  mspack@417.0.0-beta.41(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(postcss@8.5.24)(postgres@3.4.9)(react@19.2.8)(typescript@6.0.3):
+  mspack@428.0.0(@types/node@22.20.1)(jiti@2.7.0)(lightningcss@1.32.0)(postcss@8.5.24)(postgres@3.4.9)(react@19.2.8)(typescript@6.0.3):
     dependencies:
+      '@biomejs/biome': 2.5.13
       '@clack/prompts': 1.7.0
       '@dotenvx/dotenvx': 1.75.1
-      '@mspbots/type': 417.0.0-beta.41(react@19.2.8)
+      '@mspbots/type': 428.0.0(react@19.2.8)
       cac: 6.7.14
       drizzle-kit: 0.31.10
       drizzle-orm: 0.45.2(postgres@3.4.9)
