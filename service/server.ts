@@ -143,7 +143,24 @@ api.put("/metric-thresholds/:metricId", async (c) => {
   }
 });
 
-// Shape probe, dev only. Reports the response envelope and the row's field NAMES, never values,
+/**
+ * The SOP Agent (Agent Platform) engagement funnel, computed from the engagement store.
+ * `?refresh=1` forces a `git pull` instead of waiting out the 5-minute interval.
+ *
+ * Guarded like every other business route: the store carries client names, so a login is required
+ * even though the funnel itself is global rather than per-tenant.
+ */
+api.get("/sap-funnel", async (c) => {
+  const { buildSapFunnel } = await import("./lib/sap-funnel.ts");
+  try {
+    return c.json(await buildSapFunnel(tenantOf(c), c.req.query("refresh") === "1"));
+  } catch (error) {
+    // 503, not 500: the computation is fine, the source is not reachable — and the page says which.
+    return c.json({ error: (error as Error).message }, 503);
+  }
+});
+
+// Shape probe, dev only. Reports the response envelope and the row's field NAMES — never values —
 // so the resolvers can be checked against the real payload without exporting any data.
 if (process.env.NODE_ENV !== "production") {
   api.get("/debug/facets/:id", async (c) => {

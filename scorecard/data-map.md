@@ -401,3 +401,46 @@ the sibling field **`Timesheet Category`** (`abc86eb2-…`) carries `Meeting`, `
    41-widget board. Verify the captured widget's own title rather than trusting an index.
 4. A dataset row in the list can be a *request*, not a source: check for real data columns before
    planning against it (`MSPbots Custom Asset Inventory` looks legitimate in the list and is empty).
+
+## SOP Agent card (P1–P8) — the engagement store, not the warehouse
+
+Added 2026-09-09. This is the app's **second data plane**, and the only one that is not a
+warehouse dataset: `MSPbotsAI/sop-agent-engagement`, a markdown repo written by the
+`/sopagent-sync` routine 2–4×/day. The app shallow-clones it and `git pull --ff-only`s every 5
+minutes (`service/lib/engagement-store.ts`), so a store push reaches the scorecard without a
+republish. The mechanism is copied from `sop-agent-clients-app/service/lib/storeSync.ts`, which
+has read this repo since it was built.
+
+**Why this source and not HubSpot / Fathom / ClickUp** — the systems `metrics.yaml` names for this
+card. The ClickUp *client-engagement board* (list `901716155627`) is itself a **mirror** of
+`clients/<domain>/profile.md`'s `stage:` field, written by the same routine. Reading the store is
+therefore reading the board's own source: a count here and a column count there are one
+measurement, not two that have to be reconciled.
+
+| Row | Derivation | File · field |
+|---|---|---|
+| P1 Qualified alpha candidates | clients at `qualifying` or beyond | `clients/*/profile.md` · `stage` |
+| P2 Discovery / demo calls this week | held external calls in the current ISO week with `relevance` high or medium | `meetings/**/*.md` · `status` / `source`+`callId`, `relevance`, `date` |
+| P3 Pipeline freshness | of clients past outreach and not disqualified, the share whose newest movement date is ≤7d | `clients/*/profile.md` · `stage_at`, `last_response`, `last_contacted` |
+| P4, P5, P6, P8 | **not sourced.** ClickUp gate records, story states and AI-reviewer logs; no source this app reads carries them. Each row names what it needs and renders "no source" | — |
+| P7 | pending — the spec activates it when SAP enters story flow | — |
+
+Two field-level traps, both paid for once:
+
+1. **`last_updated` is not a movement date.** It is when the routine last wrote the file, so every
+   profile looks fresh forever. Including it in the freshness/stall calculation produced a stalled
+   queue of exactly zero against 44 clients at `met`. Movement = `stage_at` / `last_response` /
+   `last_contacted` only.
+2. **`status: held` misses three quarters of the meetings.** The 88 files written before `status:`
+   was introduced carry no status but do carry `source: fathom` + a `callId`. Held = either.
+   Counting only `status: held` gives 27 where the true figure is 115.
+
+Layers the 2026-09-09 dual-funnel analysis measured by hand and this app deliberately does **not**
+approximate — each is a judgement about a conversation, so it needs a field the routine writes:
+C2 product-team-spoke (invitee ≠ spoke), C3 commitment (`next_step_given:`, which that analysis
+proposes), DM-present at first pitch, and the M-funnel reply/booking outcomes. They are listed on
+the Funnel page under "Not measured yet" rather than folded into a smaller-looking funnel.
+
+⚠️ **`relevance` high|medium is the store's nearest field to the analysis's "substantively
+pitched", and is not identical to it** (78 relevant calls vs. the analysis's 72 pitched). The page
+labels it as the routine's own per-call judgement rather than as C1.

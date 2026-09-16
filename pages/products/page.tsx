@@ -16,6 +16,8 @@ export const meta = {
 
 /** Stage per the Product Lifecycle SOP, as settled in the workshop (R1). Stage names stay English — they are SOP terms. */
 const STAGE: Record<string, { business: string; release: string; firstLine: string; accent?: "grow" | "wrap" | "eos" }> = {
+  // Key order is card order, earliest lifecycle stage first — SAP is the only Explore product.
+  sap: { business: "Explore", release: "Prototype", firstLine: "Micus / Grace" },
   tqa: { business: "Grow", release: "GA", firstLine: "Frank", accent: "grow" },
   ticket_intake: { business: "Wrapping → Sustain", release: "Beta–GA", firstLine: "Grace", accent: "wrap" },
   sentiment_max: { business: "Sustain", release: "GA", firstLine: "Frank" },

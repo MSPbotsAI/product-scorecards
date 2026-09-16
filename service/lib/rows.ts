@@ -392,16 +392,157 @@ const internalAutomationsRows: RowDef[] = [
   },
 ]
 
+/**
+ * SOP Agent Platform (SAP) — metrics.yaml `sap`, rows P1-P8. The card was settled in R2/R3 but was
+ * never mirrored here, so the app carried no Agent Platform rows at all.
+ *
+ * **No row on this card is hand-entered.** The customer-side rows (P1-P3) are computed from the
+ * SOP Agent engagement store (`MSPbotsAI/sop-agent-engagement`) — the markdown repo the
+ * `/sopagent-sync` routine writes 2-4x a day and the ClickUp client-engagement board mirrors, so
+ * a number here and a column count on that board are one measurement rather than two to
+ * reconcile. See `sap-funnel.ts` for the field-level derivation and the Funnel page for the whole
+ * ladder.
+ *
+ * The R&D-side rows (P4-P8) describe ClickUp story state and AI-reviewer output, which no source
+ * this app reads carries. They stay `unsourced`/`pending`: the row names what it would take, and
+ * renders "no source" rather than a box for someone to type a number into.
+ */
+const sapRows: RowDef[] = [
+  {
+    id: 'P1',
+    name: 'Qualified alpha candidates (named, in active conversation)',
+    owner: 'Micus',
+    group: 'sap',
+    kind: 'computed',
+    compare: 'no-decrease',
+    target: null,
+    unit: 'count',
+    targetText: 'climb to 10 (Client Engagement SOP §1 standard)',
+    note:
+      'Engagement store: clients at `qualifying` or beyond — the ladder rungs that mean the client ' +
+      'wants to continue. The spec judges movement, not level (10 is the destination), so a ' +
+      'week-over-week drop is the red; its "flat two weeks -> yellow" rule needs a two-week ' +
+      'look-back this app does not judge on.',
+    anchor: 'Client Engagement PM SOP §1',
+  },
+  {
+    id: 'P2',
+    name: 'Customer discovery / demo calls (this week)',
+    owner: 'Micus',
+    group: 'sap',
+    kind: 'computed',
+    compare: 'display',
+    target: null,
+    unit: 'count',
+    targetText: '>=3 (leading indicator — excluded from evaluation)',
+    note:
+      'Engagement store: held external calls this ISO week whose `relevance` is high or medium — ' +
+      'the routine\'s own judgement that the call was about the SOP Agent. Design rule 2: leading ' +
+      'activity counts are never red or green.',
+  },
+  {
+    id: 'P3',
+    name: 'Pipeline freshness — active candidates updated <=7d',
+    owner: 'Micus',
+    group: 'sap',
+    kind: 'computed',
+    compare: 'gte',
+    target: 100,
+    unit: 'percent',
+    targetText: '100%',
+    note:
+      'Engagement store: of the clients past outreach and not disqualified, the share whose newest ' +
+      'movement date (`stage_at` / `last_response` / `last_updated`) is within 7 days.',
+  },
+  {
+    id: 'P4',
+    name: 'Gate-1 evidence items closed (this week)',
+    owner: 'Micus',
+    group: 'sap',
+    kind: 'unsourced',
+    compare: 'gte',
+    target: 1,
+    unit: 'count',
+    targetText: '>=1 item/week; two weeks zero progress -> yellow',
+    note:
+      'The Prototype->Alpha checklist lives in the ClickUp gate records, which neither the warehouse ' +
+      'datasets nor the engagement store carry. Sourceable once the gate items exist as ClickUp ' +
+      'tasks in a list this app can read.',
+  },
+  {
+    id: 'P5',
+    name: 'Dev-blocking questions answered <=24h',
+    owner: 'Grace',
+    group: 'sap',
+    kind: 'unsourced',
+    compare: 'gte',
+    target: 100,
+    unit: 'percent',
+    targetText: '100%',
+    note:
+      'Needs ClickUp comment timestamps on the SAP stories — question asked vs. first answer. No ' +
+      'source this app reads carries comment-level history.',
+  },
+  {
+    id: 'P6',
+    name: 'Deliverable first-pass rate (U1)',
+    owner: 'Grace',
+    group: 'sap',
+    kind: 'unsourced',
+    compare: 'display',
+    target: 80,
+    unit: 'percent',
+    targetText: '>=80% (Q1 observe only)',
+    note:
+      'Needs the AI-reviewer logs. Observation only through Q1 — the universal layer names P6 as its ' +
+      'action-testable exception, so switch compare to gte once that period ends.',
+    anchor: 'metrics.yaml universal_layer (U1)',
+  },
+  {
+    id: 'P7',
+    name: 'Post-freeze AC changes per story (M-SPEC)',
+    owner: 'Grace',
+    group: 'sap',
+    kind: 'pending',
+    compare: 'lte',
+    target: 1,
+    unit: 'count',
+    targetText: '<=1',
+    excludeFromCoverage: true,
+    note:
+      'Freeze point = status change to "5c - ready for dev"; source is ClickUp status history plus ' +
+      'AC edit history. The spec activates this row when SAP enters story flow — until then it is ' +
+      'not yet an accountability number.',
+  },
+  {
+    id: 'P8',
+    name: 'Dev-ready runway (weeks)',
+    owner: 'Grace',
+    group: 'sap',
+    kind: 'unsourced',
+    compare: 'band-hi',
+    target: 2,
+    yellowMin: 1,
+    targetText: '>=2 weeks',
+    note:
+      'Stories in "5b - ready for groom" / "5c - ready for dev" and not started, over rolling-4w dev ' +
+      'consumption. Needs the Product-space story list; below one week the L10 IDS question is ' +
+      "Grace's Intake/SAP split.",
+  },
+]
+
 export const ROWS: RowDef[] = [
   ...aiRows,
   ...subscriptionRows,
   ...engagementRows,
   ...unsourcedRows,
+  ...sapRows,
   ...mpdRows,
   ...internalAutomationsRows,
 ]
 
 export const GROUP_LABELS: Record<string, string> = {
+  sap: 'SOP Agent Platform',
   tqa: 'TicketQA',
   sentiment_max: 'Sentiment Max',
   triage: 'AI Triage',

@@ -13,6 +13,7 @@ import { readManualSeries } from './manual-metrics.ts'
 import { readThresholdOverrides } from './thresholds.ts'
 import { readSettings } from './settings.ts'
 import { ROWS, type Compare, type RowDef } from './rows.ts'
+import { buildSapFunnel, type SapFunnel } from './sap-funnel.ts'
 
 /** Built-in defaults. The live values come from the Settings page — see readSettings(). */
 export const AI_CREDIT_DATASET = '1985255723050872834'
@@ -550,13 +551,38 @@ export async function buildScorecard(tenantId: string, auth: AuthHeaders): Promi
     }
   }
 
-  const [aiRows, productRows, aiWeeklyRows, manual, overrides] = await Promise.all([
+  // The SOP Agent card reads the engagement store, not a warehouse dataset. It is loaded like any
+  // other source so that a store failure degrades those three rows to `nodata` with a reason,
+  // exactly as a dataset failure does — and never to zero.
+  const loadFunnel = async (): Promise<SapFunnel | null> => {
+    try {
+      const funnel = await buildSapFunnel(tenantId)
+      sources.push({ dataset: 'engagement-store', rows: funnel.totalClients, ok: true })
+      return funnel
+    } catch (error) {
+      sources.push({ dataset: 'engagement-store', rows: 0, ok: false, error: (error as Error).message })
+      return null
+    }
+  }
+
+  const [aiRows, productRows, aiWeeklyRows, funnel, manual, overrides] = await Promise.all([
     load(values['dataset.ai_credit']),
     load(values['dataset.weekly_metrics']),
     load(values['dataset.ai_weekly']),
+    loadFunnel(),
     readManualSeries(tenantId),
     readThresholdOverrides(tenantId),
   ])
+
+  // No week-over-week history yet: the store is a snapshot of now, so `previous` is null and
+  // judge() renders a no-decrease row as a trend rather than inventing a comparison.
+  const sap: Resolved | null = funnel
+    ? new Map([
+        ['P1', { value: funnel.metrics.qualifiedCandidates, previous: null, names: [] }],
+        ['P2', { value: funnel.metrics.demoCallsThisWeek, previous: null, names: [] }],
+        ['P3', { value: funnel.metrics.pipelineFreshnessPct, previous: null, names: [] }],
+      ])
+    : null
 
   const ai = aiRows ? resolveAi(aiRows) : null
   const aiWeekly = aiWeeklyRows ? resolveAiWeekly(aiWeeklyRows) : null
@@ -576,7 +602,7 @@ export async function buildScorecard(tenantId: string, auth: AuthHeaders): Promi
 
     // The weekly series is the spec's own definition for the AI active rows, so it wins there;
     // the credit snapshot keeps the silent-paid rows and serves as fallback when weekly fails.
-    const hit = aiWeekly?.get(def.id) ?? ai?.get(def.id) ?? subMap?.get(def.id) ?? null
+    const hit = aiWeekly?.get(def.id) ?? ai?.get(def.id) ?? subMap?.get(def.id) ?? sap?.get(def.id) ?? null
 
     if (def.kind === 'manual') {
       const series = manual.get(def.id)
