@@ -1,0 +1,34 @@
+name: Deploy
+
+# The platform builds the image straight from refs/heads/release on GitHub, so a push to
+# `release` IS the release. Nothing here builds or publishes to npm — it triggers the platform
+# pipeline and then blocks until the new commit is genuinely serving traffic.
+on:
+  push:
+    branches: [release]
+  workflow_dispatch:
+
+# A deploy migrates 35 tenant databases and cycles the container. Never run two at once.
+concurrency:
+  group: deploy-product-scorecards
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The platform token is an *environment* secret, so the job must declare the environment
+    # to see it at all — without this line the secret silently resolves to an empty string.
+    environment: agent_platform_token_mspbots
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Publish and wait until live
+        env:
+          MSPBOTS_TOKEN: ${{ secrets.AGENT_PLATFORM_TOKEN_MSPBOTS }}
+          EXPECT_SHA: ${{ github.sha }}
+        run: node scripts/deploy.mjs
