@@ -58,6 +58,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=8080
 
+# The SOP Agent funnel clones the engagement store at runtime (service/lib/engagement-store.ts):
+# a markdown data repo pulled every 5 minutes, so a store push reaches the app without a republish.
+# node:alpine ships no git binary, so without this the clone fails and the funnel page has no source.
+RUN apk add --no-cache git
+
 # Build identity for GET /api/_version (App Publish compares the running sha with the branch head)
 ARG APP_COMMIT
 ARG IMAGE_TAG
