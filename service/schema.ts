@@ -5,6 +5,7 @@
 
 import { integer, pgSchema, primaryKey, text, timestamp, varchar } from 'drizzle-orm/pg-core'
 
+// biome-ignore lint/security/noSecrets: the app's public platform id, mirrored from package.json
 const app = pgSchema('yke0x6nvil03yca1cx686ioxx6wbi4fg') // === package.json "id"
 
 /**

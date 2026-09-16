@@ -230,6 +230,7 @@ const unsourcedRows: RowDef[] = [
     target: null,
     unit: 'percent',
     targetText: 'trend display only',
+    // biome-ignore lint/security/noSecrets: a public MSPbots.ai dataset id inside prose, not a credential
     note: 'Sourceable from "Asset usage by MSP size" (1879106462136016897): items with used_tenant = 0.',
   },
   {

@@ -16,6 +16,7 @@ import { ROWS, type Compare, type RowDef } from './rows.ts'
 import { buildSapFunnel, type SapFunnel } from './sap-funnel.ts'
 
 /** Built-in defaults. The live values come from the Settings page — see readSettings(). */
+// biome-ignore lint/security/noSecrets: a public MSPbots.ai dataset id, not a credential
 export const AI_CREDIT_DATASET = '1985255723050872834'
 /**
  * Product Scorecard Weekly Metrics — created for this app on 2026-07-29 (by Micus, in the dataset
@@ -23,6 +24,7 @@ export const AI_CREDIT_DATASET = '1985255723050872834'
  * window (~2.5k rows). The full Product Metric Dataset (1793541682307964929) is tenant×user×week
  * with ~929k rows of history — unreadable through the paged API by design, so it is NOT read here.
  */
+// biome-ignore lint/security/noSecrets: a public MSPbots.ai dataset id, not a credential
 export const WEEKLY_METRICS_DATASET = process.env.WEEKLY_METRICS_DATASET ?? '2082466110929776641'
 /**
  * Product Scorecard AI Weekly (Micus, 2026-07-29): week×tenant credits per AI product over 91 days,

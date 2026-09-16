@@ -70,6 +70,8 @@ const ticketHref = (template: string | null, id: string | null): string | null =
   return null
 }
 
+// i18n: this page's own EN/ZH copy table. The app ships a language switch (lib/i18n.tsx) and the
+// zh half is deliberate display copy, not untranslated English.
 const T = {
   en: {
     title: 'Timesheet',
@@ -125,6 +127,7 @@ const T = {
     person: '成员',
     category: '类别',
     hrs: '小时',
+    // biome-ignore lint/security/noSecrets: display copy — the entropy scan misreads CJK text
     empty: '该区间内没有工时记录。',
     dataFrom: (a: string, b: string) => `可用数据 ${a} → ${b}`,
     roster: '纳入人员',

@@ -48,6 +48,8 @@ function OwnerCard({
   // same exclusion as the L10 Board's H1/H3/coverage denominators.
   const accountable = rows.filter((r) => r.status !== 'display' && !r.excludeFromCoverage).length
   const over = accountable > 7
+  // i18n: matches the owner value as the scorecard data carries it, which is localized at source —
+  // this is a data literal, not UI copy.
   const isBucket = owner.startsWith('Unowned') || owner.startsWith('无主')
   const notes = [...new Set(rows.map((r) => GROUP_NOTES[r.group]).filter(Boolean))]
 

@@ -23,7 +23,9 @@ export interface SettingDef {
 export const SETTING_DEFS: SettingDef[] = [
   { key: 'public_api_key', env: 'PUBLIC_API_KEY', default: '', secret: true },
   { key: 'dataset.ai_weekly', env: 'AI_WEEKLY_DATASET', default: '2082481324433739777' },
+  // biome-ignore lint/security/noSecrets: a public MSPbots.ai dataset id, not a credential
   { key: 'dataset.ai_credit', env: 'AI_CREDIT_DATASET', default: '1985255723050872834' },
+  // biome-ignore lint/security/noSecrets: a public MSPbots.ai dataset id, not a credential
   { key: 'dataset.weekly_metrics', env: 'WEEKLY_METRICS_DATASET', default: '2082466110929776641' },
   { key: 'dataset.timesheet', env: 'TIMESHEET_DATASET', default: '2073966327621623809' },
   // Deep-link template for a timesheet ticket. The dataset only carries the human ticket key

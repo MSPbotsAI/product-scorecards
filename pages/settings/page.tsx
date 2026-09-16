@@ -1,3 +1,7 @@
+// biome-ignore-all lint/security/noSecrets: the EN/ZH copy tables in this file are display
+// text — the entropy scan reads long CJK strings as high-entropy secrets. The only real secret
+// here is the API key, which is never rendered: the server returns a mask, never the value.
+
 import { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
@@ -38,7 +42,10 @@ interface SettingItem {
   configured: boolean
 }
 
-/** Field labels live here rather than in the generic i18n table — they are page-specific. */
+/**
+ * Field labels live here rather than in the generic i18n table — they are page-specific.
+ * i18n: deliberate EN/ZH copy, the app ships a language switch (lib/i18n.tsx).
+ */
 const FIELD: Record<string, { en: [string, string]; zh: [string, string] }> = {
   public_api_key: {
     en: ['MSPbots API key', 'Generated at app.mspbots.ai → Public API. The app reads datasets with this key.'],
@@ -100,14 +107,69 @@ const FIELD: Record<string, { en: [string, string]; zh: [string, string] }> = {
   },
 }
 
+// i18n: deliberate EN/ZH copy, as above.
 const ORIGIN_LABEL: Record<string, { en: string; zh: string; tone: string }> = {
   database: { en: 'saved', zh: '已保存', tone: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' },
   environment: { en: 'from environment', zh: '来自环境变量', tone: 'bg-amber-500/15 text-amber-700 dark:text-amber-400' },
   default: { en: 'built-in default', zh: '内置默认值', tone: 'text-muted-foreground' },
 }
 
+// i18n: deliberate EN/ZH copy, as above. Kept as a table rather than inline `lang === 'zh' ? …`
+// ternaries so the page reads as markup and both languages stay side by side.
+const T = {
+  en: {
+    title: 'Settings',
+    intro:
+      "Stored in the app's own database, under a schema keyed to the stable app id — so publishing a new version does not overwrite these values.",
+    storageError: 'The database is unavailable — the values below come from the environment or defaults, and saving will fail:',
+    saved: 'Saved. The scorecard will use the new configuration on its next load.',
+    current: 'current',
+    keepBlank: 'leave blank to keep',
+    notConfigured: 'not configured yet',
+    secretNote: 'Once saved it is never sent back to the browser — the page only ever shows a masked hint.',
+    datasetTitle: 'Dataset IDs',
+    datasetDesc: 'Each dataset must be whitelisted on that API key (app.mspbots.ai → Public API).',
+    resetDefault: 'Reset to default',
+    linksTitle: 'Links',
+    linksDesc: "The timesheet data carries the ticket key only, not ClickUp's internal task id — so the link is built from the key.",
+    storeTitle: 'Engagement store',
+    storeDesc:
+      'The source behind the SOP Agent Funnel page and the Agent Platform card — the same repo the ClickUp client-engagement board mirrors.',
+    scopeTitle: 'Team scope',
+    scopeDesc: 'Decides whose hours the Timesheet counts: walk the manager chain down from the root, then subtract the exclusions.',
+    save: 'Save',
+    discard: 'Discard',
+    pending: (n: number) => `${n} pending change(s)`,
+    noChanges: 'no unsaved changes',
+  },
+  zh: {
+    title: '设置',
+    intro: '保存在应用自己的数据库里（schema 绑定在稳定的 app id 上），因此发布新版本不会覆盖这些值。',
+    storageError: '数据库不可用，下面显示的是环境变量或默认值，且无法保存修改：',
+    saved: '已保存。记分卡数据会在下次加载时使用新配置。',
+    current: '当前',
+    keepBlank: '留空则不修改',
+    notConfigured: '尚未配置',
+    secretNote: '写入后不会再回传到浏览器，页面只显示遮罩提示。',
+    datasetTitle: 'Dataset ID',
+    datasetDesc: '每个 dataset 必须已加入上面这个 key 的白名单（app.mspbots.ai → Public API）。',
+    resetDefault: '恢复默认',
+    linksTitle: '链接',
+    linksDesc: '工时数据里只有工单号，没有 ClickUp 内部 task id，所以链接由工单号拼出来。',
+    storeTitle: 'SOP Agent 数据仓库',
+    storeDesc: 'SOP Agent 漏斗页和 Agent Platform 卡的数据源——ClickUp 客户跟进板镜像的同一个仓库。',
+    scopeTitle: '团队范围',
+    scopeDesc: '决定工时页统计哪些人：以根节点为起点沿汇报链递归，再减去排除名单。',
+    save: '保存',
+    discard: '撤销',
+    pending: (n: number) => `${n} 项待保存`,
+    noChanges: '没有未保存的修改',
+  },
+}
+
 export default function SettingsPage() {
   const lang = useLang()
+  const t = T[lang]
   const [items, setItems] = useState<SettingItem[] | null>(null)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [storageError, setStorageError] = useState<string | null>(null)
@@ -163,12 +225,8 @@ export default function SettingsPage() {
     <div className="mx-auto max-w-3xl space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{lang === 'zh' ? '设置' : 'Settings'}</h1>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            {lang === 'zh'
-              ? '保存在应用自己的数据库里（schema 绑定在稳定的 app id 上），因此发布新版本不会覆盖这些值。'
-              : "Stored in the app's own database, under a schema keyed to the stable app id — so publishing a new version does not overwrite these values."}
-          </p>
+          <h1 className="text-2xl font-semibold tracking-tight">{t.title}</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">{t.intro}</p>
         </div>
         <LangToggle />
       </div>
@@ -177,10 +235,7 @@ export default function SettingsPage() {
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            {lang === 'zh'
-              ? '数据库不可用，下面显示的是环境变量或默认值，且无法保存修改：'
-              : 'The database is unavailable — the values below come from the environment or defaults, and saving will fail:'}{' '}
-            <span className="font-mono text-xs">{storageError}</span>
+            {t.storageError} <span className="font-mono text-xs">{storageError}</span>
           </AlertDescription>
         </Alert>
       )}
@@ -195,11 +250,7 @@ export default function SettingsPage() {
       {saved && !error && (
         <Alert>
           <CheckCircle2 className="h-4 w-4" />
-          <AlertDescription>
-            {lang === 'zh'
-              ? '已保存。记分卡数据会在下次加载时使用新配置。'
-              : 'Saved. The scorecard will use the new configuration on its next load.'}
-          </AlertDescription>
+          <AlertDescription>{t.saved}</AlertDescription>
         </Alert>
       )}
 
@@ -231,22 +282,12 @@ export default function SettingsPage() {
                     id={key}
                     type="password"
                     autoComplete="off"
-                    placeholder={
-                      item.configured
-                        ? `${lang === 'zh' ? '当前' : 'current'}: ${item.hint} — ${lang === 'zh' ? '留空则不修改' : 'leave blank to keep'}`
-                        : lang === 'zh'
-                          ? '尚未配置'
-                          : 'not configured yet'
-                    }
+                    placeholder={item.configured ? `${t.current}: ${item.hint} — ${t.keepBlank}` : t.notConfigured}
                     value={draft[key] ?? ''}
                     onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
                     className="font-mono"
                   />
-                  <p className="text-[11px] text-muted-foreground">
-                    {lang === 'zh'
-                      ? '写入后不会再回传到浏览器，页面只显示遮罩提示。'
-                      : 'Once saved it is never sent back to the browser — the page only ever shows a masked hint.'}
-                  </p>
+                  <p className="text-[11px] text-muted-foreground">{t.secretNote}</p>
                 </CardContent>
               </Card>
             )
@@ -254,12 +295,8 @@ export default function SettingsPage() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">{lang === 'zh' ? 'Dataset ID' : 'Dataset IDs'}</CardTitle>
-              <CardDescription className="text-xs">
-                {lang === 'zh'
-                  ? '每个 dataset 必须已加入上面这个 key 的白名单（app.mspbots.ai → Public API）。'
-                  : 'Each dataset must be whitelisted on that API key (app.mspbots.ai → Public API).'}
-              </CardDescription>
+              <CardTitle className="text-base">{t.datasetTitle}</CardTitle>
+              <CardDescription className="text-xs">{t.datasetDesc}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {items
@@ -294,7 +331,7 @@ export default function SettingsPage() {
                           size="sm"
                           disabled={current === item.default}
                           onClick={() => setDraft((d) => ({ ...d, [item.key]: item.default }))}
-                          title={`${lang === 'zh' ? '恢复默认' : 'Reset to default'}: ${item.default}`}
+                          title={`${t.resetDefault}: ${item.default}`}
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
                         </Button>
@@ -307,12 +344,8 @@ export default function SettingsPage() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">{lang === 'zh' ? '链接' : 'Links'}</CardTitle>
-              <CardDescription className="text-xs">
-                {lang === 'zh'
-                  ? '工时数据里只有工单号，没有 ClickUp 内部 task id，所以链接由工单号拼出来。'
-                  : "The timesheet data carries the ticket key only, not ClickUp's internal task id — so the link is built from the key."}
-              </CardDescription>
+              <CardTitle className="text-base">{t.linksTitle}</CardTitle>
+              <CardDescription className="text-xs">{t.linksDesc}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {items
@@ -346,7 +379,7 @@ export default function SettingsPage() {
                           size="sm"
                           disabled={current === item.default}
                           onClick={() => setDraft((d) => ({ ...d, [item.key]: item.default }))}
-                          title={`${lang === 'zh' ? '恢复默认' : 'Reset to default'}: ${item.default}`}
+                          title={`${t.resetDefault}: ${item.default}`}
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
                         </Button>
@@ -359,12 +392,8 @@ export default function SettingsPage() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">{lang === 'zh' ? 'SOP Agent 数据仓库' : 'Engagement store'}</CardTitle>
-              <CardDescription className="text-xs">
-                {lang === 'zh'
-                  ? 'SOP Agent 漏斗页和 Agent Platform 卡的数据源——ClickUp 客户跟进板镜像的同一个仓库。'
-                  : 'The source behind the SOP Agent Funnel page and the Agent Platform card — the same repo the ClickUp client-engagement board mirrors.'}
-              </CardDescription>
+              <CardTitle className="text-base">{t.storeTitle}</CardTitle>
+              <CardDescription className="text-xs">{t.storeDesc}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {items
@@ -388,13 +417,7 @@ export default function SettingsPage() {
                           id={item.key}
                           type="password"
                           autoComplete="off"
-                          placeholder={
-                            item.configured
-                              ? `${lang === 'zh' ? '当前' : 'current'}: ${item.hint} — ${lang === 'zh' ? '留空则不修改' : 'leave blank to keep'}`
-                              : lang === 'zh'
-                                ? '尚未配置'
-                                : 'not configured yet'
-                          }
+                          placeholder={item.configured ? `${t.current}: ${item.hint} — ${t.keepBlank}` : t.notConfigured}
                           value={draft[item.key] ?? ''}
                           onChange={(e) => setDraft((d) => ({ ...d, [item.key]: e.target.value }))}
                           className="font-mono"
@@ -428,7 +451,7 @@ export default function SettingsPage() {
                           size="sm"
                           disabled={current === item.default}
                           onClick={() => setDraft((d) => ({ ...d, [item.key]: item.default }))}
-                          title={`${lang === 'zh' ? '恢复默认' : 'Reset to default'}: ${item.default}`}
+                          title={`${t.resetDefault}: ${item.default}`}
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
                         </Button>
@@ -441,12 +464,8 @@ export default function SettingsPage() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">{lang === 'zh' ? '团队范围' : 'Team scope'}</CardTitle>
-              <CardDescription className="text-xs">
-                {lang === 'zh'
-                  ? '决定工时页统计哪些人：以根节点为起点沿汇报链递归，再减去排除名单。'
-                  : 'Decides whose hours the Timesheet counts: walk the manager chain down from the root, then subtract the exclusions.'}
-              </CardDescription>
+              <CardTitle className="text-base">{t.scopeTitle}</CardTitle>
+              <CardDescription className="text-xs">{t.scopeDesc}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {items
@@ -480,7 +499,7 @@ export default function SettingsPage() {
                           size="sm"
                           disabled={current === item.default}
                           onClick={() => setDraft((d) => ({ ...d, [item.key]: item.default }))}
-                          title={`${lang === 'zh' ? '恢复默认' : 'Reset to default'}: ${item.default}`}
+                          title={`${t.resetDefault}: ${item.default}`}
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
                         </Button>
@@ -494,22 +513,14 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             <Button onClick={save} disabled={!dirty || saving}>
               <Save className={cn('mr-1.5 h-4 w-4', saving && 'animate-pulse')} />
-              {lang === 'zh' ? '保存' : 'Save'}
+              {t.save}
             </Button>
             {dirty && (
               <Button variant="ghost" onClick={() => setDraft({})} disabled={saving}>
-                {lang === 'zh' ? '撤销' : 'Discard'}
+                {t.discard}
               </Button>
             )}
-            <span className="text-[11px] text-muted-foreground">
-              {dirty
-                ? lang === 'zh'
-                  ? `${Object.keys(draft).length} 项待保存`
-                  : `${Object.keys(draft).length} pending change(s)`
-                : lang === 'zh'
-                  ? '没有未保存的修改'
-                  : 'no unsaved changes'}
-            </span>
+            <span className="text-[11px] text-muted-foreground">{dirty ? t.pending(Object.keys(draft).length) : t.noChanges}</span>
           </div>
         </>
       )}
