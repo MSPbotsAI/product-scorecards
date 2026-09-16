@@ -19,6 +19,9 @@ import { groupLabel, rowName, rowTarget, useLang, useT } from '../../lib/i18n'
 import { RowDetailDialog } from '../../lib/row-dialog'
 import { formatValue, useScorecard, type ScorecardRow } from '../../lib/scorecard-client'
 
+/** Stable keys for the fixed-length loading placeholders — an array index is not a valid React key. */
+const SKELETON_KEYS = ['a', 'b', 'c', 'd']
+
 export const meta = {
   label: 'By Owner',
   icon: 'Users',
@@ -85,11 +88,12 @@ function OwnerCard({
           </p>
         ))}
         {rows.map((row) => (
-          <div
+          <button
+            type="button"
             key={row.id}
             onClick={() => onSelect(row)}
             className={cn(
-              'flex cursor-pointer items-center gap-3 rounded-md border border-l-2 bg-card px-3 py-2 transition-colors hover:bg-muted/40',
+              'flex w-full cursor-pointer items-center gap-3 rounded-md border border-l-2 bg-card px-3 py-2 text-left transition-colors hover:bg-muted/40',
               row.status === 'red' ? 'border-l-red-500 bg-red-500/[0.04] hover:bg-red-500/[0.08]' : 'border-l-transparent',
             )}
           >
@@ -105,7 +109,7 @@ function OwnerCard({
               <span className="font-mono text-sm font-semibold tabular-nums">{formatValue(row)}</span>
               <Delta row={row} />
             </div>
-          </div>
+          </button>
         ))}
       </CardContent>
     </Card>
@@ -156,8 +160,8 @@ export default function ByOwner() {
 
       {loading && !data && (
         <div className="grid gap-4 lg:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-56 w-full" />
+          {SKELETON_KEYS.map((k) => (
+            <Skeleton key={k} className="h-56 w-full" />
           ))}
         </div>
       )}

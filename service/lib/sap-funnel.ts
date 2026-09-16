@@ -281,7 +281,7 @@ function readMeetings(root: string, now: Date) {
     }
     for (const entry of entries) {
       const p = join(dir, entry)
-      let st
+      let st: ReturnType<typeof statSync>
       try {
         st = statSync(p)
       } catch {

@@ -109,7 +109,7 @@ export function createMspbotsReportClient(options: ReportClientOptions = {}) {
         // JWT-shaped and truncate before the message can reach a log line or an API response.
         const text = (await res.text()).replace(/eyJ[\w-]+\.[\w-]*\.?[\w-]*/g, '[token redacted]').slice(0, 300)
         logger.error(`API error ${res.status}: ${text}`)
-        throw new Error(`MSPBots Report API error (${res.status}): ${text}`)
+        throw new Error(`MSPbots.ai Report API error (${res.status}): ${text}`)
       }
       return res.json()
     },

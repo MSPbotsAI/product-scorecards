@@ -66,7 +66,7 @@ const AI_PRODUCTS = [
 ] as const
 
 /** AI product rows: active tenants, undispositioned silent paid tenants, ROI. */
-const aiRows: RowDef[] = AI_PRODUCTS.flatMap(({ key, group, label, owner, ids }) => [
+const aiRows: RowDef[] = AI_PRODUCTS.flatMap(({ group, label, owner, ids }) => [
   {
     id: ids[0],
     name: `${label} — active tenants (credit > 0, this week)`,

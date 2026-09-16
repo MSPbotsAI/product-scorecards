@@ -29,6 +29,8 @@ export const meta = {
 }
 
 interface Entry {
+  /** Stable per-response row id from the backend — the source has no natural key. */
+  id: number
   date: string
   ticketId: string | null
   subject: string | null
@@ -213,27 +215,20 @@ function Breakdown({
         </Badge>
       </CardHeader>
       <CardContent className="pb-3">
-        <ScrollArea className="h-[232px] pr-3">
+        <ScrollArea className="h-58 pr-3">
           <div className="space-y-2.5">
             {rows.map(([label, hours]) => {
               const pct = total > 0 ? (hours / total) * 100 : 0
               const isOn = selected === label
               const dimmed = selected != null && !isOn
               return (
-                <div
+                <button
+                  type="button"
                   key={label}
                   onClick={() => onSelect(label)}
-                  role="button"
-                  tabIndex={0}
                   aria-pressed={isOn}
-                  onKeyDown={(ev) => {
-                    if (ev.key === 'Enter' || ev.key === ' ') {
-                      ev.preventDefault()
-                      onSelect(label)
-                    }
-                  }}
                   className={cn(
-                    '-mx-1.5 cursor-pointer rounded-md px-1.5 py-1 transition-colors hover:bg-muted/60',
+                    '-mx-1.5 w-full cursor-pointer rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60',
                     isOn && 'bg-muted ring-1 ring-inset ring-border',
                     dimmed && 'opacity-55',
                   )}
@@ -251,7 +246,7 @@ function Breakdown({
                       style={{ width: `${Math.max(2, pct)}%` }}
                     />
                   </div>
-                </div>
+                </button>
               )
             })}
           </div>
@@ -397,7 +392,7 @@ export default function Timesheet() {
           type="date"
           value={from}
           onChange={(e) => e.target.value && setAnchor(new Date(`${e.target.value}T00:00:00Z`))}
-          className="h-8 w-[150px]"
+          className="h-8 w-38"
         />
         {data && (
           <Tooltip>
@@ -432,7 +427,7 @@ export default function Timesheet() {
         </Alert>
       )}
 
-      {loading && !data && <Skeleton className="h-[520px] w-full" />}
+      {loading && !data && <Skeleton className="h-130 w-full" />}
 
       {view && data && (
         <>
@@ -519,11 +514,11 @@ export default function Timesheet() {
                       </tr>
                     </thead>
                     <tbody>
-                      {view.scoped.map((e, i) => {
+                      {view.scoped.map((e) => {
                         const ticket = e.ticketId
                         const href = ticketHref(data.ticketUrlTemplate, ticket)
                         return (
-                          <tr key={`${e.date}-${e.person}-${i}`} className="border-b last:border-b-0 hover:bg-muted/40">
+                          <tr key={e.id} className="border-b last:border-b-0 hover:bg-muted/40">
                             <td className="whitespace-nowrap px-5 py-1.5 tabular-nums text-muted-foreground">{e.date}</td>
                             <td className="whitespace-nowrap px-3 py-1.5 font-mono text-[12px]">
                               {href && ticket ? (
@@ -542,23 +537,28 @@ export default function Timesheet() {
                               )}
                             </td>
                             <td className="max-w-[420px] truncate px-3 py-1.5">{e.subject ?? '—'}</td>
-                            <td
-                              onClick={() => toggle('project')(e.project)}
-                              className="cursor-pointer whitespace-nowrap px-3 py-1.5 text-muted-foreground hover:text-foreground hover:underline"
-                            >
-                              {e.project}
+                            <td className="whitespace-nowrap px-3 py-1.5 text-muted-foreground">
+                              <button
+                                type="button"
+                                onClick={() => toggle('project')(e.project)}
+                                className="cursor-pointer hover:text-foreground hover:underline"
+                              >
+                                {e.project}
+                              </button>
                             </td>
-                            <td
-                              onClick={() => toggle('person')(e.person)}
-                              className="cursor-pointer whitespace-nowrap px-3 py-1.5 hover:underline"
-                            >
-                              {e.person}
+                            <td className="whitespace-nowrap px-3 py-1.5">
+                              <button type="button" onClick={() => toggle('person')(e.person)} className="cursor-pointer hover:underline">
+                                {e.person}
+                              </button>
                             </td>
-                            <td
-                              onClick={() => toggle('category')(e.category)}
-                              className="cursor-pointer whitespace-nowrap px-3 py-1.5 text-muted-foreground hover:text-foreground hover:underline"
-                            >
-                              {e.category}
+                            <td className="whitespace-nowrap px-3 py-1.5 text-muted-foreground">
+                              <button
+                                type="button"
+                                onClick={() => toggle('category')(e.category)}
+                                className="cursor-pointer hover:text-foreground hover:underline"
+                              >
+                                {e.category}
+                              </button>
                             </td>
                             <td className="px-5 py-1.5 text-right font-medium tabular-nums">{e.hours}</td>
                           </tr>

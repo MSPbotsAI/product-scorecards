@@ -16,7 +16,7 @@ import {
 } from '@mspbots/ui'
 import { AlertTriangle, CheckCircle2, RotateCcw, Save } from 'lucide-react'
 import { LangToggle } from '../../lib/board'
-import { useLang, useT } from '../../lib/i18n'
+import { useLang } from '../../lib/i18n'
 import { invalidateScorecard } from '../../lib/scorecard-client'
 
 export const meta = {
@@ -107,7 +107,6 @@ const ORIGIN_LABEL: Record<string, { en: string; zh: string; tone: string }> = {
 }
 
 export default function SettingsPage() {
-  const t = useT()
   const lang = useLang()
   const [items, setItems] = useState<SettingItem[] | null>(null)
   const [draft, setDraft] = useState<Record<string, string>>({})

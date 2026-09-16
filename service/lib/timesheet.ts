@@ -13,6 +13,12 @@ const PAGE_SIZE = 500
 const MAX_PAGES = 20
 
 export interface TimesheetEntry {
+  /**
+   * Stable per-response row id. The warehouse rows carry no natural key (the same person can log
+   * the same ticket twice on one day), and a render index is not one — it shifts as soon as the
+   * page filters or sorts. Assigned once here so the key travels with the record.
+   */
+  id: number
   date: string
   ticketId: string | null
   subject: string | null
@@ -191,6 +197,7 @@ export async function readTimesheet(tenantId: string, opts: { refresh?: boolean 
     }
 
     entries.push({
+      id: entries.length,
       date,
       ticketId: cleanStr(r.ticket_id),
       subject: cleanStr(r.ticket_subject),

@@ -369,7 +369,10 @@ function resolveSubscription(rows: Record_[]): { out: Resolved; current: string 
     const code = str(r.tenant_code)
     if (!week || !code) continue
     let map = tenantsByWeek.get(week)
-    if (!map) tenantsByWeek.set(week, (map = new Map()))
+    if (!map) {
+      map = new Map()
+      tenantsByWeek.set(week, map)
+    }
     const list = map.get(code)
     if (list) list.push(r)
     else map.set(code, [r])

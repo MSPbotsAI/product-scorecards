@@ -4,6 +4,9 @@ import { AlertTriangle, ExternalLink, RefreshCw } from 'lucide-react'
 import { LangToggle, StatTile } from '../../lib/board'
 import { useFunnelT, useLang } from '../../lib/i18n'
 
+/** Stable keys for the fixed-length loading placeholders — an array index is not a valid React key. */
+const SKELETON_KEYS = ['a', 'b', 'c', 'd']
+
 export const meta = {
   label: 'SOP Agent Funnel',
   icon: 'Filter',
@@ -211,8 +214,8 @@ export default function SapFunnelPage() {
 
       {loading && !data && (
         <div className="grid gap-4 md:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-48 w-full" />
+          {SKELETON_KEYS.map((k) => (
+            <Skeleton key={k} className="h-48 w-full" />
           ))}
         </div>
       )}

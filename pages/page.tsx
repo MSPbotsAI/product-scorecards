@@ -19,6 +19,9 @@ import { RowDetailDialog } from '../lib/row-dialog'
 import { groupLabel, rowName, rowNote, rowTarget, useLang, useT } from '../lib/i18n'
 import { formatValue, useScorecard, type ScorecardRow } from '../lib/scorecard-client'
 
+/** Stable keys for the fixed-length loading placeholders — an array index is not a valid React key. */
+const SKELETON_KEYS = ['a', 'b', 'c', 'd']
+
 export const meta = {
   label: 'L10 Board',
   icon: 'Gauge',
@@ -45,11 +48,12 @@ function Rows({ rows, groups, onSelect }: { rows: ScorecardRow[]; groups: Record
         const note = rowNote(row.id, row.note, lang)
         const reason = row.status === 'nodata' ? (rowNote(row.id, row.reason, lang) ?? row.reason) : row.reason
         return (
-          <div
+          <button
+            type="button"
             key={row.id}
             onClick={() => onSelect(row)}
             className={cn(
-              'grid cursor-pointer grid-cols-[88px_1fr_92px_150px_72px_88px] items-center gap-3 border-b border-l-2 px-5 py-2.5 transition-colors last:border-b-0 hover:bg-muted/40 max-lg:grid-cols-[80px_1fr_100px]',
+              'grid w-full cursor-pointer grid-cols-[88px_1fr_92px_150px_72px_88px] items-center gap-3 border-b border-l-2 px-5 py-2.5 text-left transition-colors last:border-b-0 hover:bg-muted/40 max-lg:grid-cols-[80px_1fr_100px]',
               STATUS_META[row.status].row,
               row.status === 'red' && 'bg-red-500/[0.04] hover:bg-red-500/[0.08]',
             )}
@@ -94,7 +98,7 @@ function Rows({ rows, groups, onSelect }: { rows: ScorecardRow[]; groups: Record
               <Sparkline row={row} />
             </div>
             <div className="text-[11px] leading-tight text-muted-foreground max-lg:hidden">{rowTarget(row.id, row.targetText, lang)}</div>
-          </div>
+          </button>
         )
       })}
     </div>
@@ -197,12 +201,12 @@ export default function L10Board() {
       {loading && !data && (
         <div className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-[86px] w-full" />
+            {SKELETON_KEYS.map((k) => (
+              <Skeleton key={k} className="h-22 w-full" />
             ))}
           </div>
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 w-full" />
+          {SKELETON_KEYS.map((k) => (
+            <Skeleton key={k} className="h-24 w-full" />
           ))}
         </div>
       )}

@@ -6,6 +6,9 @@ import { groupLabel, rowName, rowShort, rowTarget, useLang, useT } from '../../l
 import { RowDetailDialog } from '../../lib/row-dialog'
 import { formatValue, useScorecard, type ScorecardRow } from '../../lib/scorecard-client'
 
+/** Stable keys for the fixed-length loading placeholders — an array index is not a valid React key. */
+const SKELETON_KEYS = ['a', 'b', 'c', 'd', 'e', 'f']
+
 export const meta = {
   label: 'Product Cards',
   icon: 'LayoutGrid',
@@ -47,9 +50,10 @@ function Hero({ row, onSelect }: { row: ScorecardRow; onSelect: (row: ScorecardR
   const lang = useLang()
   const judged = row.status === 'red' || row.status === 'yellow' || row.status === 'green'
   return (
-    <div
+    <button
+      type="button"
       onClick={() => onSelect(row)}
-      className="-mx-4 flex cursor-pointer items-end justify-between gap-3 border-y bg-muted/30 px-4 py-3 transition-colors hover:bg-muted/50"
+      className="-mx-4 flex w-full cursor-pointer items-end justify-between gap-3 border-y bg-muted/30 px-4 py-3 text-left transition-colors hover:bg-muted/50"
     >
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -71,7 +75,7 @@ function Hero({ row, onSelect }: { row: ScorecardRow; onSelect: (row: ScorecardR
         <div className="mt-1 truncate text-[11px] text-muted-foreground/80">{rowTarget(row.id, row.targetText, lang)}</div>
       </div>
       <Sparkline row={row} width={104} height={34} />
-    </div>
+    </button>
   )
 }
 
@@ -79,10 +83,11 @@ function CompactRow({ row, onSelect }: { row: ScorecardRow; onSelect: (row: Scor
   const lang = useLang()
   return (
     <NoteHint note={rowName(row.id, row.name, lang)}>
-      <div
+      <button
+        type="button"
         onClick={() => onSelect(row)}
         className={cn(
-          '-mx-1.5 flex h-8 cursor-pointer items-center gap-2 rounded-md px-1.5 transition-colors hover:bg-muted/50',
+          '-mx-1.5 flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left transition-colors hover:bg-muted/50',
           row.status === 'red' && 'bg-red-500/[0.06] hover:bg-red-500/[0.1]',
         )}
       >
@@ -107,7 +112,7 @@ function CompactRow({ row, onSelect }: { row: ScorecardRow; onSelect: (row: Scor
           {formatValue(row)}
         </span>
         <Delta row={row} />
-      </div>
+      </button>
     </NoteHint>
   )
 }
@@ -143,7 +148,7 @@ function ProductCard({
             <div className="flex items-center gap-2">
               <span className="truncate text-[15px] font-semibold tracking-tight">{label}</span>
               {reds > 0 && (
-                <Badge variant="destructive" className="h-[18px] shrink-0 px-1.5 text-[10px]">
+                <Badge variant="destructive" className="h-4.5 shrink-0 px-1.5 text-[10px]">
                   {reds} {t.red}
                 </Badge>
               )}
@@ -154,13 +159,13 @@ function ProductCard({
                   {stage.business !== '—' && (
                     <Badge
                       variant="outline"
-                      className={cn('h-[18px] px-1.5 text-[10px] font-normal', stage.accent && STAGE_BADGE[stage.accent])}
+                      className={cn('h-4.5 px-1.5 text-[10px] font-normal', stage.accent && STAGE_BADGE[stage.accent])}
                     >
                       {stage.business}
                     </Badge>
                   )}
                   {stage.release !== '—' && (
-                    <Badge variant="outline" className="h-[18px] px-1.5 text-[10px] font-normal">
+                    <Badge variant="outline" className="h-4.5 px-1.5 text-[10px] font-normal">
                       {stage.release}
                     </Badge>
                   )}
@@ -240,8 +245,8 @@ export default function ProductCards() {
 
       {loading && !data && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-64 w-full" />
+          {SKELETON_KEYS.map((k) => (
+            <Skeleton key={k} className="h-64 w-full" />
           ))}
         </div>
       )}
