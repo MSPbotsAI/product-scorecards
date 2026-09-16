@@ -166,7 +166,10 @@ export async function probeFacets(tenantId: string, datasetId: string, cols: str
     const counts = new Map<string, number>()
     for (const r of rows) {
       const v = col.includes('+')
-        ? col.split('+').map((c) => str(r[c.trim()]) || '(blank)').join(' | ')
+        ? col
+            .split('+')
+            .map((c) => str(r[c.trim()]) || '(blank)')
+            .join(' | ')
         : str(r[col]) || '(blank)'
       counts.set(v, (counts.get(v) ?? 0) + 1)
     }
@@ -187,9 +190,9 @@ async function readAll(datasetId: string, ctx: ReadContext): Promise<Record_[]> 
   const out: Record_[] = []
   for (let page = 1; page <= MAX_PAGES; page++) {
     const query = { current: page, size: PAGE_SIZE }
-    const res = (ctx.mode === 'public'
-      ? await client.getPublicDatasetData(datasetId, query)
-      : await client.getDatasetData(datasetId, query, ctx.auth)) as Record_
+    const res = (
+      ctx.mode === 'public' ? await client.getPublicDatasetData(datasetId, query) : await client.getDatasetData(datasetId, query, ctx.auth)
+    ) as Record_
     const payload = unwrap(res, datasetId, ctx.mode)
     const batch = (payload?.records ?? payload?.list ?? payload?.rows ?? payload?.data ?? []) as Record_[]
     if (!Array.isArray(batch)) {
@@ -199,9 +202,7 @@ async function readAll(datasetId: string, ctx: ReadContext): Promise<Record_[]> 
     out.push(...batch)
     if (batch.length < PAGE_SIZE) break
     if (page === MAX_PAGES) {
-      throw new Error(
-        `dataset ${datasetId} exceeded ${MAX_PAGES * PAGE_SIZE} rows — refusing to report a truncated number`,
-      )
+      throw new Error(`dataset ${datasetId} exceeded ${MAX_PAGES * PAGE_SIZE} rows — refusing to report a truncated number`)
     }
   }
   // Zero rows is not a zero measurement: these datasets always carry paying tenants.
@@ -251,15 +252,11 @@ function fmtUnit(n: number, unit: RowDef['unit']): string {
 function bandTargetText(def: RowDef): string {
   if (def.compare === 'band') {
     const g = fmtUnit(def.target ?? 0, def.unit)
-    return def.yellowMax != null
-      ? `<=${g} green · <=${fmtUnit(def.yellowMax, def.unit)} yellow · red above`
-      : `<=${g} green · red above`
+    return def.yellowMax != null ? `<=${g} green · <=${fmtUnit(def.yellowMax, def.unit)} yellow · red above` : `<=${g} green · red above`
   }
   if (def.compare === 'band-hi') {
     const g = fmtUnit(def.target ?? 0, def.unit)
-    return def.yellowMin != null
-      ? `>=${g} green · >=${fmtUnit(def.yellowMin, def.unit)} yellow · red below`
-      : `>=${g} green · red below`
+    return def.yellowMin != null ? `>=${g} green · >=${fmtUnit(def.yellowMin, def.unit)} yellow · red below` : `>=${g} green · red below`
   }
   return def.targetText
 }
@@ -292,7 +289,10 @@ function resolveAi(rows: Record_[]): Resolved {
     out.set(p.ids[0], {
       value: active.length,
       previous,
-      names: active.map((r) => str(r.tenant_name)).filter(Boolean).slice(0, 12),
+      names: active
+        .map((r) => str(r.tenant_name))
+        .filter(Boolean)
+        .slice(0, 12),
       // The credit dataset is a snapshot: prior-7d vs last-7d is the only history it carries.
       // A real weekly series needs a small dataset over dw.dws_ai_trace_stat_day_di_view.
       history:
@@ -306,10 +306,7 @@ function resolveAi(rows: Record_[]): Resolved {
 
     // Silent = paid, has history on THIS product, zero in the last 7 days. Named for routing.
     const silent = rows.filter(
-      (r) =>
-        /active paid/i.test(str(r.ai_billing_status)) &&
-        p.evidence.some((col) => num(r[col]) > 0) &&
-        num(r[p.l7d]) === 0,
+      (r) => /active paid/i.test(str(r.ai_billing_status)) && p.evidence.some((col) => num(r[col]) > 0) && num(r[p.l7d]) === 0,
     )
     out.set(p.ids[1], {
       value: silent.length,
@@ -405,7 +402,13 @@ function resolveSubscription(rows: Record_[]): { out: Resolved; current: string 
     const payingOf = (tenants: Map<string, Record_[]>) =>
       [...tenants.entries()].filter(([, rs]) => !hasAccess || rs.some((r) => flagOn(r[access])))
 
-    out.set(p.retention, fromSeries(series((t) => payingOf(t).length || null), { degraded: !hasAccess }))
+    out.set(
+      p.retention,
+      fromSeries(
+        series((t) => payingOf(t).length || null),
+        { degraded: !hasAccess },
+      ),
+    )
 
     const ratioSeries = series((t) => {
       const paying = payingOf(t)
@@ -425,12 +428,8 @@ function resolveSubscription(rows: Record_[]): { out: Resolved; current: string 
       p.eng,
       fromSeries(
         series((t) => {
-          const scores = [...t.values()]
-            .map((rs) => num(rs.find((r) => num(r[score]) > 0)?.[score]))
-            .filter((n) => n > 0)
-          return scores.length
-            ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100
-            : null
+          const scores = [...t.values()].map((rs) => num(rs.find((r) => num(r[score]) > 0)?.[score])).filter((n) => n > 0)
+          return scores.length ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100 : null
         }),
       ),
     )
@@ -488,19 +487,13 @@ function resolveAiWeekly(rows: Record_[]): Resolved {
   ] as const
 
   const cutoff = currentWeekMonday()
-  const weeks = [...new Set(rows.map((r) => str(r.weeks_date).slice(0, 10)))]
-    .filter((w) => w && w < cutoff)
-    .sort()
+  const weeks = [...new Set(rows.map((r) => str(r.weeks_date).slice(0, 10)))].filter((w) => w && w < cutoff).sort()
   if (!weeks.length) return out
 
   for (const p of products) {
     const history: WeekPoint[] = weeks.map((week) => ({
       week,
-      value: new Set(
-        rows
-          .filter((r) => str(r.weeks_date).slice(0, 10) === week && num(r[p.col]) > 0)
-          .map((r) => str(r.tenant_code)),
-      ).size,
+      value: new Set(rows.filter((r) => str(r.weeks_date).slice(0, 10) === week && num(r[p.col]) > 0).map((r) => str(r.tenant_code))).size,
     }))
     const latest = weeks[weeks.length - 1]
     const names = [
@@ -594,9 +587,7 @@ export async function buildScorecard(tenantId: string, auth: AuthHeaders): Promi
     // A runtime threshold override wins over the code default; `'band'`/`'band-hi'` targetText is
     // then regenerated from the effective numbers so an edit is reflected immediately.
     const override = overrides.get(rawDef.id)
-    const merged: RowDef = override
-      ? { ...rawDef, target: override.target, yellowMin: override.yellowMin ?? rawDef.yellowMin }
-      : rawDef
+    const merged: RowDef = override ? { ...rawDef, target: override.target, yellowMin: override.yellowMin ?? rawDef.yellowMin } : rawDef
     const def: RowDef =
       merged.compare === 'band' || merged.compare === 'band-hi' ? { ...merged, targetText: bandTargetText(merged) } : merged
 
@@ -657,9 +648,7 @@ export async function buildScorecard(tenantId: string, auth: AuthHeaders): Promi
   const judged = rows.filter((r) => r.status !== 'display' && !r.excludeFromCoverage)
   const withData = judged.filter((r) => r.status !== 'nodata')
   const completeness = judged.length ? Math.round((withData.length / judged.length) * 1000) / 10 : null
-  const onTrack = withData.length
-    ? Math.round((withData.filter((r) => r.status === 'green').length / withData.length) * 1000) / 10
-    : null
+  const onTrack = withData.length ? Math.round((withData.filter((r) => r.status === 'green').length / withData.length) * 1000) / 10 : null
 
   for (const row of rows) {
     if (row.id === 'H1' && completeness != null) {

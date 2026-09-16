@@ -1,11 +1,7 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: [
-    'service/server.ts',
-    'service/schema.ts',
-    'service/schemas/*.ts',
-  ],
+  entry: ['service/server.ts', 'service/schema.ts', 'service/schemas/*.ts'],
   format: ['esm'],
   platform: 'node',
   target: 'node22',

@@ -204,7 +204,7 @@ const unsourcedRows: RowDef[] = [
     unit: 'percent',
     targetText: 'red at -5pp trend',
     note:
-      'The template catalog and two-hop clone lineage are known (business_type=\'Template\'; ' +
+      "The template catalog and two-hop clone lineage are known (business_type='Template'; " +
       'original_id + parent original_id). The per-tenant asset USAGE events are not: the dataset ' +
       'that would carry them is Requested and empty.',
   },
@@ -437,7 +437,7 @@ const sapRows: RowDef[] = [
     targetText: '>=3 (leading indicator — excluded from evaluation)',
     note:
       'Engagement store: held external calls this ISO week whose `relevance` is high or medium — ' +
-      'the routine\'s own judgement that the call was about the SOP Agent. Design rule 2: leading ' +
+      "the routine's own judgement that the call was about the SOP Agent. Design rule 2: leading " +
       'activity counts are never red or green.',
   },
   {

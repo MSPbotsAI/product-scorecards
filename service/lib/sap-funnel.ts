@@ -376,9 +376,7 @@ function readMail(root: string): SapFunnel['mail'] {
 export async function buildSapFunnel(tenantId: string, refresh = false): Promise<SapFunnel> {
   const store = await ensureStore(tenantId, refresh)
   if (!store) {
-    throw new Error(
-      'the engagement store is not configured — set store.git_url (and a token for the private repo) on the Settings page',
-    )
+    throw new Error('the engagement store is not configured — set store.git_url (and a token for the private repo) on the Settings page')
   }
 
   const now = new Date()

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
   AlertDescription,
@@ -13,155 +13,161 @@ import {
   Label,
   Skeleton,
   cn,
-} from "@mspbots/ui";
-import { AlertTriangle, CheckCircle2, RotateCcw, Save } from "lucide-react";
-import { LangToggle } from "../../lib/board";
-import { useLang, useT } from "../../lib/i18n";
-import { invalidateScorecard } from "../../lib/scorecard-client";
+} from '@mspbots/ui'
+import { AlertTriangle, CheckCircle2, RotateCcw, Save } from 'lucide-react'
+import { LangToggle } from '../../lib/board'
+import { useLang, useT } from '../../lib/i18n'
+import { invalidateScorecard } from '../../lib/scorecard-client'
 
 export const meta = {
-  label: "Settings",
-  icon: "Settings",
+  label: 'Settings',
+  icon: 'Settings',
   order: 5,
   menu: true,
-  description: "API key and dataset ids — stored in the app database so they survive a version update.",
-};
+  description: 'API key and dataset ids — stored in the app database so they survive a version update.',
+}
 
 interface SettingItem {
-  key: string;
-  secret: boolean;
-  env: string;
-  default: string;
-  origin: "database" | "environment" | "default";
-  value: string;
-  hint: string;
-  configured: boolean;
+  key: string
+  secret: boolean
+  env: string
+  default: string
+  origin: 'database' | 'environment' | 'default'
+  value: string
+  hint: string
+  configured: boolean
 }
 
 /** Field labels live here rather than in the generic i18n table — they are page-specific. */
 const FIELD: Record<string, { en: [string, string]; zh: [string, string] }> = {
   public_api_key: {
-    en: ["MSPbots API key", "Generated at app.mspbots.ai → Public API. The app reads datasets with this key."],
-    zh: ["MSPbots API Key", "在 app.mspbots.ai → Public API 生成。应用用它读取 dataset。"],
+    en: ['MSPbots API key', 'Generated at app.mspbots.ai → Public API. The app reads datasets with this key.'],
+    zh: ['MSPbots API Key', '在 app.mspbots.ai → Public API 生成。应用用它读取 dataset。'],
   },
-  "dataset.ai_weekly": {
-    en: ["AI weekly series", "Week × tenant credits per AI product — drives the AI active-tenant rows and their history."],
-    zh: ["AI 周序列", "周×租户的各产品 credit——驱动 AI 活跃租户行及其历史。"],
+  'dataset.ai_weekly': {
+    en: ['AI weekly series', 'Week × tenant credits per AI product — drives the AI active-tenant rows and their history.'],
+    zh: ['AI 周序列', '周×租户的各产品 credit——驱动 AI 活跃租户行及其历史。'],
   },
-  "dataset.ai_credit": {
-    en: ["AI credit snapshot", "One row per paying tenant — drives the silent-paid rows and billing status."],
-    zh: ["AI credit 快照", "每付费租户一行——驱动沉默付费行与计费状态。"],
+  'dataset.ai_credit': {
+    en: ['AI credit snapshot', 'One row per paying tenant — drives the silent-paid rows and billing status.'],
+    zh: ['AI credit 快照', '每付费租户一行——驱动沉默付费行与计费状态。'],
   },
-  "dataset.weekly_metrics": {
-    en: ["Subscription weekly metrics", "Tenant × week — drives BI / Bot / NextTicket / Attendance rows."],
-    zh: ["订阅周指标", "租户×周——驱动 BI / Bot / NextTicket / Attendance 各行。"],
+  'dataset.weekly_metrics': {
+    en: ['Subscription weekly metrics', 'Tenant × week — drives BI / Bot / NextTicket / Attendance rows.'],
+    zh: ['订阅周指标', '租户×周——驱动 BI / Bot / NextTicket / Attendance 各行。'],
   },
-  "dataset.timesheet": {
-    en: ["Timesheet", "ClickUp logged hours — the labor side of every ROI row."],
-    zh: ["工时", "ClickUp 登记工时——每个 ROI 行的工时侧。"],
+  'dataset.timesheet': {
+    en: ['Timesheet', 'ClickUp logged hours — the labor side of every ROI row.'],
+    zh: ['工时', 'ClickUp 登记工时——每个 ROI 行的工时侧。'],
   },
-  "clickup.ticket_url": {
+  'clickup.ticket_url': {
     en: [
-      "Ticket link template",
-      "Makes the Timesheet ticket column clickable. {id} is replaced with the ticket key (PRD-15944); ClickUp resolves a Custom Task ID at /t/<workspace>/<key>. Leave blank for plain text.",
+      'Ticket link template',
+      'Makes the Timesheet ticket column clickable. {id} is replaced with the ticket key (PRD-15944); ClickUp resolves a Custom Task ID at /t/<workspace>/<key>. Leave blank for plain text.',
     ],
     zh: [
-      "工单链接模板",
-      "让工时页的工单列可点击。{id} 会被替换成工单号（PRD-15944）；ClickUp 的 /t/<workspace>/<工单号> 能直接解析自定义工单号。留空则不生成链接。",
+      '工单链接模板',
+      '让工时页的工单列可点击。{id} 会被替换成工单号（PRD-15944）；ClickUp 的 /t/<workspace>/<工单号> 能直接解析自定义工单号。留空则不生成链接。',
     ],
   },
-  "store.git_url": {
+  'store.git_url': {
     en: [
-      "Repository URL",
-      "The markdown data repo the /sopagent-sync routine writes. Cloned at runtime and pulled every 5 minutes — a store push reaches the funnel without a republish.",
+      'Repository URL',
+      'The markdown data repo the /sopagent-sync routine writes. Cloned at runtime and pulled every 5 minutes — a store push reaches the funnel without a republish.',
     ],
-    zh: [
-      "仓库地址",
-      "/sopagent-sync 例程写入的 markdown 数据仓库。运行时克隆、每 5 分钟拉取——store 推送后无需重新发布即可反映到漏斗页。",
+    zh: ['仓库地址', '/sopagent-sync 例程写入的 markdown 数据仓库。运行时克隆、每 5 分钟拉取——store 推送后无需重新发布即可反映到漏斗页。'],
+  },
+  'store.git_token': {
+    en: [
+      'Access token',
+      'A PAT with read access to that private repo. Without it the clone fails and the funnel page reports the source unreachable.',
     ],
+    zh: ['访问令牌', '能读取该私有仓库的 PAT。不配置则克隆失败,漏斗页会提示源不可达。'],
   },
-  "store.git_token": {
-    en: ["Access token", "A PAT with read access to that private repo. Without it the clone fails and the funnel page reports the source unreachable."],
-    zh: ["访问令牌", "能读取该私有仓库的 PAT。不配置则克隆失败,漏斗页会提示源不可达。"],
+  'org.root': {
+    en: [
+      'Reporting-tree root',
+      'Everyone at or below this person counts as the product org. Filtering by department would miss members who sit elsewhere.',
+    ],
+    zh: ['汇报树根节点', '此人及其下属全部计为产品团队。按部门过滤会漏掉挂在其他部门的成员。'],
   },
-  "org.root": {
-    en: ["Reporting-tree root", "Everyone at or below this person counts as the product org. Filtering by department would miss members who sit elsewhere."],
-    zh: ["汇报树根节点", "此人及其下属全部计为产品团队。按部门过滤会漏掉挂在其他部门的成员。"],
+  'org.exclude': {
+    en: [
+      'Excluded people',
+      'Comma-separated. For transfers the source data has not caught up with — their rows still carry the old manager.',
+    ],
+    zh: ['排除人员', '逗号分隔。用于源数据尚未更新的人员变动——他们的记录仍挂着原上级。'],
   },
-  "org.exclude": {
-    en: ["Excluded people", "Comma-separated. For transfers the source data has not caught up with — their rows still carry the old manager."],
-    zh: ["排除人员", "逗号分隔。用于源数据尚未更新的人员变动——他们的记录仍挂着原上级。"],
-  },
-};
+}
 
 const ORIGIN_LABEL: Record<string, { en: string; zh: string; tone: string }> = {
-  database: { en: "saved", zh: "已保存", tone: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
-  environment: { en: "from environment", zh: "来自环境变量", tone: "bg-amber-500/15 text-amber-700 dark:text-amber-400" },
-  default: { en: "built-in default", zh: "内置默认值", tone: "text-muted-foreground" },
-};
+  database: { en: 'saved', zh: '已保存', tone: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400' },
+  environment: { en: 'from environment', zh: '来自环境变量', tone: 'bg-amber-500/15 text-amber-700 dark:text-amber-400' },
+  default: { en: 'built-in default', zh: '内置默认值', tone: 'text-muted-foreground' },
+}
 
 export default function SettingsPage() {
-  const t = useT();
-  const lang = useLang();
-  const [items, setItems] = useState<SettingItem[] | null>(null);
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [storageError, setStorageError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const t = useT()
+  const lang = useLang()
+  const [items, setItems] = useState<SettingItem[] | null>(null)
+  const [draft, setDraft] = useState<Record<string, string>>({})
+  const [storageError, setStorageError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
-    setError(null);
+    setError(null)
     try {
-      const res = await $fetch("/api/settings");
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? `request failed (${res.status})`);
-      setItems(body.items as SettingItem[]);
-      setStorageError(body.storageError ?? null);
-      setDraft({});
+      const res = await $fetch('/api/settings')
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error ?? `request failed (${res.status})`)
+      setItems(body.items as SettingItem[])
+      setStorageError(body.storageError ?? null)
+      setDraft({})
     } catch (err) {
-      setError(err instanceof Error ? err.message : "failed to load settings");
+      setError(err instanceof Error ? err.message : 'failed to load settings')
     }
-  }, []);
+  }, [])
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load()
+  }, [load])
 
   const save = async () => {
-    if (Object.keys(draft).length === 0) return;
-    setSaving(true);
-    setError(null);
-    setSaved(false);
+    if (Object.keys(draft).length === 0) return
+    setSaving(true)
+    setError(null)
+    setSaved(false)
     try {
-      const res = await $fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
+      const res = await $fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(draft),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? `save failed (${res.status})`);
-      setSaved(true);
+      })
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error ?? `save failed (${res.status})`)
+      setSaved(true)
       // The scorecard is cached client-side; changing a key or a dataset id invalidates it.
-      invalidateScorecard();
-      await load();
+      invalidateScorecard()
+      await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "failed to save settings");
+      setError(err instanceof Error ? err.message : 'failed to save settings')
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
-  };
+  }
 
-  const dirty = Object.keys(draft).length > 0;
+  const dirty = Object.keys(draft).length > 0
 
   return (
     <div className="mx-auto max-w-3xl space-y-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{lang === "zh" ? "设置" : "Settings"}</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{lang === 'zh' ? '设置' : 'Settings'}</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            {lang === "zh"
-              ? "保存在应用自己的数据库里（schema 绑定在稳定的 app id 上），因此发布新版本不会覆盖这些值。"
+            {lang === 'zh'
+              ? '保存在应用自己的数据库里（schema 绑定在稳定的 app id 上），因此发布新版本不会覆盖这些值。'
               : "Stored in the app's own database, under a schema keyed to the stable app id — so publishing a new version does not overwrite these values."}
           </p>
         </div>
@@ -172,9 +178,9 @@ export default function SettingsPage() {
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
           <AlertDescription>
-            {lang === "zh"
-              ? "数据库不可用，下面显示的是环境变量或默认值，且无法保存修改："
-              : "The database is unavailable — the values below come from the environment or defaults, and saving will fail:"}{" "}
+            {lang === 'zh'
+              ? '数据库不可用，下面显示的是环境变量或默认值，且无法保存修改：'
+              : 'The database is unavailable — the values below come from the environment or defaults, and saving will fail:'}{' '}
             <span className="font-mono text-xs">{storageError}</span>
           </AlertDescription>
         </Alert>
@@ -191,7 +197,9 @@ export default function SettingsPage() {
         <Alert>
           <CheckCircle2 className="h-4 w-4" />
           <AlertDescription>
-            {lang === "zh" ? "已保存。记分卡数据会在下次加载时使用新配置。" : "Saved. The scorecard will use the new configuration on its next load."}
+            {lang === 'zh'
+              ? '已保存。记分卡数据会在下次加载时使用新配置。'
+              : 'Saved. The scorecard will use the new configuration on its next load.'}
           </AlertDescription>
         </Alert>
       )}
@@ -200,17 +208,17 @@ export default function SettingsPage() {
 
       {items && (
         <>
-          {["public_api_key"].map((key) => {
-            const item = items.find((i) => i.key === key);
-            if (!item) return null;
-            const field = FIELD[key][lang];
-            const origin = ORIGIN_LABEL[item.origin];
+          {['public_api_key'].map((key) => {
+            const item = items.find((i) => i.key === key)
+            if (!item) return null
+            const field = FIELD[key][lang]
+            const origin = ORIGIN_LABEL[item.origin]
             return (
               <Card key={key}>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between gap-2">
                     <CardTitle className="text-base">{field[0]}</CardTitle>
-                    <Badge variant="outline" className={cn("h-5 px-1.5 text-[11px] font-normal", origin.tone)}>
+                    <Badge variant="outline" className={cn('h-5 px-1.5 text-[11px] font-normal', origin.tone)}>
                       {origin[lang]}
                     </Badge>
                   </div>
@@ -226,49 +234,49 @@ export default function SettingsPage() {
                     autoComplete="off"
                     placeholder={
                       item.configured
-                        ? `${lang === "zh" ? "当前" : "current"}: ${item.hint} — ${lang === "zh" ? "留空则不修改" : "leave blank to keep"}`
-                        : lang === "zh"
-                          ? "尚未配置"
-                          : "not configured yet"
+                        ? `${lang === 'zh' ? '当前' : 'current'}: ${item.hint} — ${lang === 'zh' ? '留空则不修改' : 'leave blank to keep'}`
+                        : lang === 'zh'
+                          ? '尚未配置'
+                          : 'not configured yet'
                     }
-                    value={draft[key] ?? ""}
+                    value={draft[key] ?? ''}
                     onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
                     className="font-mono"
                   />
                   <p className="text-[11px] text-muted-foreground">
-                    {lang === "zh"
-                      ? "写入后不会再回传到浏览器，页面只显示遮罩提示。"
-                      : "Once saved it is never sent back to the browser — the page only ever shows a masked hint."}
+                    {lang === 'zh'
+                      ? '写入后不会再回传到浏览器，页面只显示遮罩提示。'
+                      : 'Once saved it is never sent back to the browser — the page only ever shows a masked hint.'}
                   </p>
                 </CardContent>
               </Card>
-            );
+            )
           })}
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">{lang === "zh" ? "Dataset ID" : "Dataset IDs"}</CardTitle>
+              <CardTitle className="text-base">{lang === 'zh' ? 'Dataset ID' : 'Dataset IDs'}</CardTitle>
               <CardDescription className="text-xs">
-                {lang === "zh"
-                  ? "每个 dataset 必须已加入上面这个 key 的白名单（app.mspbots.ai → Public API）。"
-                  : "Each dataset must be whitelisted on that API key (app.mspbots.ai → Public API)."}
+                {lang === 'zh'
+                  ? '每个 dataset 必须已加入上面这个 key 的白名单（app.mspbots.ai → Public API）。'
+                  : 'Each dataset must be whitelisted on that API key (app.mspbots.ai → Public API).'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {items
-                .filter((i) => i.key.startsWith("dataset."))
+                .filter((i) => i.key.startsWith('dataset.'))
                 .map((item) => {
-                  const field = FIELD[item.key][lang];
-                  const origin = ORIGIN_LABEL[item.origin];
-                  const current = draft[item.key] ?? item.value;
-                  const changed = draft[item.key] != null && draft[item.key] !== item.value;
+                  const field = FIELD[item.key][lang]
+                  const origin = ORIGIN_LABEL[item.origin]
+                  const current = draft[item.key] ?? item.value
+                  const changed = draft[item.key] != null && draft[item.key] !== item.value
                   return (
                     <div key={item.key} className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <Label htmlFor={item.key} className="text-sm">
                           {field[0]}
                         </Label>
-                        <Badge variant="outline" className={cn("h-5 px-1.5 text-[11px] font-normal", origin.tone)}>
+                        <Badge variant="outline" className={cn('h-5 px-1.5 text-[11px] font-normal', origin.tone)}>
                           {origin[lang]}
                         </Badge>
                       </div>
@@ -279,7 +287,7 @@ export default function SettingsPage() {
                           inputMode="numeric"
                           value={current}
                           onChange={(e) => setDraft((d) => ({ ...d, [item.key]: e.target.value }))}
-                          className={cn("font-mono text-[13px]", changed && "border-amber-500/60")}
+                          className={cn('font-mono text-[13px]', changed && 'border-amber-500/60')}
                         />
                         <Button
                           type="button"
@@ -287,41 +295,41 @@ export default function SettingsPage() {
                           size="sm"
                           disabled={current === item.default}
                           onClick={() => setDraft((d) => ({ ...d, [item.key]: item.default }))}
-                          title={`${lang === "zh" ? "恢复默认" : "Reset to default"}: ${item.default}`}
+                          title={`${lang === 'zh' ? '恢复默认' : 'Reset to default'}: ${item.default}`}
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
-                  );
+                  )
                 })}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">{lang === "zh" ? "链接" : "Links"}</CardTitle>
+              <CardTitle className="text-base">{lang === 'zh' ? '链接' : 'Links'}</CardTitle>
               <CardDescription className="text-xs">
-                {lang === "zh"
-                  ? "工时数据里只有工单号，没有 ClickUp 内部 task id，所以链接由工单号拼出来。"
+                {lang === 'zh'
+                  ? '工时数据里只有工单号，没有 ClickUp 内部 task id，所以链接由工单号拼出来。'
                   : "The timesheet data carries the ticket key only, not ClickUp's internal task id — so the link is built from the key."}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {items
-                .filter((i) => i.key.startsWith("clickup."))
+                .filter((i) => i.key.startsWith('clickup.'))
                 .map((item) => {
-                  const field = FIELD[item.key][lang];
-                  const origin = ORIGIN_LABEL[item.origin];
-                  const current = draft[item.key] ?? item.value;
-                  const changed = draft[item.key] != null && draft[item.key] !== item.value;
+                  const field = FIELD[item.key][lang]
+                  const origin = ORIGIN_LABEL[item.origin]
+                  const current = draft[item.key] ?? item.value
+                  const changed = draft[item.key] != null && draft[item.key] !== item.value
                   return (
                     <div key={item.key} className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <Label htmlFor={item.key} className="text-sm">
                           {field[0]}
                         </Label>
-                        <Badge variant="outline" className={cn("h-5 px-1.5 text-[11px] font-normal", origin.tone)}>
+                        <Badge variant="outline" className={cn('h-5 px-1.5 text-[11px] font-normal', origin.tone)}>
                           {origin[lang]}
                         </Badge>
                       </div>
@@ -331,7 +339,7 @@ export default function SettingsPage() {
                           id={item.key}
                           value={current}
                           onChange={(e) => setDraft((d) => ({ ...d, [item.key]: e.target.value }))}
-                          className={cn("font-mono text-[13px]", changed && "border-amber-500/60")}
+                          className={cn('font-mono text-[13px]', changed && 'border-amber-500/60')}
                         />
                         <Button
                           type="button"
@@ -339,32 +347,32 @@ export default function SettingsPage() {
                           size="sm"
                           disabled={current === item.default}
                           onClick={() => setDraft((d) => ({ ...d, [item.key]: item.default }))}
-                          title={`${lang === "zh" ? "恢复默认" : "Reset to default"}: ${item.default}`}
+                          title={`${lang === 'zh' ? '恢复默认' : 'Reset to default'}: ${item.default}`}
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
-                  );
+                  )
                 })}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">{lang === "zh" ? "SOP Agent 数据仓库" : "Engagement store"}</CardTitle>
+              <CardTitle className="text-base">{lang === 'zh' ? 'SOP Agent 数据仓库' : 'Engagement store'}</CardTitle>
               <CardDescription className="text-xs">
-                {lang === "zh"
-                  ? "SOP Agent 漏斗页和 Agent Platform 卡的数据源——ClickUp 客户跟进板镜像的同一个仓库。"
-                  : "The source behind the SOP Agent Funnel page and the Agent Platform card — the same repo the ClickUp client-engagement board mirrors."}
+                {lang === 'zh'
+                  ? 'SOP Agent 漏斗页和 Agent Platform 卡的数据源——ClickUp 客户跟进板镜像的同一个仓库。'
+                  : 'The source behind the SOP Agent Funnel page and the Agent Platform card — the same repo the ClickUp client-engagement board mirrors.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {items
-                .filter((i) => i.key.startsWith("store."))
+                .filter((i) => i.key.startsWith('store.'))
                 .map((item) => {
-                  const field = FIELD[item.key][lang];
-                  const origin = ORIGIN_LABEL[item.origin];
+                  const field = FIELD[item.key][lang]
+                  const origin = ORIGIN_LABEL[item.origin]
                   if (item.secret) {
                     return (
                       <div key={item.key} className="space-y-1.5">
@@ -372,7 +380,7 @@ export default function SettingsPage() {
                           <Label htmlFor={item.key} className="text-sm">
                             {field[0]}
                           </Label>
-                          <Badge variant="outline" className={cn("h-5 px-1.5 text-[11px] font-normal", origin.tone)}>
+                          <Badge variant="outline" className={cn('h-5 px-1.5 text-[11px] font-normal', origin.tone)}>
                             {origin[lang]}
                           </Badge>
                         </div>
@@ -383,27 +391,27 @@ export default function SettingsPage() {
                           autoComplete="off"
                           placeholder={
                             item.configured
-                              ? `${lang === "zh" ? "当前" : "current"}: ${item.hint} — ${lang === "zh" ? "留空则不修改" : "leave blank to keep"}`
-                              : lang === "zh"
-                                ? "尚未配置"
-                                : "not configured yet"
+                              ? `${lang === 'zh' ? '当前' : 'current'}: ${item.hint} — ${lang === 'zh' ? '留空则不修改' : 'leave blank to keep'}`
+                              : lang === 'zh'
+                                ? '尚未配置'
+                                : 'not configured yet'
                           }
-                          value={draft[item.key] ?? ""}
+                          value={draft[item.key] ?? ''}
                           onChange={(e) => setDraft((d) => ({ ...d, [item.key]: e.target.value }))}
                           className="font-mono"
                         />
                       </div>
-                    );
+                    )
                   }
-                  const current = draft[item.key] ?? item.value;
-                  const changed = draft[item.key] != null && draft[item.key] !== item.value;
+                  const current = draft[item.key] ?? item.value
+                  const changed = draft[item.key] != null && draft[item.key] !== item.value
                   return (
                     <div key={item.key} className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <Label htmlFor={item.key} className="text-sm">
                           {field[0]}
                         </Label>
-                        <Badge variant="outline" className={cn("h-5 px-1.5 text-[11px] font-normal", origin.tone)}>
+                        <Badge variant="outline" className={cn('h-5 px-1.5 text-[11px] font-normal', origin.tone)}>
                           {origin[lang]}
                         </Badge>
                       </div>
@@ -413,7 +421,7 @@ export default function SettingsPage() {
                           id={item.key}
                           value={current}
                           onChange={(e) => setDraft((d) => ({ ...d, [item.key]: e.target.value }))}
-                          className={cn("font-mono text-[13px]", changed && "border-amber-500/60")}
+                          className={cn('font-mono text-[13px]', changed && 'border-amber-500/60')}
                         />
                         <Button
                           type="button"
@@ -421,41 +429,41 @@ export default function SettingsPage() {
                           size="sm"
                           disabled={current === item.default}
                           onClick={() => setDraft((d) => ({ ...d, [item.key]: item.default }))}
-                          title={`${lang === "zh" ? "恢复默认" : "Reset to default"}: ${item.default}`}
+                          title={`${lang === 'zh' ? '恢复默认' : 'Reset to default'}: ${item.default}`}
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
-                  );
+                  )
                 })}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">{lang === "zh" ? "团队范围" : "Team scope"}</CardTitle>
+              <CardTitle className="text-base">{lang === 'zh' ? '团队范围' : 'Team scope'}</CardTitle>
               <CardDescription className="text-xs">
-                {lang === "zh"
-                  ? "决定工时页统计哪些人：以根节点为起点沿汇报链递归，再减去排除名单。"
-                  : "Decides whose hours the Timesheet counts: walk the manager chain down from the root, then subtract the exclusions."}
+                {lang === 'zh'
+                  ? '决定工时页统计哪些人：以根节点为起点沿汇报链递归，再减去排除名单。'
+                  : 'Decides whose hours the Timesheet counts: walk the manager chain down from the root, then subtract the exclusions.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {items
-                .filter((i) => i.key.startsWith("org."))
+                .filter((i) => i.key.startsWith('org.'))
                 .map((item) => {
-                  const field = FIELD[item.key][lang];
-                  const origin = ORIGIN_LABEL[item.origin];
-                  const current = draft[item.key] ?? item.value;
-                  const changed = draft[item.key] != null && draft[item.key] !== item.value;
+                  const field = FIELD[item.key][lang]
+                  const origin = ORIGIN_LABEL[item.origin]
+                  const current = draft[item.key] ?? item.value
+                  const changed = draft[item.key] != null && draft[item.key] !== item.value
                   return (
                     <div key={item.key} className="space-y-1.5">
                       <div className="flex items-center justify-between gap-2">
                         <Label htmlFor={item.key} className="text-sm">
                           {field[0]}
                         </Label>
-                        <Badge variant="outline" className={cn("h-5 px-1.5 text-[11px] font-normal", origin.tone)}>
+                        <Badge variant="outline" className={cn('h-5 px-1.5 text-[11px] font-normal', origin.tone)}>
                           {origin[lang]}
                         </Badge>
                       </div>
@@ -465,7 +473,7 @@ export default function SettingsPage() {
                           id={item.key}
                           value={current}
                           onChange={(e) => setDraft((d) => ({ ...d, [item.key]: e.target.value }))}
-                          className={cn("text-[13px]", changed && "border-amber-500/60")}
+                          className={cn('text-[13px]', changed && 'border-amber-500/60')}
                         />
                         <Button
                           type="button"
@@ -473,39 +481,39 @@ export default function SettingsPage() {
                           size="sm"
                           disabled={current === item.default}
                           onClick={() => setDraft((d) => ({ ...d, [item.key]: item.default }))}
-                          title={`${lang === "zh" ? "恢复默认" : "Reset to default"}: ${item.default}`}
+                          title={`${lang === 'zh' ? '恢复默认' : 'Reset to default'}: ${item.default}`}
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>
-                  );
+                  )
                 })}
             </CardContent>
           </Card>
 
           <div className="flex items-center gap-3">
             <Button onClick={save} disabled={!dirty || saving}>
-              <Save className={cn("mr-1.5 h-4 w-4", saving && "animate-pulse")} />
-              {lang === "zh" ? "保存" : "Save"}
+              <Save className={cn('mr-1.5 h-4 w-4', saving && 'animate-pulse')} />
+              {lang === 'zh' ? '保存' : 'Save'}
             </Button>
             {dirty && (
               <Button variant="ghost" onClick={() => setDraft({})} disabled={saving}>
-                {lang === "zh" ? "撤销" : "Discard"}
+                {lang === 'zh' ? '撤销' : 'Discard'}
               </Button>
             )}
             <span className="text-[11px] text-muted-foreground">
               {dirty
-                ? lang === "zh"
+                ? lang === 'zh'
                   ? `${Object.keys(draft).length} 项待保存`
                   : `${Object.keys(draft).length} pending change(s)`
-                : lang === "zh"
-                  ? "没有未保存的修改"
-                  : "no unsaved changes"}
+                : lang === 'zh'
+                  ? '没有未保存的修改'
+                  : 'no unsaved changes'}
             </span>
           </div>
         </>
       )}
     </div>
-  );
+  )
 }

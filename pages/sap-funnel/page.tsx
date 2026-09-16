@@ -1,108 +1,102 @@
-import { useCallback, useEffect, useState } from "react";
-import { Alert, AlertDescription, Badge, Card, CardContent, Skeleton, cn } from "@mspbots/ui";
-import { AlertTriangle, ExternalLink, RefreshCw } from "lucide-react";
-import { LangToggle, StatTile } from "../../lib/board";
-import { useFunnelT, useLang } from "../../lib/i18n";
+import { useCallback, useEffect, useState } from 'react'
+import { Alert, AlertDescription, Badge, Card, CardContent, Skeleton, cn } from '@mspbots/ui'
+import { AlertTriangle, ExternalLink, RefreshCw } from 'lucide-react'
+import { LangToggle, StatTile } from '../../lib/board'
+import { useFunnelT, useLang } from '../../lib/i18n'
 
 export const meta = {
-  label: "SOP Agent Funnel",
-  icon: "Filter",
+  label: 'SOP Agent Funnel',
+  icon: 'Filter',
   order: 4,
   menu: true,
-  description:
-    "The Agent Platform engagement funnel, computed from the engagement store the ClickUp client board mirrors.",
-};
+  description: 'The Agent Platform engagement funnel, computed from the engagement store the ClickUp client board mirrors.',
+}
 
 /* ── types: the shape service/lib/sap-funnel.ts returns ── */
 
 interface LadderRung {
-  key: string;
-  label: string;
-  meaning: string;
-  count: number;
-  inFlow: boolean;
+  key: string
+  label: string
+  meaning: string
+  count: number
+  inFlow: boolean
 }
 interface ClientRef {
-  domain: string;
-  company: string;
-  stage: string;
-  ageDays: number | null;
-  clickupTask: string | null;
+  domain: string
+  company: string
+  stage: string
+  ageDays: number | null
+  clickupTask: string | null
 }
 interface Funnel {
-  generatedAt: string;
-  store: { mode: "local" | "git"; syncedAt: string | null; syncError: string | null };
-  ladder: LadderRung[];
-  totalClients: number;
-  committed: { count: number; clients: ClientRef[] };
+  generatedAt: string
+  store: { mode: 'local' | 'git'; syncedAt: string | null; syncError: string | null }
+  ladder: LadderRung[]
+  totalClients: number
+  committed: { count: number; clients: ClientRef[] }
   meetings: {
-    held: number;
-    relevant: number;
-    distinctClients: number;
-    thisWeek: number;
-    thisWeekRelevant: number;
-    byWeek: { week: string; held: number; relevant: number }[];
-  };
-  mail: { accounts: number; batches: { id: string; sentOn: string; sender: string; countSent: number }[] };
+    held: number
+    relevant: number
+    distinctClients: number
+    thisWeek: number
+    thisWeekRelevant: number
+    byWeek: { week: string; held: number; relevant: number }[]
+  }
+  mail: { accounts: number; batches: { id: string; sentOn: string; sender: string; countSent: number }[] }
   handoff: {
-    started: number;
-    atAcquisitionGate: number;
-    atCommentGate: number;
-    closest: { domain: string; company: string; stage: string; required: number; fields: number }[];
-  };
-  stalled: { thresholdDays: number; clients: ClientRef[] };
-  gaps: { layer: string; why: string; needs: string }[];
+    started: number
+    atAcquisitionGate: number
+    atCommentGate: number
+    closest: { domain: string; company: string; stage: string; required: number; fields: number }[]
+  }
+  stalled: { thresholdDays: number; clients: ClientRef[] }
+  gaps: { layer: string; why: string; needs: string }[]
   metrics: {
-    qualifiedCandidates: number;
-    demoCallsThisWeek: number;
-    pipelineFreshnessPct: number | null;
-    activeClients: number;
-    freshClients: number;
-  };
+    qualifiedCandidates: number
+    demoCallsThisWeek: number
+    pipelineFreshnessPct: number | null
+    activeClients: number
+    freshClients: number
+  }
 }
 
 function useFunnel() {
-  const [data, setData] = useState<Funnel | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<Funnel | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
 
   const load = useCallback(async (refresh: boolean) => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      const res = await $fetch(`/api/sap-funnel${refresh ? "?refresh=1" : ""}`);
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? `request failed (${res.status})`);
-      setData(body as Funnel);
+      const res = await $fetch(`/api/sap-funnel${refresh ? '?refresh=1' : ''}`)
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error ?? `request failed (${res.status})`)
+      setData(body as Funnel)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "failed to load the funnel");
+      setError(err instanceof Error ? err.message : 'failed to load the funnel')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, []);
+  }, [])
 
   useEffect(() => {
-    void load(false);
-  }, [load]);
+    void load(false)
+  }, [load])
 
-  return { data, error, loading, reload: () => void load(true) };
+  return { data, error, loading, reload: () => void load(true) }
 }
 
-const clickupUrl = (id: string) => `https://app.clickup.com/t/${id}`;
+const clickupUrl = (id: string) => `https://app.clickup.com/t/${id}`
 
 function TaskLink({ id, children }: { id: string | null; children: React.ReactNode }) {
-  if (!id) return <>{children}</>;
+  if (!id) return <>{children}</>
   return (
-    <a
-      href={clickupUrl(id)}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-center gap-1 hover:underline"
-    >
+    <a href={clickupUrl(id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">
       {children}
       <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />
     </a>
-  );
+  )
 }
 
 /**
@@ -111,8 +105,8 @@ function TaskLink({ id, children }: { id: string | null; children: React.ReactNo
  * not the area.
  */
 function Rung({ rung, max, previous }: { rung: LadderRung; max: number; previous: number | null }) {
-  const width = max > 0 ? Math.max((rung.count / max) * 100, rung.count > 0 ? 2 : 0) : 0;
-  const step = previous != null && previous > 0 ? Math.round((rung.count / previous) * 1000) / 10 : null;
+  const width = max > 0 ? Math.max((rung.count / max) * 100, rung.count > 0 ? 2 : 0) : 0
+  const step = previous != null && previous > 0 ? Math.round((rung.count / previous) * 1000) / 10 : null
   return (
     <div className="grid grid-cols-[10rem_1fr_auto] items-center gap-3 py-1.5">
       <div className="min-w-0">
@@ -127,11 +121,11 @@ function Rung({ rung, max, previous }: { rung: LadderRung; max: number; previous
         {step != null && <span className="ml-2 text-[11px] tabular-nums text-muted-foreground">{step}%</span>}
       </div>
     </div>
-  );
+  )
 }
 
-function WeekBars({ weeks, t }: { weeks: Funnel["meetings"]["byWeek"]; t: ReturnType<typeof useFunnelT> }) {
-  const max = Math.max(1, ...weeks.map((w) => w.held));
+function WeekBars({ weeks, t }: { weeks: Funnel['meetings']['byWeek']; t: ReturnType<typeof useFunnelT> }) {
+  const max = Math.max(1, ...weeks.map((w) => w.held))
   return (
     <div className="overflow-x-auto">
       <div className="flex min-w-max items-end gap-2">
@@ -139,13 +133,10 @@ function WeekBars({ weeks, t }: { weeks: Funnel["meetings"]["byWeek"]; t: Return
           <div key={w.week} className="flex w-12 flex-col items-center gap-1">
             <div className="text-[11px] tabular-nums text-muted-foreground">{w.held}</div>
             <div className="flex h-24 w-6 flex-col justify-end overflow-hidden rounded bg-muted/50">
-              <div
-                className="w-full bg-muted-foreground/25"
-                style={{ height: `${((w.held - w.relevant) / max) * 100}%` }}
-              />
+              <div className="w-full bg-muted-foreground/25" style={{ height: `${((w.held - w.relevant) / max) * 100}%` }} />
               <div className="w-full bg-primary/70" style={{ height: `${(w.relevant / max) * 100}%` }} />
             </div>
-            <div className="text-[10px] text-muted-foreground">{w.week.replace(/^\d{4}-/, "")}</div>
+            <div className="text-[10px] text-muted-foreground">{w.week.replace(/^\d{4}-/, '')}</div>
           </div>
         ))}
       </div>
@@ -158,18 +149,10 @@ function WeekBars({ weeks, t }: { weeks: Funnel["meetings"]["byWeek"]; t: Return
         </span>
       </div>
     </div>
-  );
+  )
 }
 
-function Section({
-  title,
-  sub,
-  children,
-}: {
-  title: string;
-  sub?: string;
-  children: React.ReactNode;
-}) {
+function Section({ title, sub, children }: { title: string; sub?: string; children: React.ReactNode }) {
   return (
     <Card>
       <CardContent className="space-y-3 pt-5">
@@ -180,17 +163,17 @@ function Section({
         {children}
       </CardContent>
     </Card>
-  );
+  )
 }
 
 export default function SapFunnelPage() {
-  const { data, error, loading, reload } = useFunnel();
-  const t = useFunnelT();
-  const lang = useLang();
+  const { data, error, loading, reload } = useFunnel()
+  const t = useFunnelT()
+  const lang = useLang()
 
-  const flow = data?.ladder.filter((r) => r.inFlow) ?? [];
-  const exits = data?.ladder.filter((r) => !r.inFlow && r.count > 0) ?? [];
-  const max = Math.max(1, ...flow.map((r) => r.count));
+  const flow = data?.ladder.filter((r) => r.inFlow) ?? []
+  const exits = data?.ladder.filter((r) => !r.inFlow && r.count > 0) ?? []
+  const max = Math.max(1, ...flow.map((r) => r.count))
 
   return (
     <div className="space-y-5">
@@ -205,7 +188,7 @@ export default function SapFunnelPage() {
             onClick={reload}
             className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs hover:bg-muted"
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
             {t.refresh}
           </button>
           <LangToggle />
@@ -239,17 +222,18 @@ export default function SapFunnelPage() {
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <StatTile label={t.tileClients} value={data.totalClients} hint={t.tileClientsHint} />
             <StatTile label={t.tileQualified} value={data.metrics.qualifiedCandidates} hint={t.tileQualifiedHint} />
-            <StatTile
-              label={t.tileCalls}
-              value={data.metrics.demoCallsThisWeek}
-              hint={t.tileCallsHint(data.meetings.thisWeek)}
-            />
+            <StatTile label={t.tileCalls} value={data.metrics.demoCallsThisWeek} hint={t.tileCallsHint(data.meetings.thisWeek)} />
             <StatTile
               label={t.tileFresh}
-              value={data.metrics.pipelineFreshnessPct == null ? "—" : `${data.metrics.pipelineFreshnessPct}%`}
+              value={data.metrics.pipelineFreshnessPct == null ? '—' : `${data.metrics.pipelineFreshnessPct}%`}
               hint={t.tileFreshHint(data.metrics.freshClients, data.metrics.activeClients)}
             />
-            <StatTile label={t.tileStalled} value={data.stalled.clients.length} hint={t.tileStalledHint(data.stalled.thresholdDays)} tone={data.stalled.clients.length > 0 ? "red" : undefined} />
+            <StatTile
+              label={t.tileStalled}
+              value={data.stalled.clients.length}
+              hint={t.tileStalledHint(data.stalled.thresholdDays)}
+              tone={data.stalled.clients.length > 0 ? 'red' : undefined}
+            />
           </div>
 
           <Section title={t.ladderTitle} sub={t.ladderSub}>
@@ -301,10 +285,7 @@ export default function SapFunnelPage() {
                         <td className="py-1.5 pr-4">
                           <span className="tabular-nums">{c.required}/7</span>
                           <span className="ml-2 inline-block h-1.5 w-20 rounded-full bg-muted align-middle">
-                            <span
-                              className="block h-1.5 rounded-full bg-primary/70"
-                              style={{ width: `${(c.required / 7) * 100}%` }}
-                            />
+                            <span className="block h-1.5 rounded-full bg-primary/70" style={{ width: `${(c.required / 7) * 100}%` }} />
                           </span>
                         </td>
                         <td className="py-1.5 tabular-nums text-muted-foreground">{c.fields}/13</td>
@@ -378,11 +359,11 @@ export default function SapFunnelPage() {
           <p className="text-[11px] text-muted-foreground">
             {t.footer(
               data.store.mode,
-              data.store.syncedAt ? new Date(data.store.syncedAt).toLocaleString(lang === "zh" ? "zh-CN" : "en-US") : t.footerLocal,
+              data.store.syncedAt ? new Date(data.store.syncedAt).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US') : t.footerLocal,
             )}
           </p>
         </>
       )}
     </div>
-  );
+  )
 }

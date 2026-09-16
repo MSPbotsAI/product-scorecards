@@ -97,7 +97,9 @@ async function readAllRows(datasetId: string, apiKey: string): Promise<Row[]> {
     const res = (await client.getPublicDatasetData(datasetId, { current: page, size: PAGE_SIZE })) as Row
     const code = res?.code
     if (code != null && String(code) !== '0') {
-      const msg = str(res?.msg).replace(/eyJ[\w-]+\.[\w-]*\.?[\w-]*/g, '[token redacted]').slice(0, 200)
+      const msg = str(res?.msg)
+        .replace(/eyJ[\w-]+\.[\w-]*\.?[\w-]*/g, '[token redacted]')
+        .slice(0, 200)
       throw new Error(`timesheet dataset ${datasetId} refused the read (code ${code}): ${msg}`)
     }
     const payload = (res?.data ?? res) as Row
@@ -157,8 +159,7 @@ export async function readTimesheet(tenantId: string, opts: { refresh?: boolean 
 
   const datasetId = values['dataset.timesheet']
   let rowCache = rowCaches.get(tenantId)
-  const fresh =
-    rowCache && rowCache.datasetId === datasetId && Date.now() - rowCache.fetchedAt < CACHE_TTL_MS
+  const fresh = rowCache && rowCache.datasetId === datasetId && Date.now() - rowCache.fetchedAt < CACHE_TTL_MS
   if (opts.refresh || !fresh) {
     rowCache = { datasetId, rows: await readAllRows(datasetId, apiKey), fetchedAt: Date.now() }
     rowCaches.set(tenantId, rowCache)

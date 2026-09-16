@@ -27,7 +27,7 @@ export default defineConfig({
   migrations: {
     table: '__drizzle_migrations',
     prefix: 'timestamp',
-    schema: id
+    schema: id,
   },
   schemaFilter: id,
 

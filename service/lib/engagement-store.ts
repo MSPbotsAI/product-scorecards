@@ -16,10 +16,7 @@ import { readSettings } from './settings.ts'
 const PULL_INTERVAL_MS = 5 * 60_000
 
 /** A sibling checkout, for local dev. Same convention the clients app uses. */
-const LOCAL_CANDIDATES = [
-  resolve(process.cwd(), '../sop-agent-engagement'),
-  resolve(process.cwd(), '../sopagent-engagement'),
-]
+const LOCAL_CANDIDATES = [resolve(process.cwd(), '../sop-agent-engagement'), resolve(process.cwd(), '../sopagent-engagement')]
 const DATA_DIR = process.env.SOPAGENT_DATA_DIR ?? resolve(process.cwd(), 'data')
 const CLONE_DIR = join(DATA_DIR, 'engagement-store')
 

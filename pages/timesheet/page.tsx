@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   Alert,
   AlertDescription,
@@ -15,39 +15,39 @@ import {
   TooltipContent,
   TooltipTrigger,
   cn,
-} from "@mspbots/ui";
-import { AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, FolderKanban, RefreshCw, Tag, User, Users, X } from "lucide-react";
-import { LangToggle, StatTile } from "../../lib/board";
-import { useLang } from "../../lib/i18n";
+} from '@mspbots/ui'
+import { AlertTriangle, ChevronLeft, ChevronRight, ExternalLink, FolderKanban, RefreshCw, Tag, User, Users, X } from 'lucide-react'
+import { LangToggle, StatTile } from '../../lib/board'
+import { useLang } from '../../lib/i18n'
 
 export const meta = {
-  label: "Timesheet",
-  icon: "Clock",
+  label: 'Timesheet',
+  icon: 'Clock',
   order: 4,
   menu: true,
-  description: "Logged hours for the product org — the labor side of every ROI row.",
-};
+  description: 'Logged hours for the product org — the labor side of every ROI row.',
+}
 
 interface Entry {
-  date: string;
-  ticketId: string | null;
-  subject: string | null;
-  project: string;
-  person: string;
-  category: string;
-  client: string | null;
-  hours: number;
+  date: string
+  ticketId: string | null
+  subject: string | null
+  project: string
+  person: string
+  category: string
+  client: string | null
+  hours: number
 }
 
 interface TimesheetData {
-  entries: Entry[];
-  fetchedAt: number;
-  roster: { person: string; department: string | null; manager: string | null }[];
-  excluded: string[];
-  root: string;
-  span: { from: string | null; to: string | null };
-  ticketUrlTemplate: string | null;
-  totalRowsScanned: number;
+  entries: Entry[]
+  fetchedAt: number
+  roster: { person: string; department: string | null; manager: string | null }[]
+  excluded: string[]
+  root: string
+  span: { from: string | null; to: string | null }
+  ticketUrlTemplate: string | null
+  totalRowsScanned: number
 }
 
 /**
@@ -55,128 +55,127 @@ interface TimesheetData {
  * in the column — free text a person typed, a bare number — stays plain text, because a link that
  * lands on "not found" is worse than no link.
  */
-const TICKET_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/;
+const TICKET_KEY = /^[A-Za-z][A-Za-z0-9]*-\d+$/
 
-const NATIVE_ID = /^[a-z0-9]{6,12}$/;
+const NATIVE_ID = /^[a-z0-9]{6,12}$/
 
 const ticketHref = (template: string | null, id: string | null): string | null => {
-  if (!template || !id) return null;
-  if (TICKET_KEY.test(id)) return template.replace("{id}", encodeURIComponent(id));
+  if (!template || !id) return null
+  if (TICKET_KEY.test(id)) return template.replace('{id}', encodeURIComponent(id))
   // Native ids (86e2990m1) must NOT go through the workspace-scoped template — ClickUp resolves
   // them bare at /t/<id>. Four of the 335 distinct ids in the live data are this shape.
-  if (NATIVE_ID.test(id)) return `https://app.clickup.com/t/${encodeURIComponent(id)}`;
-  return null;
-};
+  if (NATIVE_ID.test(id)) return `https://app.clickup.com/t/${encodeURIComponent(id)}`
+  return null
+}
 
 const T = {
   en: {
-    title: "Timesheet",
+    title: 'Timesheet',
     subtitle: (root: string, n: number) =>
       `Logged hours for the ${root} reporting tree — ${n} people, resolved from the manager chain rather than a department.`,
-    week: "Week",
-    day: "Day",
-    month: "Month",
-    today: "Today",
-    totalHours: "Total hours",
-    people: "People",
-    projects: "Projects",
-    entries: "Entries",
-    byProject: "By project",
-    byPerson: "By person",
-    byCategory: "By category",
-    date: "Date",
-    ticket: "Ticket",
-    subject: "Subject",
-    project: "Project",
-    person: "Person",
-    category: "Category",
-    hrs: "Hrs",
-    empty: "No entries in this range.",
+    week: 'Week',
+    day: 'Day',
+    month: 'Month',
+    today: 'Today',
+    totalHours: 'Total hours',
+    people: 'People',
+    projects: 'Projects',
+    entries: 'Entries',
+    byProject: 'By project',
+    byPerson: 'By person',
+    byCategory: 'By category',
+    date: 'Date',
+    ticket: 'Ticket',
+    subject: 'Subject',
+    project: 'Project',
+    person: 'Person',
+    category: 'Category',
+    hrs: 'Hrs',
+    empty: 'No entries in this range.',
     dataFrom: (a: string, b: string) => `data available ${a} → ${b}`,
-    roster: "Included people",
-    excluded: "excluded",
-    filtered: "filtered",
-    clearAll: "Clear all",
+    roster: 'Included people',
+    excluded: 'excluded',
+    filtered: 'filtered',
+    clearAll: 'Clear all',
     ofTotal: (n: number) => `of ${n}`,
-    refresh: "Refresh",
+    refresh: 'Refresh',
     synced: (t: string) => `synced ${t}`,
     openTicket: (id: string) => `Open ${id} in ClickUp`,
   },
   zh: {
-    title: "工时",
-    subtitle: (root: string, n: number) =>
-      `${root} 汇报树下的登记工时——${n} 人，按汇报链递归解析，而非按部门。`,
-    week: "周",
-    day: "日",
-    month: "月",
-    today: "今天",
-    totalHours: "总工时",
-    people: "人数",
-    projects: "项目数",
-    entries: "条目数",
-    byProject: "按项目",
-    byPerson: "按人",
-    byCategory: "按类别",
-    date: "日期",
-    ticket: "工单",
-    subject: "主题",
-    project: "项目",
-    person: "成员",
-    category: "类别",
-    hrs: "小时",
-    empty: "该区间内没有工时记录。",
+    title: '工时',
+    subtitle: (root: string, n: number) => `${root} 汇报树下的登记工时——${n} 人，按汇报链递归解析，而非按部门。`,
+    week: '周',
+    day: '日',
+    month: '月',
+    today: '今天',
+    totalHours: '总工时',
+    people: '人数',
+    projects: '项目数',
+    entries: '条目数',
+    byProject: '按项目',
+    byPerson: '按人',
+    byCategory: '按类别',
+    date: '日期',
+    ticket: '工单',
+    subject: '主题',
+    project: '项目',
+    person: '成员',
+    category: '类别',
+    hrs: '小时',
+    empty: '该区间内没有工时记录。',
     dataFrom: (a: string, b: string) => `可用数据 ${a} → ${b}`,
-    roster: "纳入人员",
-    excluded: "已排除",
-    filtered: "已筛选",
-    clearAll: "清除全部",
+    roster: '纳入人员',
+    excluded: '已排除',
+    filtered: '已筛选',
+    clearAll: '清除全部',
     ofTotal: (n: number) => `/ 共 ${n}`,
-    refresh: "刷新",
+    refresh: '刷新',
     synced: (t: string) => `同步于 ${t}`,
     openTicket: (id: string) => `在 ClickUp 中打开 ${id}`,
   },
-};
+}
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
+const iso = (d: Date) => d.toISOString().slice(0, 10)
 /** Monday-based week start — the same boundary the scorecard uses. */
 function weekStart(d: Date): Date {
-  const copy = new Date(d);
-  const dow = (copy.getUTCDay() + 6) % 7;
-  copy.setUTCDate(copy.getUTCDate() - dow);
-  return copy;
+  const copy = new Date(d)
+  const dow = (copy.getUTCDay() + 6) % 7
+  copy.setUTCDate(copy.getUTCDate() - dow)
+  return copy
 }
 const addDays = (d: Date, n: number) => {
-  const copy = new Date(d);
-  copy.setUTCDate(copy.getUTCDate() + n);
-  return copy;
-};
+  const copy = new Date(d)
+  copy.setUTCDate(copy.getUTCDate() + n)
+  return copy
+}
 function monthStart(d: Date): Date {
-  const copy = new Date(d);
-  copy.setUTCDate(1);
-  return copy;
+  const copy = new Date(d)
+  copy.setUTCDate(1)
+  return copy
 }
 /** Last day of the anchor's month — day 0 of the following month. */
 function monthEnd(d: Date): Date {
-  const copy = new Date(d);
-  copy.setUTCMonth(copy.getUTCMonth() + 1, 0);
-  return copy;
+  const copy = new Date(d)
+  copy.setUTCMonth(copy.getUTCMonth() + 1, 0)
+  return copy
 }
 /** Snaps to day 1 before shifting so a 31st can't overflow into the month after next. */
 const addMonths = (d: Date, n: number) => {
-  const copy = new Date(d);
-  copy.setUTCDate(1);
-  copy.setUTCMonth(copy.getUTCMonth() + n);
-  return copy;
-};
+  const copy = new Date(d)
+  copy.setUTCDate(1)
+  copy.setUTCMonth(copy.getUTCMonth() + n)
+  return copy
+}
 
-type Dim = "project" | "person" | "category";
-type Filters = Record<Dim, string | null>;
+type Dim = 'project' | 'person' | 'category'
+type Filters = Record<Dim, string | null>
 
 const dimOf: Record<Dim, (e: Entry) => string> = {
   project: (e) => e.project,
   person: (e) => e.person,
   category: (e) => e.category,
-};
+}
 
 /**
  * Apply the active drill selections, optionally EXCLUDING one dimension — that is what lets a
@@ -184,11 +183,7 @@ const dimOf: Record<Dim, (e: Entry) => string> = {
  * filters (standard faceted cross-filtering, same as the reference app).
  */
 function filterRows(rows: Entry[], f: Filters, exclude: Dim | null): Entry[] {
-  return rows.filter((e) =>
-    (["project", "person", "category"] as Dim[]).every(
-      (d) => d === exclude || !f[d] || dimOf[d](e) === f[d],
-    ),
-  );
+  return rows.filter((e) => (['project', 'person', 'category'] as Dim[]).every((d) => d === exclude || !f[d] || dimOf[d](e) === f[d]))
 }
 
 function Breakdown({
@@ -199,12 +194,12 @@ function Breakdown({
   selected,
   onSelect,
 }: {
-  title: string;
-  icon: ReactNode;
-  rows: [string, number][];
-  total: number;
-  selected: string | null;
-  onSelect: (key: string) => void;
+  title: string
+  icon: ReactNode
+  rows: [string, number][]
+  total: number
+  selected: string | null
+  onSelect: (key: string) => void
 }) {
   return (
     <Card className="flex flex-col">
@@ -221,9 +216,9 @@ function Breakdown({
         <ScrollArea className="h-[232px] pr-3">
           <div className="space-y-2.5">
             {rows.map(([label, hours]) => {
-              const pct = total > 0 ? (hours / total) * 100 : 0;
-              const isOn = selected === label;
-              const dimmed = selected != null && !isOn;
+              const pct = total > 0 ? (hours / total) * 100 : 0
+              const isOn = selected === label
+              const dimmed = selected != null && !isOn
               return (
                 <div
                   key={label}
@@ -232,109 +227,108 @@ function Breakdown({
                   tabIndex={0}
                   aria-pressed={isOn}
                   onKeyDown={(ev) => {
-                    if (ev.key === "Enter" || ev.key === " ") {
-                      ev.preventDefault();
-                      onSelect(label);
+                    if (ev.key === 'Enter' || ev.key === ' ') {
+                      ev.preventDefault()
+                      onSelect(label)
                     }
                   }}
                   className={cn(
-                    "-mx-1.5 cursor-pointer rounded-md px-1.5 py-1 transition-colors hover:bg-muted/60",
-                    isOn && "bg-muted ring-1 ring-inset ring-border",
-                    dimmed && "opacity-55",
+                    '-mx-1.5 cursor-pointer rounded-md px-1.5 py-1 transition-colors hover:bg-muted/60',
+                    isOn && 'bg-muted ring-1 ring-inset ring-border',
+                    dimmed && 'opacity-55',
                   )}
                   title={`${label} · ${hours.toFixed(1)}h`}
                 >
                   <div className="flex items-baseline justify-between gap-2 text-[13px]">
-                    <span className={cn("min-w-0 truncate", isOn && "font-medium")}>{label}</span>
+                    <span className={cn('min-w-0 truncate', isOn && 'font-medium')}>{label}</span>
                     <span className="shrink-0 tabular-nums text-muted-foreground">
                       {hours.toFixed(1)}h · {Math.round(pct)}%
                     </span>
                   </div>
                   <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
                     <div
-                      className={cn("h-full rounded-full", isOn ? "bg-primary" : "bg-primary/70")}
+                      className={cn('h-full rounded-full', isOn ? 'bg-primary' : 'bg-primary/70')}
                       style={{ width: `${Math.max(2, pct)}%` }}
                     />
                   </div>
                 </div>
-              );
+              )
             })}
           </div>
         </ScrollArea>
       </CardContent>
     </Card>
-  );
+  )
 }
 
 export default function Timesheet() {
-  const lang = useLang();
-  const t = T[lang];
-  const [mode, setMode] = useState<"week" | "day" | "month">("week");
-  const [anchor, setAnchor] = useState(() => weekStart(new Date()));
-  const [data, setData] = useState<TimesheetData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState<Filters>({ project: null, person: null, category: null });
+  const lang = useLang()
+  const t = T[lang]
+  const [mode, setMode] = useState<'week' | 'day' | 'month'>('week')
+  const [anchor, setAnchor] = useState(() => weekStart(new Date()))
+  const [data, setData] = useState<TimesheetData | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [filters, setFilters] = useState<Filters>({ project: null, person: null, category: null })
 
-  const toggle = (dim: Dim) => (key: string) =>
-    setFilters((f) => ({ ...f, [dim]: f[dim] === key ? null : key }));
-  const clearAll = () => setFilters({ project: null, person: null, category: null });
+  const toggle = (dim: Dim) => (key: string) => setFilters((f) => ({ ...f, [dim]: f[dim] === key ? null : key }))
+  const clearAll = () => setFilters({ project: null, person: null, category: null })
 
-  const from = mode === "month" ? iso(monthStart(anchor)) : iso(anchor);
-  const to = mode === "week" ? iso(addDays(anchor, 6)) : mode === "month" ? iso(monthEnd(anchor)) : iso(anchor);
+  const from = mode === 'month' ? iso(monthStart(anchor)) : iso(anchor)
+  const to = mode === 'week' ? iso(addDays(anchor, 6)) : mode === 'month' ? iso(monthEnd(anchor)) : iso(anchor)
 
   // One fetch covers the dataset's whole span; the visible range is sliced from it in the browser,
   // so paging weeks costs nothing. Only Refresh goes back to the upstream dataset.
   const load = useCallback(async (refresh = false) => {
-    setLoading(true);
-    setError(null);
+    setLoading(true)
+    setError(null)
     try {
-      const res = await $fetch(`/api/timesheet${refresh ? "?refresh=1" : ""}`);
-      const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? `request failed (${res.status})`);
-      setData(body as TimesheetData);
+      const res = await $fetch(`/api/timesheet${refresh ? '?refresh=1' : ''}`)
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error ?? `request failed (${res.status})`)
+      setData(body as TimesheetData)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "failed to load the timesheet");
+      setError(err instanceof Error ? err.message : 'failed to load the timesheet')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, []);
+  }, [])
 
   useEffect(() => {
-    void load(false);
-  }, [load]);
+    void load(false)
+  }, [load])
 
   const view = useMemo(() => {
-    if (!data) return null;
+    if (!data) return null
     // Date range first — everything below operates on the visible window.
-    const inRange = data.entries.filter((e) => e.date >= from && e.date <= to);
+    const inRange = data.entries.filter((e) => e.date >= from && e.date <= to)
     const group = (rows: Entry[], key: (e: Entry) => string): [string, number][] => {
-      const m = new Map<string, number>();
-      for (const e of rows) m.set(key(e), (m.get(key(e)) ?? 0) + e.hours);
-      return [...m.entries()].sort((a, b) => b[1] - a[1]);
-    };
+      const m = new Map<string, number>()
+      for (const e of rows) m.set(key(e), (m.get(key(e)) ?? 0) + e.hours)
+      return [...m.entries()].sort((a, b) => b[1] - a[1])
+    }
     // Fully-scoped rows drive the KPI band and the entry table; each card excludes its own
     // dimension so it still lists every value it could be filtered to.
-    const scoped = filterRows(inRange, filters, null);
+    const scoped = filterRows(inRange, filters, null)
     return {
       scoped,
       total: scoped.reduce((s, e) => s + e.hours, 0),
-      byProject: group(filterRows(inRange, filters, "project"), dimOf.project),
-      byPerson: group(filterRows(inRange, filters, "person"), dimOf.person),
-      byCategory: group(filterRows(inRange, filters, "category"), dimOf.category),
+      byProject: group(filterRows(inRange, filters, 'project'), dimOf.project),
+      byPerson: group(filterRows(inRange, filters, 'person'), dimOf.person),
+      byCategory: group(filterRows(inRange, filters, 'category'), dimOf.category),
       people: new Set(scoped.map((e) => e.person)).size,
       unfilteredCount: inRange.length,
-    };
-  }, [data, filters, from, to]);
+    }
+  }, [data, filters, from, to])
 
-  const chips = (["project", "person", "category"] as Dim[])
+  const chips = (['project', 'person', 'category'] as Dim[])
     .map((d) => (filters[d] ? { dim: d, value: filters[d] as string } : null))
-    .filter(Boolean) as { dim: Dim; value: string }[];
+    .filter(Boolean) as { dim: Dim; value: string }[]
 
   const step = (dir: -1 | 1) => {
-    setAnchor((a) => (mode === "month" ? addMonths(a, dir) : addDays(a, dir * (mode === "week" ? 7 : 1))));
-    clearAll();
-  };
+    setAnchor((a) => (mode === 'month' ? addMonths(a, dir) : addDays(a, dir * (mode === 'week' ? 7 : 1))))
+    clearAll()
+  }
 
   return (
     <div className="space-y-5">
@@ -347,13 +341,13 @@ export default function Timesheet() {
           {data?.span.from && data.span.to && (
             <span className="text-[11px] text-muted-foreground">
               {t.dataFrom(data.span.from, data.span.to)}
-              {" · "}
-              {t.synced(new Date(data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}
+              {' · '}
+              {t.synced(new Date(data.fetchedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}
             </span>
           )}
           <LangToggle />
           <Button variant="outline" size="sm" onClick={() => load(true)} disabled={loading}>
-            <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", loading && "animate-spin")} />
+            <RefreshCw className={cn('mr-1.5 h-3.5 w-3.5', loading && 'animate-spin')} />
             {t.refresh}
           </Button>
         </div>
@@ -362,23 +356,23 @@ export default function Timesheet() {
       {/* range controls */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="inline-flex rounded-md border bg-muted p-0.5">
-          {(["week", "day", "month"] as const).map((m) => (
+          {(['week', 'day', 'month'] as const).map((m) => (
             <button
               key={m}
               type="button"
               onClick={() => {
-                setMode(m);
+                setMode(m)
                 // Switching to week/month view snaps the anchor to that range's start.
-                if (m === "week") setAnchor((a) => weekStart(a));
-                if (m === "month") setAnchor((a) => monthStart(a));
+                if (m === 'week') setAnchor((a) => weekStart(a))
+                if (m === 'month') setAnchor((a) => monthStart(a))
               }}
               aria-pressed={mode === m}
               className={cn(
-                "rounded px-3 py-1 text-xs font-medium transition-colors",
-                mode === m ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                'rounded px-3 py-1 text-xs font-medium transition-colors',
+                mode === m ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              {m === "week" ? t.week : m === "day" ? t.day : t.month}
+              {m === 'week' ? t.week : m === 'day' ? t.day : t.month}
             </button>
           ))}
         </div>
@@ -388,7 +382,7 @@ export default function Timesheet() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => setAnchor(mode === "week" ? weekStart(new Date()) : mode === "month" ? monthStart(new Date()) : new Date())}
+          onClick={() => setAnchor(mode === 'week' ? weekStart(new Date()) : mode === 'month' ? monthStart(new Date()) : new Date())}
         >
           {t.today}
         </Button>
@@ -397,7 +391,7 @@ export default function Timesheet() {
         </Button>
         <span className="ml-1 text-sm font-medium tabular-nums">
           {from}
-          {mode !== "day" && ` — ${to}`}
+          {mode !== 'day' && ` — ${to}`}
         </span>
         <Input
           type="date"
@@ -417,12 +411,12 @@ export default function Timesheet() {
               <div className="space-y-0.5 text-xs">
                 {data.roster.map((r) => (
                   <div key={r.person}>
-                    {r.person} · {r.department ?? "—"} · mgr {r.manager ?? "—"}
+                    {r.person} · {r.department ?? '—'} · mgr {r.manager ?? '—'}
                   </div>
                 ))}
                 {data.excluded.length > 0 && (
                   <div className="mt-1.5 border-t pt-1.5 text-muted-foreground">
-                    {t.excluded}: {data.excluded.join(", ")}
+                    {t.excluded}: {data.excluded.join(', ')}
                   </div>
                 )}
               </div>
@@ -447,7 +441,9 @@ export default function Timesheet() {
               <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{t.filtered}</span>
               {chips.map((c) => (
                 <Badge key={c.dim} variant="secondary" className="h-6 gap-1 pl-2 pr-1 font-normal">
-                  <span className="text-muted-foreground">{t[c.dim === "project" ? "project" : c.dim === "person" ? "person" : "category"]}:</span>
+                  <span className="text-muted-foreground">
+                    {t[c.dim === 'project' ? 'project' : c.dim === 'person' ? 'person' : 'category']}:
+                  </span>
                   {c.value}
                   <button
                     type="button"
@@ -469,11 +465,7 @@ export default function Timesheet() {
             <StatTile label={t.totalHours} value={view.total.toFixed(1)} />
             <StatTile label={t.people} value={view.people} />
             <StatTile label={t.projects} value={view.byProject.length} />
-            <StatTile
-              label={t.entries}
-              value={view.scoped.length}
-              hint={chips.length > 0 ? t.ofTotal(view.unfilteredCount) : undefined}
-            />
+            <StatTile label={t.entries} value={view.scoped.length} hint={chips.length > 0 ? t.ofTotal(view.unfilteredCount) : undefined} />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-3">
@@ -483,7 +475,7 @@ export default function Timesheet() {
               rows={view.byProject}
               total={view.byProject.reduce((s, [, h]) => s + h, 0)}
               selected={filters.project}
-              onSelect={toggle("project")}
+              onSelect={toggle('project')}
             />
             <Breakdown
               title={t.byPerson}
@@ -491,7 +483,7 @@ export default function Timesheet() {
               rows={view.byPerson}
               total={view.byPerson.reduce((s, [, h]) => s + h, 0)}
               selected={filters.person}
-              onSelect={toggle("person")}
+              onSelect={toggle('person')}
             />
             <Breakdown
               title={t.byCategory}
@@ -499,7 +491,7 @@ export default function Timesheet() {
               rows={view.byCategory}
               total={view.byCategory.reduce((s, [, h]) => s + h, 0)}
               selected={filters.category}
-              onSelect={toggle("category")}
+              onSelect={toggle('category')}
             />
           </div>
 
@@ -528,8 +520,8 @@ export default function Timesheet() {
                     </thead>
                     <tbody>
                       {view.scoped.map((e, i) => {
-                        const ticket = e.ticketId;
-                        const href = ticketHref(data.ticketUrlTemplate, ticket);
+                        const ticket = e.ticketId
+                        const href = ticketHref(data.ticketUrlTemplate, ticket)
                         return (
                           <tr key={`${e.date}-${e.person}-${i}`} className="border-b last:border-b-0 hover:bg-muted/40">
                             <td className="whitespace-nowrap px-5 py-1.5 tabular-nums text-muted-foreground">{e.date}</td>
@@ -546,31 +538,31 @@ export default function Timesheet() {
                                   <ExternalLink className="h-3 w-3 opacity-60" />
                                 </a>
                               ) : (
-                                (ticket ?? "—")
+                                (ticket ?? '—')
                               )}
                             </td>
-                            <td className="max-w-[420px] truncate px-3 py-1.5">{e.subject ?? "—"}</td>
+                            <td className="max-w-[420px] truncate px-3 py-1.5">{e.subject ?? '—'}</td>
                             <td
-                              onClick={() => toggle("project")(e.project)}
+                              onClick={() => toggle('project')(e.project)}
                               className="cursor-pointer whitespace-nowrap px-3 py-1.5 text-muted-foreground hover:text-foreground hover:underline"
                             >
                               {e.project}
                             </td>
                             <td
-                              onClick={() => toggle("person")(e.person)}
+                              onClick={() => toggle('person')(e.person)}
                               className="cursor-pointer whitespace-nowrap px-3 py-1.5 hover:underline"
                             >
                               {e.person}
                             </td>
                             <td
-                              onClick={() => toggle("category")(e.category)}
+                              onClick={() => toggle('category')(e.category)}
                               className="cursor-pointer whitespace-nowrap px-3 py-1.5 text-muted-foreground hover:text-foreground hover:underline"
                             >
                               {e.category}
                             </td>
                             <td className="px-5 py-1.5 text-right font-medium tabular-nums">{e.hours}</td>
                           </tr>
-                        );
+                        )
                       })}
                     </tbody>
                   </table>
@@ -581,5 +573,5 @@ export default function Timesheet() {
         </>
       )}
     </div>
-  );
+  )
 }
