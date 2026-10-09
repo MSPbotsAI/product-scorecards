@@ -22,6 +22,13 @@
       "when": 1788510942338,
       "tag": "20260904083542_nice_zodiak",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791532130205,
+      "tag": "20261009074850_support_ticket_updates_log",
+      "breakpoints": true
     }
   ]
 }

@@ -28,6 +28,10 @@ export const SETTING_DEFS: SettingDef[] = [
   // biome-ignore lint/security/noSecrets: a public MSPbots.ai dataset id, not a credential
   { key: 'dataset.weekly_metrics', env: 'WEEKLY_METRICS_DATASET', default: '2082466110929776641' },
   { key: 'dataset.timesheet', env: 'TIMESHEET_DATASET', default: '2073966327621623809' },
+  // Halo ticket actions — the source of the Support Ticket Updates page (service/lib/pm). Halo keeps
+  // ~14 days of them, so the page copies what it reads into its own log.
+  // biome-ignore lint/security/noSecrets: a public MSPbots.ai dataset id, not a credential
+  { key: 'dataset.halo_actions', env: 'HALO_ACTIONS_DATASET', default: '1598925697988407297' },
   // Deep-link template for a timesheet ticket. The dataset only carries the human ticket key
   // (PRD-15944), not ClickUp's internal task id, so the link is built from the key: ClickUp
   // resolves a Custom Task ID under /t/<workspace>/<key>. Kept as a template rather than a

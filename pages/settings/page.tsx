@@ -67,6 +67,13 @@ const FIELD: Record<string, { en: [string, string]; zh: [string, string] }> = {
     en: ['Timesheet', 'ClickUp logged hours — the labor side of every ROI row.'],
     zh: ['工时', 'ClickUp 登记工时——每个 ROI 行的工时侧。'],
   },
+  'dataset.halo_actions': {
+    en: [
+      'Halo ticket actions',
+      'Every action on a Halo ticket — drives the Support Ticket Updates page. Halo keeps ~14 days; the page keeps its own copy.',
+    ],
+    zh: ['Halo 工单动作', 'Halo 工单上的每一条 action——驱动 Support Ticket Updates 页面。Halo 只保留约 14 天，页面会自留一份副本。'],
+  },
   'clickup.ticket_url': {
     en: [
       'Ticket link template',
