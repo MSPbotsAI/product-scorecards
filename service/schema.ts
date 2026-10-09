@@ -3,6 +3,7 @@
 // which is exactly why settings stored here survive a version update (the dist bundle is replaced;
 // this schema is not).
 
+import { sql } from 'drizzle-orm'
 import { integer, pgSchema, primaryKey, text, timestamp, varchar } from 'drizzle-orm/pg-core'
 
 // biome-ignore lint/security/noSecrets: the app's public platform id, mirrored from package.json
@@ -53,3 +54,50 @@ export const metricThresholds = app.table('metric_thresholds', {
 })
 
 export type MetricThreshold = typeof metricThresholds.$inferSelect
+
+/*
+ * The Support Ticket Updates log (service/lib/pm). Halo keeps ~14 days of ticket actions, so each
+ * capture copies the actions the PM numbers read into these tables; the numbers are computed from
+ * them, never from Halo directly. Rows are reduced facts — who moved a ticket where, which dev and
+ * Canny links the PM posted — never a note's text.
+ */
+
+/** One Halo action. Written once and never updated: an action does not change after it happens. */
+export const pmEvents = app.table('pm_events', {
+  /** Halo action id, "<ticket>-<n>". */
+  id: varchar('id', { length: 64 }).primaryKey(),
+  ticket: varchar('ticket', { length: 32 }).notNull(),
+  /** Halo's per-ticket sequence (time_log_id); 1 is the ticket's first action. */
+  seq: integer('seq').notNull(),
+  at: timestamp('at', { withTimezone: true }).notNull(),
+  who: text('who').notNull(),
+  outcome: text('outcome').notNull(),
+  fromDept: text('from_dept'),
+  fromPerson: text('from_person'),
+  toDept: text('to_dept'),
+  toPerson: text('to_person'),
+  prd: text('prd').array().notNull().default(sql`'{}'::text[]`),
+  mb: text('mb').array().notNull().default(sql`'{}'::text[]`),
+  canny: text('canny').array().notNull().default(sql`'{}'::text[]`),
+})
+
+/**
+ * Per ticket: its first action's instant (proves the log holds the ticket's whole history) and the
+ * summary / client shown beside it. Either half may be missing — the first-action slice covers every
+ * new ticket, the summary only tickets the PM numbers touch.
+ */
+export const pmTickets = app.table('pm_tickets', {
+  ticket: varchar('ticket', { length: 32 }).primaryKey(),
+  createdAt: timestamp('created_at', { withTimezone: true }),
+  summary: text('summary'),
+  client: text('client'),
+})
+
+/** One row per capture (or imported capture): how far back it saw, which is how gaps are found. */
+export const pmCaptures = app.table('pm_captures', {
+  at: timestamp('at', { withTimezone: true }).primaryKey(),
+  source: varchar('source', { length: 16 }).notNull(),
+  rows: integer('rows').notNull(),
+  oldest: timestamp('oldest', { withTimezone: true }),
+  newest: timestamp('newest', { withTimezone: true }),
+})

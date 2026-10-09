@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
+import { bodyLimit } from 'hono/body-limit'
 import { mountVersion } from '@mspbots/react/server'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -188,6 +189,40 @@ api.get('/timesheet', async (c) => {
     return c.json({ error: (error as Error).message }, 502)
   }
 })
+
+/**
+ * Support Ticket Updates: the PM's weekly response numbers. Answers from the tenant's own event log at
+ * once; a stale log starts a background capture from Halo, which the page polls for. `?refresh=1`
+ * forces one. The token is forwarded only for a tenant with no API key (token mode, as /scorecard).
+ */
+api.get('/support-ticket-updates', async (c) => {
+  const { supportTicketUpdates } = await import('./lib/pm/index.ts')
+  const token = c.req.header('authorization')?.replace(/^Bearer /i, '') ?? ''
+  try {
+    return c.json(await supportTicketUpdates(tenantOf(c), token, c.req.query('refresh') === '1'))
+  } catch (error) {
+    return c.json({ error: (error as Error).message }, 502)
+  }
+})
+
+/**
+ * Backfill the log from an exported copy (the PM's local log reaches further back than Halo's 14
+ * days). Validated field by field; it only adds what the tenant's log does not already hold.
+ */
+api.post(
+  '/support-ticket-updates/import',
+  bodyLimit({ maxSize: 20 * 1024 * 1024, onError: (c) => c.json({ error: 'the file is over 20 MB — not an event log' }, 413) }),
+  async (c) => {
+    const { LogFormatError, importLog } = await import('./lib/pm/index.ts')
+    const body = await c.req.json().catch(() => null)
+    if (!body) return c.json({ error: 'not a JSON file' }, 400)
+    try {
+      return c.json(await importLog(tenantOf(c), body))
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, error instanceof LogFormatError ? 400 : 502)
+    }
+  },
+)
 
 // In token mode the datasets are read as the calling user: the caller's own platform token is
 // forwarded together with the tenant id from that token (never one named by the request). In
