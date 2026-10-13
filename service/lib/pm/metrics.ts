@@ -67,7 +67,7 @@ export interface ResponseRow {
 
 /**
  * Why a counted duration is exactly zero: the reply, hand-off or link came before the working clock
- * started — on a rest day, or outside 09:00–18:00 — for a ticket that arrived in the same off-hours
+ * started — on a rest day, or outside 09:30–19:00 — for a ticket that arrived in the same off-hours
  * stretch. Such a row stays in the average as 0.0 h (decided by the PM, 2026-10-09: "even on a
  * holiday, if I replied, it counts"); the label exists so a 0.0 h row is not read as a data error.
  */
