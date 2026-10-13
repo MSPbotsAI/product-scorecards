@@ -9,6 +9,12 @@
  * Confirmed by the PM on 2026-09-30, and consistent with his own Halo activity where the data
  * reaches: Sunday 2026-09-20 carries 24 PM actions (a make-up workday) and Friday 2026-09-25 none
  * (Mid-Autumn). Extend this list when the next year's arrangement is published.
+ *
+ * The list is the PM's working calendar, not the official one, where the two differ. Saturday
+ * 2026-10-10 was an official make-up workday, but the PM did not work it (no Halo actions that day),
+ * so it is not working time: counting it charged every ticket waiting over that weekend 9 hours he
+ * was not at work (decided by the PM, 2026-10-13). 2026-10-07 stays a holiday even though he worked
+ * it — replies on a rest day score 0.0 h and are labelled (his 2026-10-09 decision).
  */
 export const CALENDAR = {
   status: 'confirmed' as 'proposed' | 'confirmed',
@@ -24,7 +30,7 @@ export const CALENDAR = {
   /** Local dates that ARE working days even though they fall on a weekend — the make-up days. */
   makeupWorkdays: [
     '2026-09-20', // Sun
-    '2026-10-10', // Sat
+    // Not '2026-10-10' (Sat): an official make-up day the PM did not work — see above.
   ],
-  note: 'CN 2026 holiday arrangement, confirmed by the PM on 2026-09-30.',
+  note: 'CN 2026 holiday arrangement, confirmed by the PM on 2026-09-30; 2026-10-10 is not worked (2026-10-13).',
 }
