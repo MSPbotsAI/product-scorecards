@@ -2,8 +2,8 @@
  * The PM's working clock.
  *
  * Every duration on the PM scorecard is working time, not wall-clock time: a request that lands at
- * 17:30 on Friday and is answered at 09:30 on Monday waited one working hour, not sixty-four. The
- * clock is Asia/Shanghai, 09:00–18:00, on the working days `calendar.ts` defines.
+ * 18:30 on Friday and is answered at 10:00 on Monday waited one working hour, not sixty-three and a half. The
+ * clock is Asia/Shanghai, 09:30–19:00 (the PM's own hours), on the working days `calendar.ts` defines.
  *
  * Asia/Shanghai has had no daylight saving since 1991, so a fixed UTC+8 offset is exact — no tz
  * database, and no chance of a DST edge quietly shifting an hour.
@@ -14,10 +14,18 @@ const OFFSET_MS = 8 * 3600_000
 const HOUR_MS = 3600_000
 const DAY_MS = 86400_000
 
-export const WORK_START_HOUR = 9
-export const WORK_END_HOUR = 18
-/** One working day, for turning working hours into working days on the page. */
-export const WORKDAY_HOURS = WORK_END_HOUR - WORK_START_HOUR
+/**
+ * The PM's working hours, local time. Set by the PM on 2026-10-13 (09:30–19:00); the clock ran
+ * 09:00–18:00 before that, which counted half an hour he is not yet at work and missed the hour
+ * after 18:00 that he is.
+ */
+export const WORK_START = '09:30'
+export const WORK_END = '19:00'
+const minutesOf = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5))
+const OPEN_MS = minutesOf(WORK_START) * 60_000
+const CLOSE_MS = minutesOf(WORK_END) * 60_000
+/** One working day (9.5 h), for turning working hours into working days on the page. */
+export const WORKDAY_HOURS = (CLOSE_MS - OPEN_MS) / HOUR_MS
 
 const holidays = new Set(CALENDAR.holidays)
 const makeup = new Set(CALENDAR.makeupWorkdays)
@@ -49,7 +57,7 @@ export function isWorkday(date: string): boolean {
  * Working milliseconds between two instants.
  *
  * Walks the local calendar one day at a time and adds the overlap of [start, end] with that day's
- * 09:00–18:00 window, on working days only. Zero when `end` is not after `start` — a response can
+ * WORK_START–WORK_END window, on working days only. Zero when `end` is not after `start` — a response can
  * never be credited with negative time.
  */
 export function workingMsBetween(startIso: string, endIso: string): number {
@@ -64,8 +72,8 @@ export function workingMsBetween(startIso: string, endIso: string): number {
   for (let guard = 0; guard < 3700; guard++) {
     if (isWorkday(day)) {
       const midnight = localMidnight(day)
-      const open = midnight + WORK_START_HOUR * HOUR_MS
-      const close = midnight + WORK_END_HOUR * HOUR_MS
+      const open = midnight + OPEN_MS
+      const close = midnight + CLOSE_MS
       const from = Math.max(start, open)
       const to = Math.min(end, close)
       if (to > from) total += to - from
