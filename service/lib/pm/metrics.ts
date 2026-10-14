@@ -41,6 +41,14 @@ import {
 /** How far apart a hand-off and its private note may be and still be one act. Observed gaps are seconds. */
 const PAIR_WINDOW_MS = 30 * 60_000
 
+/**
+ * A move into the queue that the PM makes himself within this long after replying to the customer
+ * is filing, not an arrival: the reply already happened, so there is no first response left to wait
+ * for (decided by the PM, 2026-10-14). Without it, #22314 — replied 16:18 while with a CSM, pulled
+ * into the queue by the PM at 16:46 — showed as "waiting", then "closed before any response".
+ */
+const FILING_WINDOW_MS = 30 * 60_000
+
 export type CycleOutcome =
   /** Counted: the PM emailed the customer. */
   | 'replied'
@@ -201,6 +209,14 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
     return best
   }
 
+  const replyTimes = evs.filter(isReply).map((e) => Date.parse(e.at))
+  /** The PM moving a ticket he has just answered into his own queue: see FILING_WINDOW_MS. */
+  const isFiling = (e: PmEvent) => {
+    if (e.who !== PM_NAME) return false
+    const at = Date.parse(e.at)
+    return replyTimes.some((t) => t <= at && at - t <= FILING_WINDOW_MS)
+  }
+
   const rows: ResponseRow[] = []
   let state: 'out' | 'open' | 'answered' = 'out'
   let cur: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } | null = null
@@ -229,6 +245,11 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
   }
 
   for (const e of evs) {
+    if (isArrival(e) && state !== 'open' && isFiling(e)) {
+      // Filed by the PM right after his own reply: in the queue, already answered — no clock.
+      state = 'answered'
+      continue
+    }
     if (isArrival(e)) {
       // An arrival while already open is a duplicate move; keep the first. An arrival while answered
       // means the ticket left by a route the log did not see, so it starts a fresh cycle.
