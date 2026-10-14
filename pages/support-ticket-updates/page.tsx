@@ -154,17 +154,23 @@ const EN = {
   colChange: 'Change',
   ticketsHeading: (label: string, counted: string, other: number) =>
     `Tickets · ${label} — ${counted} counted${other > 0 ? `, ${other} not` : ''}`,
-  colTicketAvg: 'Ticket avg',
+  colTicketAvg: 'Counts this week',
+  colTicketAvgHint:
+    'What this ticket adds to the week’s average: its working time, or the average when it entered the queue more than once this week.',
   allEntries: (n: number, hours: string) => `all ${n} entries ${hours}`,
+  avgOf: (parts: string[]) => `(${parts.join(' + ')}) ÷ ${parts.length}`,
+  clockFrom: (when: string) => `clock from ${when}`,
+  pm1TableNote: (label: string, avg: string, hours: string) =>
+    `${label}: ${avg} is the average of the “Counts this week” column. Working time counts only ${hours} on working days.`,
   nothingCounted: 'Nothing counted in this week.',
   notCountedHeading: 'Landed in this week, not counted',
   howHeading: 'How it is measured',
   colTicket: 'Ticket',
   colRequest: 'Request',
-  colArrived: 'Arrived · from',
-  colResponded: 'Responded',
+  colArrived: 'Entered queue · from',
+  colResponded: 'First response',
   colLeft: 'Left',
-  colTime: 'Time',
+  colTime: 'Working time',
   colHow: 'How',
   colWhy: 'Why not counted',
   colFirstArrival: 'First arrival',
@@ -292,17 +298,22 @@ const ZH: typeof EN = {
   colChange: '环比',
   ticketsHeading: (label: string, counted: string, other: number) =>
     `工单 · ${label} — 计入 ${counted}${other > 0 ? `，未计入 ${other} 条` : ''}`,
-  colTicketAvg: '单均',
+  colTicketAvg: '本周计入',
+  colTicketAvgHint: '这张单计入本周平均的值：等于工作用时；本周多次进队列时取平均。',
   allEntries: (n: number, hours: string) => `全部 ${n} 次 ${hours}`,
+  avgOf: (parts: string[]) => `(${parts.join(' + ')}) ÷ ${parts.length}`,
+  clockFrom: (when: string) => `从 ${when} 起算`,
+  pm1TableNote: (label: string, avg: string, hours: string) =>
+    `${label} 的 ${avg} = 下表「本周计入」一列的平均值；工作用时只算工作日 ${hours}。`,
   nothingCounted: '该周没有计入的记录。',
   notCountedHeading: '落在该周、但未计入',
   howHeading: '口径',
   colTicket: '工单',
   colRequest: '请求',
-  colArrived: '到达 · 来源',
-  colResponded: '响应时间',
+  colArrived: '进队列时间 · 来源',
+  colResponded: '首次响应时间',
   colLeft: '离开时间',
-  colTime: '用时',
+  colTime: '工作用时',
   colHow: '方式',
   colWhy: '未计入原因',
   colFirstArrival: '首次到达',
@@ -529,7 +540,11 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
           <TableHead className="w-36">{t.colArrived}</TableHead>
           <TableHead className="w-24">{reason ? t.colLeft : t.colResponded}</TableHead>
           {!reason && <TableHead className="w-16 text-right">{t.colTime}</TableHead>}
-          {units && <TableHead className="w-24 text-right">{t.colTicketAvg}</TableHead>}
+          {units && (
+            <TableHead className="w-24 text-right" title={t.colTicketAvgHint}>
+              {t.colTicketAvg}
+            </TableHead>
+          )}
           <TableHead className="w-40">{reason ? t.colWhy : t.colHow}</TableHead>
         </TableRow>
       </TableHeader>
@@ -544,6 +559,7 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
               <Request summary={r.summary} client={r.client} />
               <TableCell className="whitespace-normal align-top">
                 <div className="tabular-nums">{local(r.arrivedAt)}</div>
+                {r.clockFrom && <div className="text-[11px] italic text-muted-foreground">{t.clockFrom(local(r.clockFrom))}</div>}
                 <div className="text-[11px] text-muted-foreground">{r.arrivedFrom ?? t.unknown}</div>
               </TableCell>
               <TableCell className="align-top tabular-nums">{local(r.endedAt)}</TableCell>
@@ -553,6 +569,11 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
               {units && opensGroup && (
                 <TableCell rowSpan={span} className="border-l text-right align-top font-medium tabular-nums">
                   {unit ? `${unit.meanHours.toFixed(1)} h` : '—'}
+                  {unit && unit.entries > 1 && (
+                    <div className="text-[11px] font-normal text-muted-foreground">
+                      {t.avgOf(ordered.filter((x) => x.ticket === r.ticket).map((x) => (x.hours ?? 0).toFixed(1)))}
+                    </div>
+                  )}
                   {unit && unit.allEntries > unit.entries && (
                     <div className="text-[11px] font-normal text-muted-foreground">
                       {t.allEntries(unit.allEntries, `${unit.allMeanHours.toFixed(1)} h`)}
@@ -756,7 +777,12 @@ function MetricDialog({
           {rows.length === 0 ? (
             <p className="text-xs italic text-muted-foreground">{t.nothingCounted}</p>
           ) : metric === 'response' ? (
-            <ResponseRows rows={rows as ResponseRow[]} units={units} t={t} />
+            <>
+              <p className="text-[11px] text-muted-foreground">
+                {t.pm1TableNote(week?.label ?? '', show(row.value, unit), data.calendar.hours.split(' ')[0])}
+              </p>
+              <ResponseRows rows={rows as ResponseRow[]} units={units} t={t} />
+            </>
           ) : (
             <EntryRows rows={rows as EntryRow[]} workday={workday} t={t} />
           )}

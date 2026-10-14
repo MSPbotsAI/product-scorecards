@@ -26,7 +26,17 @@
  */
 import { PM_NAME, inQueue, type Party, type PmEvent } from './actions.ts'
 import { type EventStore, coverage } from './store.ts'
-import { type WeekShape, isWorkday, localDate, weekLabel, weekOf, weekShape, weeksBetween, workingHoursBetween } from './workTime.ts'
+import {
+  type WeekShape,
+  clockStart,
+  isWorkday,
+  localDate,
+  weekLabel,
+  weekOf,
+  weekShape,
+  weeksBetween,
+  workingHoursBetween,
+} from './workTime.ts'
 
 /** How far apart a hand-off and its private note may be and still be one act. Observed gaps are seconds. */
 const PAIR_WINDOW_MS = 30 * 60_000
@@ -52,6 +62,12 @@ export interface ResponseRow {
   arrivedAt: string
   /** Who moved it in, "Support · Kinn Maagad"; null when the move note did not name both ends. */
   arrivedFrom: string | null
+  /**
+   * When the working clock started for this entry, if later than the arrival (it came in outside
+   * working hours); null when it arrived during working time. Display only: the hours already count
+   * from here.
+   */
+  clockFrom: string | null
   outcome: CycleOutcome
   endedAt: string | null
   /** Working hours arrival → response when counted; arrival → now when open; null otherwise. */
@@ -187,7 +203,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
 
   const rows: ResponseRow[] = []
   let state: 'out' | 'open' | 'answered' = 'out'
-  let cur: { arrivedAt: string; arrivedFrom: string | null } | null = null
+  let cur: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } | null = null
   const close = (
     outcome: CycleOutcome,
     endedAt: string,
@@ -217,7 +233,8 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       // An arrival while already open is a duplicate move; keep the first. An arrival while answered
       // means the ticket left by a route the log did not see, so it starts a fresh cycle.
       if (state !== 'open') {
-        cur = { arrivedAt: e.at, arrivedFrom: party(e.from) }
+        const starts = clockStart(e.at)
+        cur = { arrivedAt: e.at, arrivedFrom: party(e.from), clockFrom: starts === e.at ? null : starts }
         state = 'open'
       }
       continue
@@ -247,7 +264,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
   }
 
   if (state === 'open' && cur) {
-    const open: { arrivedAt: string; arrivedFrom: string | null } = cur
+    const open: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } = cur
     rows.push({
       ticket,
       ...meta,

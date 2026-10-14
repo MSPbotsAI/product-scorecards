@@ -89,6 +89,25 @@ export function workingHoursBetween(startIso: string, endIso: string): number {
 }
 
 /**
+ * When the working clock actually starts for something that arrives at `iso`: `iso` itself inside
+ * working hours, otherwise the next opening (09:30 that day, or the next working day). Lets the page
+ * say "clock from 09:30" instead of leaving a 04:35 arrival to look like a 5-hour wait.
+ */
+export function clockStart(iso: string): string {
+  const t = Date.parse(iso)
+  if (!Number.isFinite(t)) return iso
+  let day = localDate(t)
+  for (let guard = 0; guard < 400; guard++) {
+    if (isWorkday(day)) {
+      const midnight = localMidnight(day)
+      if (t < midnight + CLOSE_MS) return new Date(Math.max(t, midnight + OPEN_MS)).toISOString()
+    }
+    day = localDate(localMidnight(day) + DAY_MS)
+  }
+  return iso
+}
+
+/**
  * The week an instant is reported in: the local Monday that starts its Monday–Sunday span.
  *
  * Only working hours count, so the span holds the same working time as Monday–Friday plus any
