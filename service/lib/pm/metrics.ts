@@ -3,7 +3,12 @@
  *
  *   response  PM first response — every arrival into the PM's queue, to the PM's first reply to the
  *             customer, or hand-off out of the queue with a private note. Each arrival is its own
- *             measurement: a ticket that comes back is answered again.
+ *             measurement: a ticket that comes back is answered again. The week's number is an
+ *             average over TICKETS: a ticket answered more than once in a week counts once, at the
+ *             mean of that week's entries, so a ticket that bounces back and forth weighs no more
+ *             than one that does not (decided by the PM, 2026-10-14). A ticket whose entries fall in
+ *             different weeks counts in each week with that week's entries, so a finished week
+ *             still never moves.
  *   prd       Requirement into development — first arrival into the queue, to the first ClickUp PRD
  *             link the PM posts on the ticket.
  *   mb        Bug into development — the same clock, to the PM's own hand-off into development:
@@ -21,10 +26,28 @@
  */
 import { PM_NAME, inQueue, type Party, type PmEvent } from './actions.ts'
 import { type EventStore, coverage } from './store.ts'
-import { type WeekShape, isWorkday, localDate, weekLabel, weekOf, weekShape, weeksBetween, workingHoursBetween } from './workTime.ts'
+import {
+  type WeekShape,
+  clockStart,
+  isWorkday,
+  localDate,
+  weekLabel,
+  weekOf,
+  weekShape,
+  weeksBetween,
+  workingHoursBetween,
+} from './workTime.ts'
 
 /** How far apart a hand-off and its private note may be and still be one act. Observed gaps are seconds. */
 const PAIR_WINDOW_MS = 30 * 60_000
+
+/**
+ * A move into the queue that the PM makes himself within this long after replying to the customer
+ * is filing, not an arrival: the reply already happened, so there is no first response left to wait
+ * for (decided by the PM, 2026-10-14). Without it, #22314 — replied 16:18 while with a CSM, pulled
+ * into the queue by the PM at 16:46 — showed as "waiting", then "closed before any response".
+ */
+const FILING_WINDOW_MS = 30 * 60_000
 
 export type CycleOutcome =
   /** Counted: the PM emailed the customer. */
@@ -47,6 +70,12 @@ export interface ResponseRow {
   arrivedAt: string
   /** Who moved it in, "Support · Kinn Maagad"; null when the move note did not name both ends. */
   arrivedFrom: string | null
+  /**
+   * When the working clock started for this entry, if later than the arrival (it came in outside
+   * working hours); null when it arrived during working time. Display only: the hours already count
+   * from here.
+   */
+  clockFrom: string | null
   outcome: CycleOutcome
   endedAt: string | null
   /** Working hours arrival → response when counted; arrival → now when open; null otherwise. */
@@ -117,10 +146,29 @@ export interface WeekRow {
   partial: 'coverage' | 'in-progress' | null
   /** How much working time the week holds — holidays and make-up days make it differ from five. */
   shape: WeekShape
+  /** PM first response, over tickets (`n` counts tickets): see TicketWeek. */
   response: Stat
+  /** The counted first responses (queue entries) behind `response` — at least `response.n`. */
+  responseEntries: number
   prd: Stat
   mb: Stat
   canny: Stat
+}
+
+/**
+ * One ticket's first responses within one week: the unit the week's PM1 average is taken over. A
+ * ticket that entered the queue more than once that week adds one value, the mean of those entries.
+ */
+export interface TicketWeek {
+  ticket: string
+  week: string
+  /** Counted first responses of this ticket that ended in this week. */
+  entries: number
+  /** Their mean: the one value this ticket adds to the week's average. */
+  meanHours: number
+  /** Every counted first response of this ticket in the log, all weeks. Shown beside it, never averaged into a week. */
+  allEntries: number
+  allMeanHours: number
 }
 
 const party = (p?: Party): string | null => (p ? `${p.dept} · ${p.person}` : null)
@@ -161,9 +209,17 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
     return best
   }
 
+  const replyTimes = evs.filter(isReply).map((e) => Date.parse(e.at))
+  /** The PM moving a ticket he has just answered into his own queue: see FILING_WINDOW_MS. */
+  const isFiling = (e: PmEvent) => {
+    if (e.who !== PM_NAME) return false
+    const at = Date.parse(e.at)
+    return replyTimes.some((t) => t <= at && at - t <= FILING_WINDOW_MS)
+  }
+
   const rows: ResponseRow[] = []
   let state: 'out' | 'open' | 'answered' = 'out'
-  let cur: { arrivedAt: string; arrivedFrom: string | null } | null = null
+  let cur: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } | null = null
   const close = (
     outcome: CycleOutcome,
     endedAt: string,
@@ -189,11 +245,17 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
   }
 
   for (const e of evs) {
+    if (isArrival(e) && state !== 'open' && isFiling(e)) {
+      // Filed by the PM right after his own reply: in the queue, already answered — no clock.
+      state = 'answered'
+      continue
+    }
     if (isArrival(e)) {
       // An arrival while already open is a duplicate move; keep the first. An arrival while answered
       // means the ticket left by a route the log did not see, so it starts a fresh cycle.
       if (state !== 'open') {
-        cur = { arrivedAt: e.at, arrivedFrom: party(e.from) }
+        const starts = clockStart(e.at)
+        cur = { arrivedAt: e.at, arrivedFrom: party(e.from), clockFrom: starts === e.at ? null : starts }
         state = 'open'
       }
       continue
@@ -223,7 +285,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
   }
 
   if (state === 'open' && cur) {
-    const open: { arrivedAt: string; arrivedFrom: string | null } = cur
+    const open: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } = cur
     rows.push({
       ticket,
       ...meta,
@@ -301,7 +363,36 @@ export interface PmScorecard {
   gaps: { from: string; to: string }[]
   weeks: WeekRow[]
   response: ResponseRow[]
+  /** The per-ticket units each week's PM1 average is taken over. */
+  responseTickets: TicketWeek[]
   entries: EntryRow[]
+}
+
+const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
+
+/** Group the counted first responses by ticket and week, keeping each ticket's all-weeks mean beside it. */
+function ticketWeeks(rows: ResponseRow[]): TicketWeek[] {
+  const all = new Map<string, number[]>()
+  const byWeek = new Map<string, { ticket: string; week: string; hours: number[] }>()
+  for (const r of rows) {
+    const hours = r.hours as number
+    all.set(r.ticket, [...(all.get(r.ticket) ?? []), hours])
+    const key = `${r.ticket}|${r.week}`
+    const unit = byWeek.get(key) ?? { ticket: r.ticket, week: r.week as string, hours: [] }
+    unit.hours.push(hours)
+    byWeek.set(key, unit)
+  }
+  return [...byWeek.values()].map((u) => {
+    const everything = all.get(u.ticket) ?? u.hours
+    return {
+      ticket: u.ticket,
+      week: u.week,
+      entries: u.hours.length,
+      meanHours: mean(u.hours),
+      allEntries: everything.length,
+      allMeanHours: mean(everything),
+    }
+  })
 }
 
 export function buildScorecard(store: EventStore, now: string): PmScorecard {
@@ -328,6 +419,8 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
   const coverageWeek = from ? weekOf(from) : null
   const thisWeek = weekOf(now)
   const counted = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off'
+  const countedResponses = response.filter(counted)
+  const responseTickets = ticketWeeks(countedResponses)
 
   const weeks: WeekRow[] = (from ? weeksBetween(from, now) : [])
     .map((monday) => {
@@ -338,7 +431,8 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
         label: weekLabel(monday),
         partial: monday === thisWeek ? ('in-progress' as const) : monday === coverageWeek ? ('coverage' as const) : null,
         shape: weekShape(monday, now),
-        response: stat(response.filter((r) => counted(r) && r.week === monday).map((r) => r.hours as number)),
+        response: stat(responseTickets.filter((t) => t.week === monday).map((t) => t.meanHours)),
+        responseEntries: countedResponses.filter((r) => r.week === monday).length,
         prd: stat(hours('prd')),
         mb: stat(hours('mb')),
         canny: stat(hours('canny')),
@@ -346,5 +440,5 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
     })
     .reverse()
 
-  return { asOf: now, coverageFrom: from, gaps, weeks, response, entries: entryRows }
+  return { asOf: now, coverageFrom: from, gaps, weeks, response, responseTickets, entries: entryRows }
 }
