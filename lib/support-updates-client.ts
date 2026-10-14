@@ -8,7 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { SupportUpdatesPayload } from "../service/lib/pm/index.ts";
 
 export type { SupportUpdatesPayload };
-export type { CycleOutcome, EntryKind, EntryRow, OffClock, ResponseRow, Stat, WeekRow } from "../service/lib/pm/metrics.ts";
+export type { CycleOutcome, EntryKind, EntryRow, OffClock, ResponseRow, Stat, TicketWeek, WeekRow } from "../service/lib/pm/metrics.ts";
 
 /** How often to re-read while a capture is running. A capture takes minutes; this is not a hot loop. */
 const POLL_MS = 8000;

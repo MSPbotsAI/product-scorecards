@@ -3,7 +3,12 @@
  *
  *   response  PM first response — every arrival into the PM's queue, to the PM's first reply to the
  *             customer, or hand-off out of the queue with a private note. Each arrival is its own
- *             measurement: a ticket that comes back is answered again.
+ *             measurement: a ticket that comes back is answered again. The week's number is an
+ *             average over TICKETS: a ticket answered more than once in a week counts once, at the
+ *             mean of that week's entries, so a ticket that bounces back and forth weighs no more
+ *             than one that does not (decided by the PM, 2026-10-14). A ticket whose entries fall in
+ *             different weeks counts in each week with that week's entries, so a finished week
+ *             still never moves.
  *   prd       Requirement into development — first arrival into the queue, to the first ClickUp PRD
  *             link the PM posts on the ticket.
  *   mb        Bug into development — the same clock, to the PM's own hand-off into development:
@@ -117,10 +122,29 @@ export interface WeekRow {
   partial: 'coverage' | 'in-progress' | null
   /** How much working time the week holds — holidays and make-up days make it differ from five. */
   shape: WeekShape
+  /** PM first response, over tickets (`n` counts tickets): see TicketWeek. */
   response: Stat
+  /** The counted first responses (queue entries) behind `response` — at least `response.n`. */
+  responseEntries: number
   prd: Stat
   mb: Stat
   canny: Stat
+}
+
+/**
+ * One ticket's first responses within one week: the unit the week's PM1 average is taken over. A
+ * ticket that entered the queue more than once that week adds one value, the mean of those entries.
+ */
+export interface TicketWeek {
+  ticket: string
+  week: string
+  /** Counted first responses of this ticket that ended in this week. */
+  entries: number
+  /** Their mean: the one value this ticket adds to the week's average. */
+  meanHours: number
+  /** Every counted first response of this ticket in the log, all weeks. Shown beside it, never averaged into a week. */
+  allEntries: number
+  allMeanHours: number
 }
 
 const party = (p?: Party): string | null => (p ? `${p.dept} · ${p.person}` : null)
@@ -301,7 +325,36 @@ export interface PmScorecard {
   gaps: { from: string; to: string }[]
   weeks: WeekRow[]
   response: ResponseRow[]
+  /** The per-ticket units each week's PM1 average is taken over. */
+  responseTickets: TicketWeek[]
   entries: EntryRow[]
+}
+
+const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
+
+/** Group the counted first responses by ticket and week, keeping each ticket's all-weeks mean beside it. */
+function ticketWeeks(rows: ResponseRow[]): TicketWeek[] {
+  const all = new Map<string, number[]>()
+  const byWeek = new Map<string, { ticket: string; week: string; hours: number[] }>()
+  for (const r of rows) {
+    const hours = r.hours as number
+    all.set(r.ticket, [...(all.get(r.ticket) ?? []), hours])
+    const key = `${r.ticket}|${r.week}`
+    const unit = byWeek.get(key) ?? { ticket: r.ticket, week: r.week as string, hours: [] }
+    unit.hours.push(hours)
+    byWeek.set(key, unit)
+  }
+  return [...byWeek.values()].map((u) => {
+    const everything = all.get(u.ticket) ?? u.hours
+    return {
+      ticket: u.ticket,
+      week: u.week,
+      entries: u.hours.length,
+      meanHours: mean(u.hours),
+      allEntries: everything.length,
+      allMeanHours: mean(everything),
+    }
+  })
 }
 
 export function buildScorecard(store: EventStore, now: string): PmScorecard {
@@ -328,6 +381,8 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
   const coverageWeek = from ? weekOf(from) : null
   const thisWeek = weekOf(now)
   const counted = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off'
+  const countedResponses = response.filter(counted)
+  const responseTickets = ticketWeeks(countedResponses)
 
   const weeks: WeekRow[] = (from ? weeksBetween(from, now) : [])
     .map((monday) => {
@@ -338,7 +393,8 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
         label: weekLabel(monday),
         partial: monday === thisWeek ? ('in-progress' as const) : monday === coverageWeek ? ('coverage' as const) : null,
         shape: weekShape(monday, now),
-        response: stat(response.filter((r) => counted(r) && r.week === monday).map((r) => r.hours as number)),
+        response: stat(responseTickets.filter((t) => t.week === monday).map((t) => t.meanHours)),
+        responseEntries: countedResponses.filter((r) => r.week === monday).length,
         prd: stat(hours('prd')),
         mb: stat(hours('mb')),
         canny: stat(hours('canny')),
@@ -346,5 +402,5 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
     })
     .reverse()
 
-  return { asOf: now, coverageFrom: from, gaps, weeks, response, entries: entryRows }
+  return { asOf: now, coverageFrom: from, gaps, weeks, response, responseTickets, entries: entryRows }
 }

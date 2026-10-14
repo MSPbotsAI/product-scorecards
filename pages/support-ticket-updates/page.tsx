@@ -52,6 +52,7 @@ import {
   type OffClock,
   type ResponseRow,
   type SupportUpdatesPayload,
+  type TicketWeek,
   type WeekRow,
   importLog,
   useSupportUpdates,
@@ -87,11 +88,12 @@ const EN = {
   metrics: {
     response: {
       name: 'PM first response',
-      noun: (n: number): string => (n === 1 ? 'response' : 'responses'),
+      noun: (n: number): string => (n === 1 ? 'ticket' : 'tickets'),
       short: 'Each arrival into the queue, to the first reply to the customer or a hand-off with a private note.',
       notes: [
-        'A clock starts every time a ticket is moved into the PM queue (Product · product_zd@ or the PM) from anywhere else — Support, Development, anyone. A ticket that comes back is answered again and counted again.',
+        'A clock starts every time a ticket is moved into the PM queue (Product · product_zd@ or the PM) from anywhere else — Support, Development, anyone. A ticket that comes back is answered again, and that answer is timed on its own.',
         'It stops at the PM’s first email to the customer (Email User or Email Update), or at the PM moving the ticket out of the queue with a private note left alongside. Triage is not a response, and a private note on its own is not one either — even one that posts a ClickUp link.',
+        'The week’s number is an average over tickets. A ticket that came into the queue more than once that week counts once, at the average of those first responses, so a ticket that bounces back and forth weighs no more than one that does not. A ticket whose entries fall in different weeks counts in each week with that week’s entries; the list shows its average over all of them beside it, and a finished week never changes.',
         'Not counted, but listed with the reason: a hand-off with no private note, a ticket moved out by someone else first, or one closed before any response. A ticket still waiting is not in any average until it is answered.',
         'A reply on a rest day or outside working hours, to a ticket that arrived in the same off-hours stretch, scores 0.0 h: it came before the working clock started. It stays in the average as 0.0 h and is marked in the list.',
       ],
@@ -126,8 +128,11 @@ const EN = {
       ],
     },
   },
-  rowSub: (tag: string, n: number, noun: string, median: string) => `${tag} · ${n} ${noun} · median ${median} · target not set`,
+  rowSub: (tag: string, count: string, median: string) => `${tag} · ${count} · median ${median} · target not set`,
   rowNone: (tag: string) => `${tag} · none measured in this week · target not set`,
+  countTickets: (tickets: number, responses: number) =>
+    `${tickets} ${tickets === 1 ? 'ticket' : 'tickets'}${responses > tickets ? ` (${responses} responses)` : ''}`,
+  countRows: (n: number) => String(n),
   waitingName: 'Waiting for a first response',
   waitingSub: (hours: string) => `now · oldest ${hours} working h · in no average until answered`,
   waitingNone: 'now · nothing waiting',
@@ -140,15 +145,17 @@ const EN = {
   logStarts: (date: string) => `the log starts ${date}, mid-week`,
   complete: 'complete',
   // detail dialog
-  reading: (label: string, n: number, noun: string) => `${label} / week before · ${n} ${noun}`,
+  reading: (label: string, count: string) => `${label} / week before · ${count}`,
   median: (v: string) => `median ${v}`,
   historyHeading: 'Weekly history — pick a week to list its tickets',
   colWeek: 'Week',
   colAverage: 'Average',
   colCounted: 'Counted',
   colChange: 'Change',
-  ticketsHeading: (label: string, counted: number, other: number) =>
+  ticketsHeading: (label: string, counted: string, other: number) =>
     `Tickets · ${label} — ${counted} counted${other > 0 ? `, ${other} not` : ''}`,
+  colTicketAvg: 'Ticket avg',
+  allEntries: (n: number, hours: string) => `all ${n} entries ${hours}`,
   nothingCounted: 'Nothing counted in this week.',
   notCountedHeading: 'Landed in this week, not counted',
   howHeading: 'How it is measured',
@@ -221,11 +228,12 @@ const ZH: typeof EN = {
   metrics: {
     response: {
       name: 'PM 首次响应',
-      noun: () => '次响应',
+      noun: () => '张单',
       short: '工单每次进入队列，到 PM 首次回复客户、或带内部备注转出为止。',
       notes: [
-        '工单每次从其他任何地方（Support、Development 或任何人）被转入 PM 队列（Product · product_zd@ 或 PM 本人）时开始计时。工单退回后再次进入队列，就要再次响应、再次计入。',
+        '工单每次从其他任何地方（Support、Development 或任何人）被转入 PM 队列（Product · product_zd@ 或 PM 本人）时开始计时。工单退回后再次进入队列，就要再次响应，这次响应单独计时。',
         '在 PM 第一次给客户发邮件（Email User 或 Email Update）时停表，或在 PM 把工单转出队列、同时留下内部备注（private note）时停表。Triage 不算响应；单独一条内部备注也不算——即使里面贴了 ClickUp 链接。',
+        '每周的数字按工单平均。同一张单在一周内多次进入队列，只算一张，取这几次首次响应的平均值，所以来回流转的单不会比只进一次的单占更多权重。一张单的几次进队列落在不同周时，每周只用当周的那几次计算，列表里另外标出它全部进队列的平均值；已结束的周，数字不会再变。',
         '以下情况不计入，但会连同原因列出：转出时没留内部备注、PM 响应前已被他人转出、响应前已关闭。仍在等待的工单，在得到响应前不计入任何平均值。',
         '在休息日或非工作时段回复、且工单也是在同一段非工作时间内到达的，记为 0.0 h：回复发生在工作时钟开始之前。它按 0.0 h 计入平均值，并在列表中标注。',
       ],
@@ -260,8 +268,10 @@ const ZH: typeof EN = {
       ],
     },
   },
-  rowSub: (tag: string, n: number, noun: string, median: string) => `${tag} · ${n} ${noun} · 中位数 ${median} · 未设目标`,
+  rowSub: (tag: string, count: string, median: string) => `${tag} · ${count} · 中位数 ${median} · 未设目标`,
   rowNone: (tag: string) => `${tag} · 该周无测量 · 未设目标`,
+  countTickets: (tickets: number, responses: number) => `${tickets} 张单${responses > tickets ? `（${responses} 次响应）` : ''}`,
+  countRows: (n: number) => `${n} 条`,
   waitingName: '等待首次响应',
   waitingSub: (hours: string) => `当前 · 最久已等 ${hours} 工作小时 · 回复前不计入任何平均值`,
   waitingNone: '当前 · 无等待',
@@ -273,15 +283,17 @@ const ZH: typeof EN = {
   inProgress: (gone: string, total: string) => `进行中，已过 ${gone}/${total} 小时`,
   logStarts: (date: string) => `日志从 ${date} 开始，非整周`,
   complete: '已完结',
-  reading: (label: string, n: number, noun: string) => `${label} / 上一周 · ${n} ${noun}`,
+  reading: (label: string, count: string) => `${label} / 上一周 · ${count}`,
   median: (v: string) => `中位数 ${v}`,
   historyHeading: '周历史 — 点选某一周，查看对应工单',
   colWeek: '周',
   colAverage: '平均',
   colCounted: '计入',
   colChange: '环比',
-  ticketsHeading: (label: string, counted: number, other: number) =>
-    `工单 · ${label} — 计入 ${counted} 条${other > 0 ? `，未计入 ${other} 条` : ''}`,
+  ticketsHeading: (label: string, counted: string, other: number) =>
+    `工单 · ${label} — 计入 ${counted}${other > 0 ? `，未计入 ${other} 条` : ''}`,
+  colTicketAvg: '单均',
+  allEntries: (n: number, hours: string) => `全部 ${n} 次 ${hours}`,
   nothingCounted: '该周没有计入的记录。',
   notCountedHeading: '落在该周、但未计入',
   howHeading: '口径',
@@ -407,6 +419,20 @@ function reading(data: SupportUpdatesPayload, metric: Metric, index: number) {
   return { unit, stat, row, median: stat && stat.n > 0 ? inUnit(stat.medianHours, unit, workday) : null }
 }
 
+/** "11 tickets (12 responses)" for PM1, whose average is over tickets; "1 requirement" for the rest. */
+function countText(t: Copy, metric: Metric, n: number, responses: number): string {
+  return metric === 'response' ? t.countTickets(n, responses) : `${n} ${t.metrics[metric].noun(n)}`
+}
+
+/** A ticket's entries together: tickets newest first by their latest entry, entries oldest first within. */
+function groupByTicket(rows: ResponseRow[]): ResponseRow[] {
+  const groups = new Map<string, ResponseRow[]>()
+  for (const r of rows) groups.set(r.ticket, [...(groups.get(r.ticket) ?? []), r])
+  const at = (r: ResponseRow) => Date.parse(r.endedAt ?? r.arrivedAt)
+  const latest = (rs: ResponseRow[]) => Math.max(...rs.map(at))
+  return [...groups.values()].sort((a, b) => latest(b) - latest(a)).flatMap((rs) => [...rs].sort((a, b) => at(a) - at(b)))
+}
+
 function howText(r: ResponseRow, t: Copy): string {
   const to = r.to ?? t.unknown
   switch (r.outcome) {
@@ -487,7 +513,13 @@ function OffClockNote({ value, labels }: { value: OffClock; labels: Record<'rest
   return <div className="mt-0.5 text-[11px] text-warning-700">{labels[value]}</div>
 }
 
-function ResponseRows({ rows, reason, t }: { rows: ResponseRow[]; reason?: boolean; t: Copy }) {
+/**
+ * First-response rows. Given `units` (the PM1 counted list), a ticket's entries sit together and one
+ * merged cell carries the ticket's average: the value the week's number is averaged over, so the
+ * list adds up to the number at the top.
+ */
+function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?: boolean; units?: Map<string, TicketWeek>; t: Copy }) {
+  const ordered = units ? groupByTicket(rows) : rows
   return (
     <Table className="text-xs">
       <TableHeader>
@@ -497,28 +529,44 @@ function ResponseRows({ rows, reason, t }: { rows: ResponseRow[]; reason?: boole
           <TableHead className="w-36">{t.colArrived}</TableHead>
           <TableHead className="w-24">{reason ? t.colLeft : t.colResponded}</TableHead>
           {!reason && <TableHead className="w-16 text-right">{t.colTime}</TableHead>}
+          {units && <TableHead className="w-24 text-right">{t.colTicketAvg}</TableHead>}
           <TableHead className="w-40">{reason ? t.colWhy : t.colHow}</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((r) => (
-          <TableRow key={`${r.ticket}-${r.arrivedAt}`}>
-            <TableCell className="align-top tabular-nums text-muted-foreground">#{r.ticket}</TableCell>
-            <Request summary={r.summary} client={r.client} />
-            <TableCell className="whitespace-normal align-top">
-              <div className="tabular-nums">{local(r.arrivedAt)}</div>
-              <div className="text-[11px] text-muted-foreground">{r.arrivedFrom ?? t.unknown}</div>
-            </TableCell>
-            <TableCell className="align-top tabular-nums">{local(r.endedAt)}</TableCell>
-            {!reason && (
-              <TableCell className="text-right align-top tabular-nums">{r.hours === null ? '—' : `${r.hours.toFixed(1)} h`}</TableCell>
-            )}
-            <TableCell className="whitespace-normal align-top text-muted-foreground">
-              {reason ? `${t.notCounted[r.outcome] ?? r.outcome} · ${howText(r, t)}` : howText(r, t)}
-              <OffClockNote value={r.offClock} labels={t.offClockReply} />
-            </TableCell>
-          </TableRow>
-        ))}
+        {ordered.map((r, i) => {
+          const unit = units?.get(r.ticket)
+          const opensGroup = i === 0 || ordered[i - 1].ticket !== r.ticket
+          const span = ordered.filter((x) => x.ticket === r.ticket).length
+          return (
+            <TableRow key={`${r.ticket}-${r.arrivedAt}`}>
+              <TableCell className="align-top tabular-nums text-muted-foreground">#{r.ticket}</TableCell>
+              <Request summary={r.summary} client={r.client} />
+              <TableCell className="whitespace-normal align-top">
+                <div className="tabular-nums">{local(r.arrivedAt)}</div>
+                <div className="text-[11px] text-muted-foreground">{r.arrivedFrom ?? t.unknown}</div>
+              </TableCell>
+              <TableCell className="align-top tabular-nums">{local(r.endedAt)}</TableCell>
+              {!reason && (
+                <TableCell className="text-right align-top tabular-nums">{r.hours === null ? '—' : `${r.hours.toFixed(1)} h`}</TableCell>
+              )}
+              {units && opensGroup && (
+                <TableCell rowSpan={span} className="border-l text-right align-top font-medium tabular-nums">
+                  {unit ? `${unit.meanHours.toFixed(1)} h` : '—'}
+                  {unit && unit.allEntries > unit.entries && (
+                    <div className="text-[11px] font-normal text-muted-foreground">
+                      {t.allEntries(unit.allEntries, `${unit.allMeanHours.toFixed(1)} h`)}
+                    </div>
+                  )}
+                </TableCell>
+              )}
+              <TableCell className="whitespace-normal align-top text-muted-foreground">
+                {reason ? `${t.notCounted[r.outcome] ?? r.outcome} · ${howText(r, t)}` : howText(r, t)}
+                <OffClockNote value={r.offClock} labels={t.offClockReply} />
+              </TableCell>
+            </TableRow>
+          )
+        })}
       </TableBody>
     </Table>
   )
@@ -612,6 +660,11 @@ function MetricDialog({
   const { unit, stat, row, median } = reading(data, metric, index)
   const week = data.weeks[index]
   const { counted: rows, other } = week ? rowsFor(data, metric, week.monday) : { counted: [], other: [] }
+  // PM1 averages over tickets: each ticket's mean of its entries this week (server-computed).
+  const units =
+    metric === 'response' && week
+      ? new Map(data.responseTickets.filter((u) => u.week === week.monday).map((u) => [u.ticket, u]))
+      : undefined
   // History newest first, each with its change against the week before it.
   const history = data.weeks.map((w, i) => {
     const v = w[metric].n > 0 ? inUnit(w[metric].meanHours, unit, workday) : null
@@ -639,7 +692,7 @@ function MetricDialog({
         <div className="flex items-end justify-between gap-4 rounded-lg border bg-muted/30 px-4 py-3">
           <div>
             <div className="text-[11px] text-muted-foreground">
-              {t.reading(week?.label ?? '', n, copy.noun(n))}
+              {t.reading(week?.label ?? '', countText(t, metric, n, week?.responseEntries ?? n))}
               {median !== null ? ` · ${t.median(show(median, unit))}` : ''}
             </div>
             <div className="mt-1 flex items-baseline gap-2">
@@ -693,11 +746,17 @@ function MetricDialog({
         </div>
 
         <div className="space-y-2">
-          <Heading>{t.ticketsHeading(week?.label ?? '', rows.length, other.length)}</Heading>
+          <Heading>
+            {t.ticketsHeading(
+              week?.label ?? '',
+              metric === 'response' ? t.countTickets(units?.size ?? 0, rows.length) : t.countRows(rows.length),
+              other.length,
+            )}
+          </Heading>
           {rows.length === 0 ? (
             <p className="text-xs italic text-muted-foreground">{t.nothingCounted}</p>
           ) : metric === 'response' ? (
-            <ResponseRows rows={rows as ResponseRow[]} t={t} />
+            <ResponseRows rows={rows as ResponseRow[]} units={units} t={t} />
           ) : (
             <EntryRows rows={rows as EntryRow[]} workday={workday} t={t} />
           )}
@@ -820,7 +879,7 @@ function OwnerCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index
               key={m.id}
               status="display"
               name={copy.name}
-              sub={n > 0 ? t.rowSub(m.tag, n, copy.noun(n), show(median, unit)) : t.rowNone(m.tag)}
+              sub={n > 0 ? t.rowSub(m.tag, countText(t, m.id, n, week?.responseEntries ?? n), show(median, unit)) : t.rowNone(m.tag)}
               spark={<Sparkline row={row} width={56} height={18} />}
               value={show(row.value, unit)}
               delta={<Delta row={row} />}
