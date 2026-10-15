@@ -48,6 +48,7 @@ import { useLang } from '../../lib/i18n'
 import type { RowStatus, ScorecardRow } from '../../lib/scorecard-client'
 import {
   type Benchmark,
+  type Sample,
   type EntryKind,
   type EntryRow,
   type Light,
@@ -144,6 +145,16 @@ const EN = {
   colBenchmark: 'Benchmark',
   colSamples: 'Samples',
   tooFew: (n: number, min: number) => `trend only — ${n} of ${min} needed`,
+  benchmarkTitle: (name: string) => `${name} — benchmark`,
+  benchmarkIs: (from: string, n: number, noun: string) => `= the average of the ${n} ${noun} from ${from} counted below`,
+  byWeekHeading: (from: string) => `By week · ${from}`,
+  shortWeekOut: (min: number) => `week under ${min} working days — left out`,
+  samplesHeading: (n: number) => `Counted · ${n}`,
+  colValue: 'Value',
+  entriesNote: (n: number) => `average of ${n} queue entries`,
+  leftOutHeading: 'Listed, not averaged',
+  longWaitOut: (days: number, limit: number) => `waited ${days} days (over ${limit}) — counts in its week, not in the benchmark`,
+  noSamples: 'No measurements.',
   quarter: (q: string) => `${q.slice(5)} ${q.slice(0, 4)}`,
   benchmarkFrom: (quarter: string, count: string, longWait: number, history: boolean) =>
     `Benchmark: the ${quarter} average over ${count}, waits of over ${longWait} days left out${history ? ' — from Halo’s full history, which the log does not reach' : ''}.`,
@@ -314,6 +325,16 @@ const ZH: typeof EN = {
   colBenchmark: '基准',
   colSamples: '样本',
   tooFew: (n: number, min: number) => `仅看趋势：只有 ${n} 个样本，需要 ${min} 个`,
+  benchmarkTitle: (name: string) => `${name} — 基准`,
+  benchmarkIs: (from: string, n: number, noun: string) => `= 下表 ${from} 计入的 ${n} ${noun}的平均值`,
+  byWeekHeading: (from: string) => `按周 · ${from}`,
+  shortWeekOut: (min: number) => `该周不足 ${min} 个工作日——不计入`,
+  samplesHeading: (n: number) => `计入 · ${n} 个`,
+  colValue: '值',
+  entriesNote: (n: number) => `${n} 次进队列取平均`,
+  leftOutHeading: '列出但不计入',
+  longWaitOut: (days: number, limit: number) => `等了 ${days} 天（超过 ${limit} 天）——计入当周，不计入基准`,
+  noSamples: '没有样本。',
   quarter: (q: string) => `${q.slice(0, 4)} ${q.slice(5)}`,
   benchmarkFrom: (quarter: string, count: string, longWait: number, history: boolean) =>
     `基准：${quarter} 平均（${count}，不含等了 ${longWait} 天以上的单）${history ? '——日志覆盖不到，取自 Halo 完整历史' : ''}。`,
@@ -1017,6 +1038,173 @@ function WaitingDialog({ data, onClose }: { data: SupportUpdatesPayload; onClose
 
 /* ── page ── */
 
+/** "07-06 – 07-12" for a Monday, as the server labels weeks. */
+function weekSpan(monday: string): string {
+  const sunday = new Date(Date.parse(`${monday}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10)
+  return `${monday.slice(5)} – ${sunday.slice(5)}`
+}
+
+/** A sample's value in the number's unit, with the hours beside a day value. */
+function SampleValue({ hours, unit, workday }: { hours: number; unit: Unit; workday: number }) {
+  return (
+    <>
+      {show(inUnit(hours, unit, workday), unit)}
+      {unit === 'd' && <div className="text-[11px] text-muted-foreground">{hours.toFixed(1)} h</div>}
+    </>
+  )
+}
+
+function SampleTable({
+  rows,
+  unit,
+  workday,
+  why,
+  t,
+}: {
+  rows: Sample[]
+  unit: Unit
+  workday: number
+  why?: (x: Sample) => string
+  t: Copy
+}) {
+  return (
+    <Table className="text-xs tabular-nums">
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">{t.colTicket}</TableHead>
+          <TableHead className="w-32">{t.colWeek}</TableHead>
+          <TableHead className="w-20 text-right">{t.colValue}</TableHead>
+          <TableHead>{why ? t.colWhy : ''}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((x) => (
+          <TableRow key={`${x.ticket}-${x.week}-${x.hours}`}>
+            <TableCell className="align-top text-muted-foreground">#{x.ticket}</TableCell>
+            <TableCell className="align-top">{weekSpan(x.week)}</TableCell>
+            <TableCell className="text-right align-top">
+              <SampleValue hours={x.hours} unit={unit} workday={workday} />
+            </TableCell>
+            <TableCell className="whitespace-normal align-top text-muted-foreground">
+              {why ? why(x) : x.entries && x.entries > 1 ? t.entriesNote(x.entries) : ''}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
+/**
+ * One benchmark, drilled into: the value, its bands, the baseline quarter week by week, and every
+ * sample — the counted ones, which average to the benchmark, and the ones listed but left out, with why.
+ */
+function BenchmarkDialog({
+  data,
+  benchmark,
+  metric,
+  onClose,
+}: {
+  data: SupportUpdatesPayload
+  benchmark: Benchmark
+  metric: Metric
+  onClose: () => void
+}) {
+  const t = T[useLang()]
+  const spec = METRICS.find((m) => m.id === metric) ?? METRICS[0]
+  const workday = data.calendar.workdayHours
+  const line = benchmark.lines[metric]
+  const from = t.quarter(benchmark.from)
+  const all = benchmark.samples.filter((x) => x.metric === metric)
+  const counted = all.filter((x) => !x.out)
+  const left = all.filter((x) => x.out)
+  const weeks = [...new Set(all.map((x) => x.week))].sort().map((week) => {
+    const inWeek = counted.filter((x) => x.week === week)
+    const avg = inWeek.length ? inWeek.reduce((a, x) => a + x.hours, 0) / inWeek.length : null
+    return {
+      week,
+      n: inWeek.length,
+      value: inUnit(avg, spec.unit, workday),
+      short: all.some((x) => x.week === week && x.out === 'short-week'),
+    }
+  })
+  const why = (x: Sample) =>
+    x.out === 'long-wait' ? t.longWaitOut(x.waitedDays ?? 0, data.rules.longWaitDays) : t.shortWeekOut(data.rules.minWorkdays)
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent container={root()} className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <span className="text-[11px] text-muted-foreground">
+            {spec.tag} · {t.benchmarksTitle(t.quarter(benchmark.quarter))}
+          </span>
+          <DialogTitle className="text-base leading-snug">{t.benchmarkTitle(t.metrics[metric].name)}</DialogTitle>
+          <DialogDescription className="text-xs">
+            {t.benchmarksFrom(from, benchmark.source === 'history')} {t.benchmarksLeftOut(data.rules.longWaitDays, data.rules.minWorkdays)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="rounded-lg border bg-muted/30 px-4 py-3">
+          {line.green !== null ? (
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-3xl font-semibold leading-none tracking-tight tabular-nums">{show(line.green, spec.unit)}</span>
+              <span className="text-xs text-muted-foreground">{t.benchmarkIs(from, line.n, t.metrics[metric].noun(line.n))}</span>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">{t.tooFew(line.n, data.rules.minSamples)}</p>
+          )}
+        </div>
+        <Bands data={data} quarter={benchmark.quarter} benchmark={benchmark} metric={metric} unit={spec.unit} t={t} />
+
+        <div>
+          <Heading>{t.byWeekHeading(from)}</Heading>
+          <div className="max-h-44 overflow-y-auto rounded-md border">
+            <Table className="text-xs tabular-nums">
+              <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur">
+                <TableRow>
+                  <TableHead className="h-8 px-3">{t.colWeek}</TableHead>
+                  <TableHead className="h-8 px-3 text-right">{t.colAverage}</TableHead>
+                  <TableHead className="h-8 px-3 text-right">{t.colCounted}</TableHead>
+                  <TableHead className="h-8 px-3" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {weeks.map((w) => (
+                  <TableRow key={w.week}>
+                    <TableCell className="px-3 py-1.5">{weekSpan(w.week)}</TableCell>
+                    <TableCell className="px-3 py-1.5 text-right">{show(w.value, spec.unit)}</TableCell>
+                    <TableCell className="px-3 py-1.5 text-right text-muted-foreground">{w.n}</TableCell>
+                    <TableCell className="px-3 py-1.5 text-muted-foreground">
+                      {w.short ? t.shortWeekOut(data.rules.minWorkdays) : ''}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Heading>{t.samplesHeading(counted.length)}</Heading>
+          {counted.length === 0 ? (
+            <p className="text-xs italic text-muted-foreground">{t.noSamples}</p>
+          ) : (
+            <SampleTable rows={counted} unit={spec.unit} workday={workday} t={t} />
+          )}
+          {left.length > 0 && (
+            <div className="rounded-md border border-dashed p-2">
+              <div className="mb-1 text-[11px] text-muted-foreground">{t.leftOutHeading}</div>
+              <SampleTable rows={left} unit={spec.unit} workday={workday} why={why} t={t} />
+            </div>
+          )}
+        </div>
+
+        <Source data={data} t={t} />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /** Every number's benchmark for the selected week's quarter, written out: the value and its three bands. */
 function BenchmarkCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index: number; onOpen: (m: Metric) => void }) {
   const t = T[useLang()]
@@ -1216,6 +1404,7 @@ export default function SupportTicketUpdates() {
   const { data, error, loading, reload, refresh } = useSupportUpdates()
   const [pick, setPick] = useState<string | null>(null)
   const [open, setOpen] = useState<Metric | 'waiting' | null>(null)
+  const [openBenchmark, setOpenBenchmark] = useState<{ quarter: string; metric: Metric } | null>(null)
 
   const index = data
     ? Math.max(
@@ -1299,7 +1488,14 @@ export default function SupportTicketUpdates() {
         <>
           <div className="grid gap-4 lg:grid-cols-2">
             <OwnerCard data={data} index={index} onOpen={setOpen} />
-            <BenchmarkCard data={data} index={index} onOpen={setOpen} />
+            <BenchmarkCard
+              data={data}
+              index={index}
+              onOpen={(metric) => {
+                const quarter = data.weeks[index]?.quarter
+                if (quarter) setOpenBenchmark({ quarter, metric })
+              }}
+            />
           </div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
             <span>
@@ -1309,6 +1505,13 @@ export default function SupportTicketUpdates() {
             <ImportButton onDone={reload} />
           </div>
           {open === 'waiting' && <WaitingDialog data={data} onClose={() => setOpen(null)} />}
+          {openBenchmark &&
+            (() => {
+              const benchmark = data.benchmarks.find((b) => b.quarter === openBenchmark.quarter)
+              return benchmark ? (
+                <BenchmarkDialog data={data} benchmark={benchmark} metric={openBenchmark.metric} onClose={() => setOpenBenchmark(null)} />
+              ) : null
+            })()}
           {open && open !== 'waiting' && <MetricDialog data={data} metric={open} initial={index} onClose={() => setOpen(null)} />}
         </>
       )}

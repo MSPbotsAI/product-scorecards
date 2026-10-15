@@ -456,13 +456,29 @@ const SHOWN_IN: Record<Metric, 'h' | 'd'> = { response: 'h', prd: 'd', mb: 'd', 
 const inShownUnit = (hours: number, metric: Metric) => (SHOWN_IN[metric] === 'h' ? hours : hours / WORKDAY_HOURS)
 const round1 = (v: number) => Math.round(v * 10) / 10
 
-/** A quarter's average of one number: working hours over `n` measurements; null when it had none. */
-export interface Average {
-  hours: number | null
-  n: number
+/**
+ * One measurement in a benchmark's quarter, written out so the benchmark can be drilled into. For
+ * first response it is a ticket's week (the mean of its entries that week); for the rest one entry.
+ * `out` says why a measurement is listed but not averaged.
+ */
+export interface Sample {
+  metric: Metric
+  ticket: string
+  /** The Monday of the week it landed in. */
+  week: string
+  hours: number
+  /** First response only: how many queue entries this week's value averages. */
+  entries?: number
+  /** 'long-wait': waited over LONG_WAIT_DAYS. 'short-week': its week had under MIN_WORKDAYS working days. */
+  out?: 'long-wait' | 'short-week'
+  /** Calendar days waited, for a long wait. */
+  waitedDays?: number
 }
 
-export interface Line extends Average {
+export interface Line {
+  /** The mean of the counted samples in working hours, and how many there are; hours is null when there are none. */
+  hours: number | null
+  n: number
   /**
    * The bounds, in the number's shown unit at the shown one decimal: green up to `green`, yellow up to
    * `yellow`, red above. Null when n is under MIN_SAMPLES — that number is then shown as a trend only.
@@ -478,6 +494,8 @@ export interface Benchmark {
   /** 'history': averaged from Halo's full action history (baselines.ts). 'log': averaged from this log. */
   source: 'history' | 'log'
   lines: Record<Metric, Line>
+  /** Every measurement behind the lines, counted or not — exactly what each line averages, and nothing else. */
+  samples: Sample[]
 }
 
 /** The quarter a week is judged in: the one its Monday falls in, "2026-Q4". */
@@ -506,18 +524,20 @@ function mondaysIn(quarter: string): string[] {
 
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
 
+const daysBetween = (fromIso: string, toIso: string) => Math.round((Date.parse(toIso) - Date.parse(fromIso)) / DAY_MS)
+const METRIC_ORDER: Record<Metric, number> = { response: 0, prd: 1, canny: 2, mb: 3 }
+
 /**
- * A quarter's average of each number, over the same measurements its weeks average: per-ticket units
- * for first response, counted entries for the rest. Two things are left out:
- * - weeks with fewer than MIN_WORKDAYS working days;
- * - waits longer than LONG_WAIT_DAYS.
- * Null unless every week of the quarter is in the log, complete and free of gaps, so a benchmark is
- * never averaged from part of a quarter.
+ * Every measurement of a quarter, with the ones a benchmark leaves out marked: weeks with fewer than
+ * MIN_WORKDAYS working days, and waits longer than LONG_WAIT_DAYS. The counted ones are the same
+ * units the weeks average: per-ticket weeks for first response, entries for the rest. Null unless
+ * every week of the quarter is in the log, complete and free of gaps, so a benchmark is never
+ * averaged from part of a quarter.
  */
-export function quarterAverages(
+export function quarterSamples(
   card: { weeks: WeekCore[]; gaps: { from: string; to: string }[]; response: ResponseRow[]; entries: EntryRow[] },
   quarter: string,
-): Record<Metric, Average> | null {
+): Sample[] | null {
   const mondays = mondaysIn(quarter)
   const byMonday = new Map(card.weeks.map((w) => [w.monday, w]))
   const startMs = Date.parse(`${mondays[0]}T00:00:00+08:00`)
@@ -526,25 +546,49 @@ export function quarterAverages(
     mondays.every((m) => byMonday.has(m) && byMonday.get(m)?.partial === null) &&
     !card.gaps.some((g) => Date.parse(g.from) < endMs && Date.parse(g.to) > startMs)
   if (!covered) return null
-  const eligible = new Set(mondays.filter((m) => (byMonday.get(m)?.shape.workdays ?? 0) >= MIN_WORKDAYS))
-  const average = (hours: number[]): Average => ({ hours: hours.length ? mean(hours) : null, n: hours.length })
-  const responses = card.response.filter((r) => counts(r) && !r.longWait && eligible.has(r.week as string))
-  const entryHours = (kind: EntryKind) =>
-    card.entries
-      .filter((r) => r.kind === kind && r.status === 'counted' && !r.longWait && eligible.has(r.week))
-      .map((r) => r.hours as number)
-  return {
-    response: average(ticketWeeks(responses).map((t) => t.meanHours)),
-    prd: average(entryHours('prd')),
-    mb: average(entryHours('mb')),
-    canny: average(entryHours('canny')),
+  const inQuarter = new Set(mondays)
+  const short = (week: string) => (byMonday.get(week)?.shape.workdays ?? 0) < MIN_WORKDAYS
+  const out: Sample[] = []
+
+  const responses = card.response.filter((r) => counts(r) && inQuarter.has(r.week as string))
+  for (const t of ticketWeeks(responses.filter((r) => !r.longWait && !short(r.week as string)))) {
+    out.push({ metric: 'response', ticket: t.ticket, week: t.week, hours: t.meanHours, entries: t.entries })
   }
+  for (const r of responses) {
+    const week = r.week as string
+    const hours = r.hours as number
+    if (short(week)) out.push({ metric: 'response', ticket: r.ticket, week, hours, out: 'short-week' })
+    else if (r.longWait) {
+      out.push({
+        metric: 'response',
+        ticket: r.ticket,
+        week,
+        hours,
+        out: 'long-wait',
+        waitedDays: daysBetween(r.arrivedAt, r.endedAt as string),
+      })
+    }
+  }
+  for (const r of card.entries.filter((x) => x.status === 'counted' && inQuarter.has(x.week))) {
+    const base = { metric: r.kind, ticket: r.ticket, week: r.week, hours: r.hours as number }
+    if (short(r.week)) out.push({ ...base, out: 'short-week' })
+    else if (r.longWait) out.push({ ...base, out: 'long-wait', waitedDays: daysBetween(r.arrivedAt as string, r.at) })
+    else out.push(base)
+  }
+  return out.sort(
+    (a, b) => METRIC_ORDER[a.metric] - METRIC_ORDER[b.metric] || a.week.localeCompare(b.week) || a.ticket.localeCompare(b.ticket),
+  )
 }
 
-function lineOf(metric: Metric, { hours, n }: Average): Line {
-  if (hours === null || n < MIN_SAMPLES) return { hours, n, green: null, yellow: null }
-  const shown = inShownUnit(hours, metric)
-  return { hours, n, green: round1(shown), yellow: round1(shown * YELLOW_FACTOR) }
+/** A line from the samples it averages: only those not marked `out`. */
+function lineOf(metric: Metric, samples: Sample[]): Line {
+  const hours = samples.filter((x) => x.metric === metric && !x.out).map((x) => x.hours)
+  const n = hours.length
+  if (n === 0) return { hours: null, n, green: null, yellow: null }
+  const average = mean(hours)
+  if (n < MIN_SAMPLES) return { hours: average, n, green: null, yellow: null }
+  const shown = inShownUnit(average, metric)
+  return { hours: average, n, green: round1(shown), yellow: round1(shown * YELLOW_FACTOR) }
 }
 
 /**
@@ -553,13 +597,13 @@ function lineOf(metric: Metric, { hours, n }: Average): Line {
  * and is averaged from the log itself once the log covers the whole previous quarter. Null when
  * neither has it; every number in that quarter is then shown as a trend.
  */
-function benchmarkFor(quarter: string, card: Parameters<typeof quarterAverages>[0]): Benchmark | null {
+function benchmarkFor(quarter: string, card: Parameters<typeof quarterSamples>[0]): Benchmark | null {
   const known = HISTORY_BASELINES[quarter]
   const from = known?.from ?? previousQuarter(quarter)
-  const averages = known?.lines ?? quarterAverages(card, from)
-  if (!averages) return null
-  const lines = Object.fromEntries(METRIC_IDS.map((m) => [m, lineOf(m, averages[m])])) as Record<Metric, Line>
-  return { quarter, from, source: known ? 'history' : 'log', lines }
+  const samples = known?.samples ?? quarterSamples(card, from)
+  if (!samples) return null
+  const lines = Object.fromEntries(METRIC_IDS.map((m) => [m, lineOf(m, samples)])) as Record<Metric, Line>
+  return { quarter, from, source: known ? 'history' : 'log', lines, samples }
 }
 
 /** A week's colour: its number, as shown, against the benchmark's bounds. */

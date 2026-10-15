@@ -18,6 +18,7 @@ export type {
   Metric,
   OffClock,
   ResponseRow,
+  Sample,
   Stat,
   TicketWeek,
   WeekRow,
