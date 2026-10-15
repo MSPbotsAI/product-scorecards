@@ -15,18 +15,18 @@ import { writeFileSync } from 'node:fs'
 import { type Metric, type Sample, buildScorecard, quarterOf, quarterSamples } from '../service/lib/pm/metrics.ts'
 import type { EventStore } from '../service/lib/pm/store.ts'
 import { WORKDAY_HOURS } from '../service/lib/pm/workTime.ts'
-import { HOLD, RELEASE } from '../service/lib/pm/actions.ts'
+import { HOLD, PM_ACCOUNTS, RELEASE } from '../service/lib/pm/actions.ts'
 import { eventsFor, firstActions, readActions, readTicketActions, type Row } from './halo-ods.ts'
 
 /**
  * The quarters averaged, and who counted as "the PM" in each (decided by the PM):
  * - Q2 (2026-10-14): Grace Guo and Micus Zhang worked the queue with Frank, so all four accounts.
- * - Q3 (2026-10-15): Frank only, the same as the page counts him. 122 of the 126 measurements were
- *   his anyway.
+ * - Q3 (2026-10-15): Frank's accounts, the same as the page counts him. That is his own name plus
+ *   product_zd@mspbots.ai, which he has used since July; Grace and Micus no longer count.
  */
 const QUARTERS: Record<string, string[]> = {
   '2026-Q2': ['Frank Tian', 'Grace Guo', 'Micus Zhang', 'product_zd@mspbots.ai'],
-  '2026-Q3': ['Frank Tian'],
+  '2026-Q3': PM_ACCOUNTS,
 }
 const DATA_FILE = 'service/lib/pm/baselines.data.ts'
 

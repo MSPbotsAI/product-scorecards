@@ -6,7 +6,7 @@
  * The page's own log starts on the day it first captured, because Halo Actions keeps only 14 days.
  * This reads the ODS Halo Actions table (halo-ods.ts) instead, and writes a version-1 event log:
  * - The PM's own actions and every move into or out of the queue, reduced as the live capture reduces
- *   them, with no note text. "The PM" is PM_NAME only, as the page counts.
+ *   them, with no note text. "The PM" is PM_ACCOUNTS, as the page counts.
  * - Each ticket's first action. The history is complete, so tickets older than the log are timed too.
  * - Each ticket's holds and releases, because first response does not run while a ticket is on hold.
  * - Each ticket's summary and client, from the Halo tickets table, for the ticket lists. The same table
@@ -19,7 +19,7 @@
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { HOLD, PM_NAME, RELEASE, type TicketState, closureEvents } from '../service/lib/pm/actions.ts'
+import { HOLD, PM_ACCOUNTS, RELEASE, type TicketState, closureEvents } from '../service/lib/pm/actions.ts'
 import { HALO_TICKETS, eventsFor, firstActions, localMidnight, page, readActions, readTicketActions } from './halo-ods.ts'
 
 const start = process.argv[2] ?? ''
@@ -29,10 +29,10 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || new Date(`${start}T00:00:00Z`).getUTCD
   process.exit(1)
 }
 
-const rows = await readActions([PM_NAME])
+const rows = await readActions(PM_ACCOUNTS)
 // First response does not run while a ticket is on hold: each ticket's holds and releases come too.
-rows.push(...(await readTicketActions([...new Set(Object.values(eventsFor(rows, [PM_NAME])).map((e) => e.ticket))], [HOLD, RELEASE])))
-const events = eventsFor(rows, [PM_NAME])
+rows.push(...(await readTicketActions([...new Set(Object.values(eventsFor(rows, PM_ACCOUNTS)).map((e) => e.ticket))], [HOLD, RELEASE])))
+const events = eventsFor(rows, PM_ACCOUNTS)
 const created = firstActions(events)
 
 // Summary and client per ticket, three lookups at a time (more trips the gateway): the tickets table

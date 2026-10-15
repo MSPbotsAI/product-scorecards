@@ -176,6 +176,11 @@ const EN = {
   waitingName: 'Waiting for a first response',
   waitingSub: (hours: string) => `now · oldest ${hours} working h · in no average until answered`,
   waitingNone: 'now · nothing waiting',
+  waitingSubAt: (week: string, hours: string) => `end of ${week} · oldest ${hours} working h`,
+  waitingNoneAt: (week: string) => `end of ${week} · nothing waiting`,
+  onHoldCount: (n: number) => ` · ${n} on hold`,
+  asOfWeekEnd: (week: string) => `as of the end of ${week}`,
+  onHoldNow: 'on hold at that moment',
   waitingBadge: (n: number) => `${n} waiting`,
   workingDays: (n: number) => `${n} working days`,
   holidays: (n: number) => (n === 1 ? '1 holiday' : `${n} holidays`),
@@ -247,7 +252,7 @@ const EN = {
   // waiting dialog
   asOfNow: 'as of now',
   waitingDescription:
-    'In the queue with no reply to the customer and no hand-off yet. Working time so far — not in any average until answered.',
+    'In the queue with no reply to the customer and no hand-off yet, at the end of the selected week (now, for this week). Working time up to then, less time on hold — not in any average until answered.',
   nothingWaiting: 'Nothing is waiting.',
   // banners and footer
   captureFailed: (at: string) => `The last refresh from Halo failed; showing the log as of ${at}.`,
@@ -358,6 +363,11 @@ const ZH: typeof EN = {
   waitingName: '等待首次响应',
   waitingSub: (hours: string) => `当前 · 最久已等 ${hours} 工作小时 · 回复前不计入任何平均值`,
   waitingNone: '当前 · 无等待',
+  waitingSubAt: (week: string, hours: string) => `${week} 周末 · 最久已等 ${hours} 工作小时`,
+  waitingNoneAt: (week: string) => `${week} 周末 · 无等待`,
+  onHoldCount: (n: number) => ` · 其中 ${n} 张挂起中`,
+  asOfWeekEnd: (week: string) => `截至 ${week} 周末`,
+  onHoldNow: '当时挂起中',
   waitingBadge: (n: number) => `${n} 个等待中`,
   workingDays: (n: number) => `${n} 个工作日`,
   holidays: (n: number) => `${n} 天假期`,
@@ -425,7 +435,8 @@ const ZH: typeof EN = {
   logFrom: (date: string) => `日志起点 ${date}`,
   clock: (hours: string, confirmed: boolean) => `工作时间 ${hours}，中国节假日日历（${confirmed ? '已确认' : '待确认'}）`,
   asOfNow: '截至当前',
-  waitingDescription: '在队列中，尚未回复客户、也未转出。显示至今的工作时长——回复前不计入任何平均值。',
+  waitingDescription:
+    '所选那一周结束时（本周为当前），已在队列中、尚未回复客户也未转出的工单。显示到那时为止的工作时长（不含挂起）——回复前不计入任何平均值。',
   nothingWaiting: '当前没有等待中的工单。',
   captureFailed: (at: string) => `最近一次从 Halo 刷新失败；当前显示的是截至 ${at} 的日志。`,
   gaps: (n: number, list: string) => `日志有 ${n} 处缺口（${list}）。其中的 action 在复制前已从 Halo 过期，涉及的周数据不完整。`,
@@ -637,7 +648,20 @@ function OffClockNote({ value, labels }: { value: OffClock; labels: Record<'rest
  * merged cell carries the ticket's average: the value the week's number is averaged over, so the
  * list adds up to the number at the top.
  */
-function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?: boolean; units?: Map<string, TicketWeek>; t: Copy }) {
+function ResponseRows({
+  rows,
+  reason,
+  units,
+  onHold,
+  t,
+}: {
+  rows: ResponseRow[]
+  reason?: boolean
+  units?: Map<string, TicketWeek>
+  /** "ticket|arrivedAt" of the waiting entries that were on hold at the moment shown. */
+  onHold?: Set<string>
+  t: Copy
+}) {
   const ordered = units ? groupByTicket(rows) : rows
   return (
     <Table className="text-xs">
@@ -696,6 +720,7 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
                 {reason ? `${t.notCounted[r.outcome] ?? r.outcome} · ${howText(r, t)}` : howText(r, t)}
                 <OffClockNote value={r.offClock} labels={t.offClockReply} />
                 {r.longWait && <div className="mt-0.5 text-[11px] text-warning-700">{t.longWait(daysBetween(r.arrivedAt, r.endedAt))}</div>}
+                {onHold?.has(`${r.ticket}|${r.arrivedAt}`) && <div className="mt-0.5 text-[11px] text-muted-foreground">{t.onHoldNow}</div>}
               </TableCell>
             </TableRow>
           )
@@ -1018,9 +1043,18 @@ function MetricDialog({
   )
 }
 
-function WaitingDialog({ data, onClose }: { data: SupportUpdatesPayload; onClose: () => void }) {
+function WaitingDialog({ data, index, onClose }: { data: SupportUpdatesPayload; index: number; onClose: () => void }) {
   const t = T[useLang()]
-  const rows = data.response.filter((r) => r.outcome === 'open')
+  const week: WeekRow | undefined = data.weeks[index]
+  const live = !week || week.partial === 'in-progress'
+  // Each waiting entry shown as its cycle stood at the week's end: no response yet, aged to then.
+  const rows = (week?.waiting ?? []).flatMap((w) => {
+    const base = data.response.find((r) => r.ticket === w.ticket && r.arrivedAt === w.arrivedAt)
+    return base
+      ? [{ ...base, outcome: 'open' as const, endedAt: null, hours: w.hours, heldHours: w.heldHours, offClock: null, longWait: false }]
+      : []
+  })
+  const onHold = new Set((week?.waiting ?? []).filter((w) => w.onHold).map((w) => `${w.ticket}|${w.arrivedAt}`))
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent container={root()} className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
@@ -1028,7 +1062,7 @@ function WaitingDialog({ data, onClose }: { data: SupportUpdatesPayload; onClose
           <div className="flex items-center gap-2">
             <StatusChip status={rows.length ? 'yellow' : 'green'} />
             <span className="text-[11px] text-muted-foreground">
-              {t.asOfNow} · {data.pm}
+              {live ? t.asOfNow : t.asOfWeekEnd(week?.label ?? '')} · {data.pm}
             </span>
           </div>
           <DialogTitle className="text-base leading-snug">{t.waitingName}</DialogTitle>
@@ -1037,7 +1071,7 @@ function WaitingDialog({ data, onClose }: { data: SupportUpdatesPayload; onClose
         {rows.length === 0 ? (
           <p className="text-xs italic text-muted-foreground">{t.nothingWaiting}</p>
         ) : (
-          <ResponseRows rows={rows} t={t} />
+          <ResponseRows rows={rows} onHold={onHold} t={t} />
         )}
         <Source data={data} t={t} />
       </DialogContent>
@@ -1286,8 +1320,17 @@ function BenchmarkCard({ data, index, onOpen }: { data: SupportUpdatesPayload; i
 function OwnerCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index: number; onOpen: (m: Metric | 'waiting') => void }) {
   const t = T[useLang()]
   const week: WeekRow | undefined = data.weeks[index]
-  const open = data.response.filter((r) => r.outcome === 'open')
-  const oldest = open.reduce((m, r) => Math.max(m, r.hours ?? 0), 0)
+  // Waiting as the selected week ended (now, for the week in progress).
+  const open = week?.waiting ?? []
+  const oldest = open.reduce((m, w) => Math.max(m, w.hours), 0)
+  const live = !week || week.partial === 'in-progress'
+  const onHold = open.filter((w) => w.onHold).length
+  const waitingSub =
+    open.length > 0
+      ? `${live ? t.waitingSub(oldest.toFixed(1)) : t.waitingSubAt(week?.label ?? '', oldest.toFixed(1))}${onHold ? t.onHoldCount(onHold) : ''}`
+      : live
+        ? t.waitingNone
+        : t.waitingNoneAt(week?.label ?? '')
   const shape = week?.shape
   const done = shape ? shape.elapsedHours / Math.max(shape.totalHours, 1) : 0
   const extras = [shape?.holidays ? t.holidays(shape.holidays) : '', shape?.makeupDays ? t.makeupDays(shape.makeupDays) : ''].filter(
@@ -1360,7 +1403,7 @@ function OwnerCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index
         <Line
           status={open.length > 0 ? 'yellow' : 'green'}
           name={t.waitingName}
-          sub={open.length > 0 ? t.waitingSub(oldest.toFixed(1)) : t.waitingNone}
+          sub={waitingSub}
           value={String(open.length)}
           onClick={() => onOpen('waiting')}
         />
@@ -1513,7 +1556,7 @@ export default function SupportTicketUpdates() {
             </span>
             <ImportButton onDone={reload} />
           </div>
-          {open === 'waiting' && <WaitingDialog data={data} onClose={() => setOpen(null)} />}
+          {open === 'waiting' && <WaitingDialog data={data} index={index} onClose={() => setOpen(null)} />}
           {openBenchmark &&
             (() => {
               const benchmark = data.benchmarks.find((b) => b.quarter === openBenchmark.quarter)

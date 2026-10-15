@@ -29,7 +29,7 @@
  * A request that spent more than AWAY_DAYS out of the queue on the way is listed but in no average.
  * Each week is coloured against its quarter's benchmark, the previous quarter's average (benchmarkFor).
  */
-import { HOLD, PM_NAME, RELEASE, TICKET_CLOSED, inQueue, type Party, type PmEvent } from './actions.ts'
+import { HOLD, RELEASE, TICKET_CLOSED, inQueue, isPm, type Party, type PmEvent } from './actions.ts'
 import { HISTORY_BASELINES } from './baselines.ts'
 import { type EventStore, coverage } from './store.ts'
 import {
@@ -201,6 +201,22 @@ interface WeekCore {
   prd: Stat
   mb: Stat
   canny: Stat
+  /**
+   * The tickets waiting for a first response when the week ended, or now for the week in progress.
+   * Each one had arrived and had no response yet at that moment. Its hours run to that moment, less
+   * time on hold.
+   */
+  waiting: WaitingAt[]
+}
+
+/** One ticket waiting at a week's end. arrivedAt identifies its cycle in `response`. */
+export interface WaitingAt {
+  ticket: string
+  arrivedAt: string
+  hours: number
+  heldHours: number
+  /** On hold at that moment: scheduled, or waiting on the requester. */
+  onHold: boolean
 }
 
 export interface WeekRow extends WeekCore {
@@ -230,9 +246,9 @@ const party = (p?: Party): string | null => (p ? `${p.dept} · ${p.person}` : nu
 const byTime = (a: PmEvent, b: PmEvent) => Date.parse(a.at) - Date.parse(b.at) || a.seq - b.seq
 const isArrival = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.to) && !inQueue(e.from)
 const isDeparture = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.from) && !inQueue(e.to)
-const isReply = (e: PmEvent) => e.who === PM_NAME && (e.outcome === 'Email User' || e.outcome === 'Email Update')
+const isReply = (e: PmEvent) => isPm(e.who) && (e.outcome === 'Email User' || e.outcome === 'Email Update')
 /** The PM closing the ticket, or Halo's ticket list showing it closed (see TICKET_CLOSED). */
-const isClose = (e: PmEvent) => (e.who === PM_NAME && (e.outcome === 'Resolved' || e.outcome === 'Close')) || e.outcome === TICKET_CLOSED
+const isClose = (e: PmEvent) => (isPm(e.who) && (e.outcome === 'Resolved' || e.outcome === 'Close')) || e.outcome === TICKET_CLOSED
 /** A response that counts: the PM replied, or handed the ticket off with a private note. */
 const counts = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off'
 const later = (a: string, b: string) => (Date.parse(a) >= Date.parse(b) ? a : b)
@@ -240,7 +256,34 @@ const later = (a: string, b: string) => (Date.parse(a) >= Date.parse(b) ? a : b)
 /** Lucas takes bugs in for development; a move to him, or to anyone in Development, puts a bug into dev. */
 const BUG_INTAKE = 'Lucas Chen'
 const toDevelopment = (p?: Party) => !!p && (p.person === BUG_INTAKE || p.dept === 'Development')
-const isBugHandoff = (e: PmEvent) => e.who === PM_NAME && isDeparture(e) && toDevelopment(e.to)
+const isBugHandoff = (e: PmEvent) => isPm(e.who) && isDeparture(e) && toDevelopment(e.to)
+
+/** When a ticket was on hold: each SLA Hold until the next SLA Release, or open-ended. */
+type Hold = { from: number; to: number | null }
+
+function holdsOf(evs: PmEvent[]): Hold[] {
+  const holds: Hold[] = []
+  for (const e of evs) {
+    const last = holds[holds.length - 1]
+    if (e.outcome === HOLD && (!last || last.to !== null)) holds.push({ from: Date.parse(e.at), to: null })
+    else if (e.outcome === RELEASE && last && last.to === null) last.to = Date.parse(e.at)
+  }
+  return holds
+}
+
+/** Working time from → to, less the part on hold. `all` keeps the whole, for the rest-day label. */
+function waitBetween(holds: Hold[], fromIso: string, toIso: string): { hours: number; held: number; all: number } {
+  const all = workingHoursBetween(fromIso, toIso)
+  let held = 0
+  for (const h of holds) {
+    const from = Math.max(h.from, Date.parse(fromIso))
+    const to = Math.min(h.to ?? Number.POSITIVE_INFINITY, Date.parse(toIso))
+    if (to > from) held += workingHoursBetween(new Date(from).toISOString(), new Date(to).toISOString())
+  }
+  return { hours: Math.max(0, all - held), held, all }
+}
+
+const onHoldAt = (holds: Hold[], ms: number) => holds.some((h) => h.from <= ms && (h.to === null || h.to > ms))
 
 /**
  * Walk one ticket's timeline and cut it into arrival → first-response cycles.
@@ -251,7 +294,7 @@ const isBugHandoff = (e: PmEvent) => e.who === PM_NAME && isDeparture(e) && toDe
  * starts "out" by assumption, so its responses have no start and are simply not measured.
  */
 function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client: string }, now: string): ResponseRow[] {
-  const notes = evs.filter((e) => e.who === PM_NAME && e.outcome === 'Private Note')
+  const notes = evs.filter((e) => isPm(e.who) && e.outcome === 'Private Note')
   const noteNear = (atMs: number, notBefore: number) => {
     let best: PmEvent | null = null
     let bestGap = Number.POSITIVE_INFINITY
@@ -270,29 +313,13 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
   const replyTimes = evs.filter(isReply).map((e) => Date.parse(e.at))
   /** The PM moving a ticket he has just answered into his own queue: see FILING_WINDOW_MS. */
   const isFiling = (e: PmEvent) => {
-    if (e.who !== PM_NAME) return false
+    if (!isPm(e.who)) return false
     const at = Date.parse(e.at)
     return replyTimes.some((t) => t <= at && at - t <= FILING_WINDOW_MS)
   }
 
-  // When the ticket was on hold: each SLA Hold until the next SLA Release (or until now).
-  const holds: { from: number; to: number | null }[] = []
-  for (const e of evs) {
-    const last = holds[holds.length - 1]
-    if (e.outcome === HOLD && (!last || last.to !== null)) holds.push({ from: Date.parse(e.at), to: null })
-    else if (e.outcome === RELEASE && last && last.to === null) last.to = Date.parse(e.at)
-  }
-  /** Working time from → to, less the part on hold. `all` keeps the whole, for the rest-day label. */
-  const wait = (fromIso: string, toIso: string) => {
-    const all = workingHoursBetween(fromIso, toIso)
-    let held = 0
-    for (const h of holds) {
-      const from = Math.max(h.from, Date.parse(fromIso))
-      const to = Math.min(h.to ?? Number.POSITIVE_INFINITY, Date.parse(toIso))
-      if (to > from) held += workingHoursBetween(new Date(from).toISOString(), new Date(to).toISOString())
-    }
-    return { hours: Math.max(0, all - held), held, all }
-  }
+  const holds = holdsOf(evs)
+  const wait = (fromIso: string, toIso: string) => waitBetween(holds, fromIso, toIso)
 
   const rows: ResponseRow[] = []
   let state: 'out' | 'open' | 'answered' = 'out'
@@ -341,7 +368,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
         state = 'answered'
       } else if (isDeparture(e)) {
         const move = { action: e.outcome, to: party(e.to) }
-        if (e.who === PM_NAME) {
+        if (isPm(e.who)) {
           const n = noteNear(Date.parse(e.at), Date.parse(arrivedAt))
           if (n) {
             const end = later(e.at, n.at)
@@ -411,7 +438,7 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
   const firstArrival = evs.find(isArrival)?.at ?? null
   const out: EntryRow[] = []
   for (const kind of ['prd', 'mb', 'canny'] as const) {
-    const link = evs.find((x) => x.who === PM_NAME && x[kind].length > 0)
+    const link = evs.find((x) => isPm(x.who) && x[kind].length > 0)
     const handoff = kind === 'mb' ? evs.find(isBugHandoff) : undefined
     const e = [link, handoff].filter((x): x is PmEvent => !!x).sort(byTime)[0]
     if (!e) continue
@@ -686,8 +713,10 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
 
   const response: ResponseRow[] = []
   const entryRows: EntryRow[] = []
+  const holdsByTicket = new Map<string, Hold[]>()
   for (const [ticket, list] of byTicket) {
     const evs = list.sort(byTime)
+    holdsByTicket.set(ticket, holdsOf(evs))
     const meta = store.tickets[ticket] ?? { summary: '', client: '' }
     response.push(...cycles(ticket, evs, meta, now))
     // History is complete only if the log holds the ticket's first action.
@@ -703,6 +732,19 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
   const countedResponses = response.filter(counts)
   const responseTickets = ticketWeeks(countedResponses)
 
+  /** Every cycle that had arrived and had no response yet at `atIso`, aged to that moment. */
+  const waitingAt = (atIso: string): WaitingAt[] => {
+    const at = Date.parse(atIso)
+    return response
+      .filter((r) => Date.parse(r.arrivedAt) < at && (r.endedAt === null || Date.parse(r.endedAt) > at))
+      .map((r) => {
+        const holds = holdsByTicket.get(r.ticket) ?? []
+        const w = waitBetween(holds, r.arrivedAt, atIso)
+        return { ticket: r.ticket, arrivedAt: r.arrivedAt, hours: w.hours, heldHours: w.held, onHold: onHoldAt(holds, at) }
+      })
+      .sort((a, b) => b.hours - a.hours)
+  }
+
   const cores: WeekCore[] = (from ? weeksBetween(from, now) : [])
     .map((monday) => {
       const hours = (kind: EntryKind) =>
@@ -717,6 +759,7 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
         prd: stat(hours('prd')),
         mb: stat(hours('mb')),
         canny: stat(hours('canny')),
+        waiting: waitingAt(monday === thisWeek ? now : new Date(Date.parse(`${monday}T00:00:00+08:00`) + 7 * DAY_MS).toISOString()),
       }
     })
     .reverse()

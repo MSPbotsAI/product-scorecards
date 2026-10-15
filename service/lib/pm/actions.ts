@@ -5,7 +5,7 @@
  * module reads the three slices the numbers need and reduces each row to the facts they use — never
  * the note text itself, which carries customer correspondence and has no business being stored:
  *
- *   who = <PM>          every PM action: replies, private notes, hand-offs, the dev and Canny links
+ *   who = <PM account>  every PM action: replies, private notes, hand-offs, the dev and Canny links
  *   outcome = Re-Assign every move, from which arrivals into and departures from the queue are read
  *   time_log_id = 1     each ticket's first action, so a ticket's history is known to be complete
  *   outcome = SLA Hold / SLA Release
@@ -21,6 +21,13 @@ import type { ReadMode } from '../scorecard.ts'
 
 /** The PM whose clock this is. Every PM action in Halo is recorded under this name. */
 export const PM_NAME = 'Frank Tian'
+/**
+ * Every Halo account the PM works under. product_zd@mspbots.ai is the queue's shared mailbox, and the
+ * PM has used it as his own since July 2026 (confirmed by the PM, 2026-10-15). A reply, note,
+ * hand-off or link from it is his.
+ */
+export const PM_ACCOUNTS = [PM_NAME, 'product_zd@mspbots.ai']
+export const isPm = (who: string) => PM_ACCOUNTS.includes(who)
 
 /**
  * Who counts as "the PM's queue" on either end of a Re-Assign. The shared mailbox and the PM
@@ -179,7 +186,7 @@ export function toEvent(r: Row): PmEvent | null {
   const who = String(r.who ?? '')
   const outcome = String(r.outcome ?? '')
   const note = String(r.note ?? '')
-  const isPm = who === PM_NAME
+  const pm = isPm(who)
   const move = outcome === 'Re-Assign' ? parseMove(note) : {}
   return {
     id,
@@ -189,9 +196,9 @@ export function toEvent(r: Row): PmEvent | null {
     who,
     outcome,
     ...move,
-    prd: isPm ? clickupIds(note, 'PRD') : [],
-    mb: isPm ? clickupIds(note, 'MB') : [],
-    canny: isPm ? cannyPaths(note) : [],
+    prd: pm ? clickupIds(note, 'PRD') : [],
+    mb: pm ? clickupIds(note, 'MB') : [],
+    canny: pm ? cannyPaths(note) : [],
   }
 }
 
@@ -200,7 +207,7 @@ export function toEvent(r: Row): PmEvent | null {
  * Holds, releases and closures are kept here too; the reader keeps them only for tickets the log follows.
  */
 export function relevant(e: PmEvent): boolean {
-  if (e.who === PM_NAME) return true
+  if (isPm(e.who)) return true
   if (e.outcome === 'Re-Assign') return inQueue(e.from) || inQueue(e.to)
   return e.outcome === HOLD || e.outcome === RELEASE || e.outcome === TICKET_CLOSED
 }
@@ -226,13 +233,14 @@ export async function readActions(datasetId: string, auth: ReadAuth, known: Set<
   const read = reader(datasetId, auth)
   const slice = (params: Record<string, string>) => pullSlice((page) => read({ current: page, size: PAGE_SIZE, ...params }))
 
-  const [pm, moves, firsts, holds, releases] = await Promise.all([
-    slice({ who: PM_NAME }),
+  const [moves, firsts, holds, releases, ...perAccount] = await Promise.all([
     slice({ outcome: 'Re-Assign' }),
     slice({ time_log_id: '1' }),
     slice({ outcome: HOLD }),
     slice({ outcome: RELEASE }),
+    ...PM_ACCOUNTS.map((who) => slice({ who })),
   ])
+  const pm = perAccount.flat()
   // Zero PM rows is not a zero measurement — two weeks of an active queue always has some.
   if (pm.length === 0) throw new Error('no PM actions returned — treating this as unavailable, not as zero')
 

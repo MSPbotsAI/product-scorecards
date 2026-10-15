@@ -129,8 +129,10 @@ export const HISTORY_SAMPLES: Record<string, { from: string; samples: Sample[] }
     from: '2026-Q3',
     samples: [
       { metric: 'response', ticket: '44087', week: '2026-07-06', hours: 5.223, entries: 1 },
+      { metric: 'response', ticket: '44341', week: '2026-07-06', hours: 84.469, entries: 1 },
       { metric: 'response', ticket: '44722', week: '2026-07-06', hours: 4.881, entries: 1 },
       { metric: 'response', ticket: '44896', week: '2026-07-06', hours: 15.967, entries: 1 },
+      { metric: 'response', ticket: '45186', week: '2026-07-06', hours: 18.154, entries: 1 },
       { metric: 'response', ticket: '45850', week: '2026-07-06', hours: 4.873, entries: 1 },
       { metric: 'response', ticket: '45923', week: '2026-07-06', hours: 4.796, entries: 1 },
       { metric: 'response', ticket: '38428', week: '2026-07-13', hours: 17.112, entries: 1 },
@@ -235,7 +237,6 @@ export const HISTORY_SAMPLES: Record<string, { from: string; samples: Sample[] }
       { metric: 'response', ticket: '50630', week: '2026-09-14', hours: 4.162, entries: 1 },
       { metric: 'response', ticket: '22314', week: '2026-09-21', hours: 15.272, out: 'long-wait', waitedDays: 230 },
       { metric: 'response', ticket: '43550', week: '2026-09-21', hours: 0.144, out: 'long-wait', waitedDays: 103 },
-      { metric: 'response', ticket: '44341', week: '2026-09-21', hours: 170.969, out: 'long-wait', waitedDays: 89 },
       { metric: 'response', ticket: '50650', week: '2026-09-21', hours: 0.162, entries: 1 },
       { metric: 'response', ticket: '50714', week: '2026-09-21', hours: 9.079, entries: 1 },
       { metric: 'response', ticket: '50829', week: '2026-09-21', hours: 3.029, entries: 1 },
