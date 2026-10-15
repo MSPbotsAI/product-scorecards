@@ -43,12 +43,16 @@ import {
   root,
 } from '@mspbots/ui'
 import { AlertTriangle, RefreshCw, Upload } from 'lucide-react'
-import { Delta, LangToggle, Sparkline, StatusChip, StatusIcon } from '../../lib/board'
+import { Delta, LangToggle, STATUS_META, Sparkline, StatusChip, StatusIcon } from '../../lib/board'
 import { useLang } from '../../lib/i18n'
 import type { RowStatus, ScorecardRow } from '../../lib/scorecard-client'
 import {
+  type Benchmark,
+  type Sample,
   type EntryKind,
   type EntryRow,
+  type Light,
+  type Line as BenchmarkLine,
   type OffClock,
   type ResponseRow,
   type SupportUpdatesPayload,
@@ -94,7 +98,8 @@ const EN = {
         'A clock starts every time a ticket is moved into the PM queue (Product · product_zd@ or the PM) from anywhere else — Support, Development, anyone. A ticket that comes back is answered again, and that answer is timed on its own.',
         'It stops at the PM’s first email to the customer (Email User or Email Update), or at the PM moving the ticket out of the queue with a private note left alongside. Triage is not a response, and a private note on its own is not one either — even one that posts a ClickUp link.',
         'The week’s number is an average over tickets. A ticket that came into the queue more than once that week counts once, at the average of those first responses, so a ticket that bounces back and forth weighs no more than one that does not. A ticket whose entries fall in different weeks counts in each week with that week’s entries; the list shows its average over all of them beside it, and a finished week never changes.',
-        'Not counted, but listed with the reason: a hand-off with no private note, a ticket moved out by someone else first, or one closed before any response. A ticket still waiting is not in any average until it is answered.',
+        'Time the ticket spends on hold — SLA Hold, such as scheduled or waiting on the requester — does not count, the same as in Halo’s own SLA. The list shows how much was left out.',
+        'Not counted, but listed with the reason: a hand-off with no private note, a ticket moved out by someone else first, or one closed before any response — by the PM or, as Halo’s ticket list shows, by anyone else. A ticket still waiting is not in any average until it is answered.',
         'A reply on a rest day or outside working hours, to a ticket that arrived in the same off-hours stretch, scores 0.0 h: it came before the working clock started. It stays in the average as 0.0 h and is marked in the list.',
       ],
     },
@@ -128,14 +133,57 @@ const EN = {
       ],
     },
   },
-  rowSub: (tag: string, count: string, median: string) => `${tag} · ${count} · median ${median} · target not set`,
-  rowNone: (tag: string) => `${tag} · none measured in this week · target not set`,
+  rowSub: (tag: string, count: string, median: string, target: string) => `${tag} · ${count} · median ${median} · ${target}`,
+  rowNone: (tag: string, target: string) => `${tag} · none measured in this week · ${target}`,
+  target: (benchmark: string) => `benchmark ${benchmark}`,
+  trendOnly: 'trend only',
+  benchmarksTitle: (quarter: string) => `Benchmarks · ${quarter}`,
+  benchmarksFrom: (from: string, history: boolean) =>
+    `The ${from} average, held for the whole quarter${history ? ' — from Halo’s full history, which the log does not reach' : ''}.`,
+  benchmarksLeftOut: (longWait: number, minWorkdays: number) =>
+    `Left out of it: waits of over ${longWait} days, and weeks with fewer than ${minWorkdays} working days.`,
+  colMetric: 'Number',
+  colBenchmark: 'Benchmark',
+  colSamples: 'Samples',
+  tooFew: (n: number, min: number) => `trend only — ${n} of ${min} needed`,
+  benchmarkTitle: (name: string) => `${name} — benchmark`,
+  benchmarkIs: (from: string, n: number, noun: string) => `= the average of the ${n} ${noun} from ${from} counted below`,
+  byWeekHeading: (from: string) => `By week · ${from}`,
+  shortWeekOut: (min: number) => `week under ${min} working days — left out`,
+  samplesHeading: (n: number) => `Counted · ${n}`,
+  colValue: 'Value',
+  entriesNote: (n: number) => `average of ${n} queue entries`,
+  leftOutHeading: 'Listed, not averaged',
+  longWaitOut: (days: number, limit: number) => `waited ${days} days (over ${limit}) — counts in its week, not in the benchmark`,
+  noSamples: 'No measurements.',
+  quarter: (q: string) => `${q.slice(5)} ${q.slice(0, 4)}`,
+  benchmarkFrom: (quarter: string, count: string, longWait: number, history: boolean) =>
+    `Benchmark: the ${quarter} average over ${count}, waits of over ${longWait} days left out${history ? ' — from Halo’s full history, which the log does not reach' : ''}.`,
+  trendWhy: (quarter: string, n: number, min: number) => `Trend only: ${quarter} has ${n} measurements, and a benchmark needs ${min}.`,
+  noBenchmark: (quarter: string) => `Trend only: there is no benchmark for ${quarter} yet.`,
+  longWait: (days: number) => `Waited ${days} days — counts this week, left out of the quarter benchmark`,
+  awayWhy: (days: string, limit: number) => `out of the queue ${days} days in one stretch on the way (over ${limit}) — in no average`,
+  colourHeading: 'Colours',
+  colourNotes: (r: { yellowFactor: number; minWorkdays: number; minSamples: number; longWaitDays: number; awayDays: number }) => [
+    `Green when the week’s number is at or under the benchmark, yellow up to ${r.yellowFactor} × the benchmark, red above that. The comparison uses the one decimal the page shows.`,
+    `The benchmark is the previous quarter’s average, fixed for the whole quarter. A week belongs to the quarter its Monday falls in. Weeks with fewer than ${r.minWorkdays} working days are left out of it, and it needs at least ${r.minSamples} measurements; with fewer, the number is shown as a trend only.`,
+    `A wait of more than ${r.longWaitDays} days counts in its week like any other, so the week that clears an old ticket shows it. It is left out of the benchmark, so a few months-old tickets do not set the bar.`,
+    `A request that was out of the queue for more than ${r.awayDays} days in one stretch, after it first arrived, is in no average at all: that time was not the PM’s. First response is never affected, because its clock stops when a ticket leaves the queue.`,
+  ],
   countTickets: (tickets: number, responses: number) =>
     `${tickets} ${tickets === 1 ? 'ticket' : 'tickets'}${responses > tickets ? ` (${responses} responses)` : ''}`,
   countRows: (n: number) => String(n),
   waitingName: 'Waiting for a first response',
   waitingSub: (hours: string) => `now · oldest ${hours} working h · in no average until answered`,
   waitingNone: 'now · nothing waiting',
+  waitingSubAt: (week: string, hours: string) => `end of ${week} · oldest ${hours} working h`,
+  waitingNoneAt: (week: string) => `end of ${week} · nothing waiting`,
+  othersNote: (held: number, notStarted: number) =>
+    [held ? ` · ${held} on hold` : '', notStarted ? ` · ${notStarted} not yet due` : ''].join(''),
+  asOfWeekEnd: (week: string) => `as of the end of ${week}`,
+  groupOnHold: (n: number) => `On hold at that moment — ${n}, not counted: scheduled, or waiting on the requester`,
+  groupNotStarted: (n: number) => `Arrived outside working time, clock not started yet — ${n}, not counted`,
+  laterNote: (week: string) => `Working time runs to the end of ${week}. First response and How show what happened afterwards.`,
   waitingBadge: (n: number) => `${n} waiting`,
   workingDays: (n: number) => `${n} working days`,
   holidays: (n: number) => (n === 1 ? '1 holiday' : `${n} holidays`),
@@ -182,6 +230,8 @@ const EN = {
   noNote: (to: string) => `Re-Assign → ${to}, no private note`,
   takenOut: (to: string, by: string) => `moved to ${to} by ${by}`,
   closedEarly: (action: string) => `${action} before any response`,
+  closedInHalo: 'closed in Halo before any response',
+  heldNote: (hours: string) => `on hold ${hours} h, not counted`,
   notYet: 'no response yet',
   handedTo: (to: string) => `handed to ${to}`,
   notCounted: {
@@ -205,7 +255,7 @@ const EN = {
   // waiting dialog
   asOfNow: 'as of now',
   waitingDescription:
-    'In the queue with no reply to the customer and no hand-off yet. Working time so far — not in any average until answered.',
+    'In the queue with no reply to the customer and no hand-off yet, at the end of the selected week (now, for this week), with the working clock running. Working time up to then, less time on hold — not in any average until answered. Tickets on hold, or not yet due, are listed below and not counted.',
   nothingWaiting: 'Nothing is waiting.',
   // banners and footer
   captureFailed: (at: string) => `The last refresh from Halo failed; showing the log as of ${at}.`,
@@ -240,7 +290,8 @@ const ZH: typeof EN = {
         '工单每次从其他任何地方（Support、Development 或任何人）被转入 PM 队列（Product · product_zd@ 或 PM 本人）时开始计时。工单退回后再次进入队列，就要再次响应，这次响应单独计时。',
         '在 PM 第一次给客户发邮件（Email User 或 Email Update）时停表，或在 PM 把工单转出队列、同时留下内部备注（private note）时停表。Triage 不算响应；单独一条内部备注也不算——即使里面贴了 ClickUp 链接。',
         '每周的数字按工单平均。同一张单在一周内多次进入队列，只算一张，取这几次首次响应的平均值，所以来回流转的单不会比只进一次的单占更多权重。一张单的几次进队列落在不同周时，每周只用当周的那几次计算，列表里另外标出它全部进队列的平均值；已结束的周，数字不会再变。',
-        '以下情况不计入，但会连同原因列出：转出时没留内部备注、PM 响应前已被他人转出、响应前已关闭。仍在等待的工单，在得到响应前不计入任何平均值。',
+        '单子挂起（SLA Hold，例如排期、等客户回复）期间不计时，与 Halo 自己的 SLA 一致；列表里会标出扣掉了多少。',
+        '以下情况不计入，但会连同原因列出：转出时没留内部备注、PM 响应前已被他人转出、响应前已关闭（PM 自己关的，或 Halo 工单列表显示已被别人关闭）。仍在等待的工单，在得到响应前不计入任何平均值。',
         '在休息日或非工作时段回复、且工单也是在同一段非工作时间内到达的，记为 0.0 h：回复发生在工作时钟开始之前。它按 0.0 h 计入平均值，并在列表中标注。',
       ],
     },
@@ -274,13 +325,55 @@ const ZH: typeof EN = {
       ],
     },
   },
-  rowSub: (tag: string, count: string, median: string) => `${tag} · ${count} · 中位数 ${median} · 未设目标`,
-  rowNone: (tag: string) => `${tag} · 该周无测量 · 未设目标`,
+  rowSub: (tag: string, count: string, median: string, target: string) => `${tag} · ${count} · 中位数 ${median} · ${target}`,
+  rowNone: (tag: string, target: string) => `${tag} · 该周无测量 · ${target}`,
+  target: (benchmark: string) => `基准 ${benchmark}`,
+  trendOnly: '仅看趋势',
+  benchmarksTitle: (quarter: string) => `基准 · ${quarter}`,
+  benchmarksFrom: (from: string, history: boolean) =>
+    `取自 ${from} 的平均值，整个季度固定不变${history ? '；日志覆盖不到那个季度，取自 Halo 完整历史' : ''}。`,
+  benchmarksLeftOut: (longWait: number, minWorkdays: number) => `不含等了 ${longWait} 天以上的单，也不含不足 ${minWorkdays} 个工作日的周。`,
+  colMetric: '指标',
+  colBenchmark: '基准',
+  colSamples: '样本',
+  tooFew: (n: number, min: number) => `仅看趋势：只有 ${n} 个样本，需要 ${min} 个`,
+  benchmarkTitle: (name: string) => `${name} — 基准`,
+  benchmarkIs: (from: string, n: number, noun: string) => `= 下表 ${from} 计入的 ${n} ${noun}的平均值`,
+  byWeekHeading: (from: string) => `按周 · ${from}`,
+  shortWeekOut: (min: number) => `该周不足 ${min} 个工作日——不计入`,
+  samplesHeading: (n: number) => `计入 · ${n} 个`,
+  colValue: '值',
+  entriesNote: (n: number) => `${n} 次进队列取平均`,
+  leftOutHeading: '列出但不计入',
+  longWaitOut: (days: number, limit: number) => `等了 ${days} 天（超过 ${limit} 天）——计入当周，不计入基准`,
+  noSamples: '没有样本。',
+  quarter: (q: string) => `${q.slice(0, 4)} ${q.slice(5)}`,
+  benchmarkFrom: (quarter: string, count: string, longWait: number, history: boolean) =>
+    `基准：${quarter} 平均（${count}，不含等了 ${longWait} 天以上的单）${history ? '——日志覆盖不到，取自 Halo 完整历史' : ''}。`,
+  trendWhy: (quarter: string, n: number, min: number) => `仅看趋势：${quarter} 只有 ${n} 个样本，基准至少需要 ${min} 个。`,
+  noBenchmark: (quarter: string) => `仅看趋势：${quarter} 还没有基准。`,
+  longWait: (days: number) => `等了 ${days} 天——计入本周，不计入季度基准`,
+  awayWhy: (days: string, limit: number) => `中途连续离开队列 ${days} 天（超过 ${limit} 天）——不计入任何平均值`,
+  colourHeading: '颜色规则',
+  colourNotes: (r: { yellowFactor: number; minWorkdays: number; minSamples: number; longWaitDays: number; awayDays: number }) => [
+    `本周数字 ≤ 基准为绿，≤ 基准 × ${r.yellowFactor} 为黄，超过为红；按页面显示的一位小数比较。`,
+    `基准 = 上一季度的平均值，整个季度固定不变；一周按它的周一归属季度。不足 ${r.minWorkdays} 个工作日的周不进基准；基准至少需要 ${r.minSamples} 个样本，不够时只显示趋势。`,
+    `等了 ${r.longWaitDays} 天以上的单照常计入当周，所以清理老单的那一周会显示出来；但不进基准，免得几张积压几个月的单把线拉高。`,
+    `首次进队列之后，中途连续离开队列超过 ${r.awayDays} 天的需求，不计入任何平均值——那段时间不在 PM 手上。首次响应不受影响：单子一离开队列，它的计时就停了。`,
+  ],
   countTickets: (tickets: number, responses: number) => `${tickets} 张单${responses > tickets ? `（${responses} 次响应）` : ''}`,
   countRows: (n: number) => `${n} 条`,
   waitingName: '等待首次响应',
   waitingSub: (hours: string) => `当前 · 最久已等 ${hours} 工作小时 · 回复前不计入任何平均值`,
   waitingNone: '当前 · 无等待',
+  waitingSubAt: (week: string, hours: string) => `${week} 周末 · 最久已等 ${hours} 工作小时`,
+  waitingNoneAt: (week: string) => `${week} 周末 · 无等待`,
+  othersNote: (held: number, notStarted: number) =>
+    [held ? ` · 另有 ${held} 张挂起中` : '', notStarted ? ` · ${notStarted} 张未开始计时` : ''].join(''),
+  asOfWeekEnd: (week: string) => `截至 ${week} 周末`,
+  groupOnHold: (n: number) => `当时挂起中 — ${n} 张，不计入：排期或等客户回复`,
+  groupNotStarted: (n: number) => `在非工作时间到达、尚未开始计时 — ${n} 张，不计入`,
+  laterNote: (week: string) => `工作用时只算到 ${week} 周末；"首次响应"和"方式"两栏是后来实际发生的情况。`,
   waitingBadge: (n: number) => `${n} 个等待中`,
   workingDays: (n: number) => `${n} 个工作日`,
   holidays: (n: number) => `${n} 天假期`,
@@ -325,6 +418,8 @@ const ZH: typeof EN = {
   noNote: (to: string) => `转给 ${to}，无内部备注`,
   takenOut: (to: string, by: string) => `被 ${by} 转给 ${to}`,
   closedEarly: (action: string) => `响应前已 ${action}`,
+  closedInHalo: '响应前已在 Halo 关闭',
+  heldNote: (hours: string) => `挂起 ${hours} h 不计`,
   notYet: '尚未响应',
   handedTo: (to: string) => `转给 ${to}`,
   notCounted: {
@@ -346,7 +441,8 @@ const ZH: typeof EN = {
   logFrom: (date: string) => `日志起点 ${date}`,
   clock: (hours: string, confirmed: boolean) => `工作时间 ${hours}，中国节假日日历（${confirmed ? '已确认' : '待确认'}）`,
   asOfNow: '截至当前',
-  waitingDescription: '在队列中，尚未回复客户、也未转出。显示至今的工作时长——回复前不计入任何平均值。',
+  waitingDescription:
+    '所选那一周结束时（本周为当前），已在队列中、尚未回复客户也未转出、且正在计时的工单。显示到那时为止的工作时长（不含挂起）——回复前不计入任何平均值。挂起中、或还没开始计时的单列在下面，不计入数字。',
   nothingWaiting: '当前没有等待中的工单。',
   captureFailed: (at: string) => `最近一次从 Halo 刷新失败；当前显示的是截至 ${at} 的日志。`,
   gaps: (n: number, list: string) => `日志有 ${n} 处缺口（${list}）。其中的 action 在复制前已从 Halo 过期，涉及的周数据不完整。`,
@@ -413,6 +509,9 @@ function reading(data: SupportUpdatesPayload, metric: Metric, index: number) {
     .filter((w) => w[metric].n > 0)
     .map((w) => ({ week: w.label, value: inUnit(w[metric].meanHours, unit, workday) as number }))
     .reverse()
+  // Judged on the server against the week's quarter benchmark, at the one decimal shown here.
+  const benchmark = week ? data.benchmarks.find((b) => b.quarter === week.quarter) : undefined
+  const line = benchmark?.lines[metric]
   const row: ScorecardRow = {
     id: metric,
     name: metric,
@@ -422,13 +521,35 @@ function reading(data: SupportUpdatesPayload, metric: Metric, index: number) {
     compare: 'lte',
     value,
     previous,
-    status: 'display',
-    target: null,
+    status: week?.light[metric] ?? 'display',
+    target: line?.green ?? null,
     targetText: '',
     history,
   }
-  return { unit, stat, row, median: stat && stat.n > 0 ? inUnit(stat.medianHours, unit, workday) : null }
+  return { unit, stat, row, benchmark, line, median: stat && stat.n > 0 ? inUnit(stat.medianHours, unit, workday) : null }
 }
+
+/** "benchmark 7.7 h", or "trend only" when the quarter has no usable benchmark for this number. */
+function targetText(t: Copy, line: BenchmarkLine | undefined, unit: Unit): string {
+  return line?.green != null ? t.target(show(line.green, unit)) : t.trendOnly
+}
+
+/**
+ * The three bands as ranges of the shown value. Values compare at one decimal, so yellow starts one
+ * tenth above the benchmark: "≤ 7.7 h", "7.8–9.6 h", "> 9.6 h".
+ */
+function ranges(line: BenchmarkLine, unit: Unit): Record<'green' | 'yellow' | 'red', string> | null {
+  if (line.green === null || line.yellow === null) return null
+  const from = round1(line.green + 0.1)
+  return {
+    green: `≤ ${show(line.green, unit)}`,
+    yellow: line.yellow >= from ? `${from.toFixed(1)}–${show(line.yellow, unit)}` : '—',
+    red: `> ${show(line.yellow, unit)}`,
+  }
+}
+
+/** Calendar days between two instants, for "waited 230 days". */
+const daysBetween = (from: string, to: string | null) => Math.round(((to ? Date.parse(to) : Date.now()) - Date.parse(from)) / 86_400_000)
 
 /** "11 tickets (12 responses)" for PM1, whose average is over tickets; "1 requirement" for the rest. */
 function countText(t: Copy, metric: Metric, n: number, responses: number): string {
@@ -456,7 +577,7 @@ function howText(r: ResponseRow, t: Copy): string {
     case 'taken-out':
       return t.takenOut(to, r.by ?? t.unknown)
     case 'closed':
-      return t.closedEarly(r.action ?? '')
+      return r.action === 'Ticket closed' ? t.closedInHalo : t.closedEarly(r.action ?? '')
     default:
       return t.notYet
   }
@@ -487,7 +608,11 @@ function Line({
       onClick={onClick}
       className={cn(
         'flex w-full cursor-pointer items-center gap-3 rounded-md border border-l-2 bg-card px-3 py-2 text-left transition-colors hover:bg-muted/40',
-        status === 'yellow' ? 'border-l-warning-500 bg-warning-500/[0.04] hover:bg-warning-500/[0.08]' : 'border-l-transparent',
+        status === 'red'
+          ? 'border-l-danger-500 bg-danger-500/[0.04] hover:bg-danger-500/[0.08]'
+          : status === 'yellow'
+            ? 'border-l-warning-500 bg-warning-500/[0.04] hover:bg-warning-500/[0.08]'
+            : 'border-l-transparent',
       )}
     >
       <StatusIcon status={status} className="w-5 justify-center" />
@@ -564,7 +689,10 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
               </TableCell>
               <TableCell className="align-top tabular-nums">{local(r.endedAt)}</TableCell>
               {!reason && (
-                <TableCell className="text-right align-top tabular-nums">{r.hours === null ? '—' : `${r.hours.toFixed(1)} h`}</TableCell>
+                <TableCell className="text-right align-top tabular-nums">
+                  {r.hours === null ? '—' : `${r.hours.toFixed(1)} h`}
+                  {r.heldHours >= 0.05 && <div className="text-[11px] text-muted-foreground">{t.heldNote(r.heldHours.toFixed(1))}</div>}
+                </TableCell>
               )}
               {units && opensGroup && (
                 <TableCell rowSpan={span} className="border-l text-right align-top font-medium tabular-nums">
@@ -584,6 +712,7 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
               <TableCell className="whitespace-normal align-top text-muted-foreground">
                 {reason ? `${t.notCounted[r.outcome] ?? r.outcome} · ${howText(r, t)}` : howText(r, t)}
                 <OffClockNote value={r.offClock} labels={t.offClockReply} />
+                {r.longWait && <div className="mt-0.5 text-[11px] text-warning-700">{t.longWait(daysBetween(r.arrivedAt, r.endedAt))}</div>}
               </TableCell>
             </TableRow>
           )
@@ -607,7 +736,19 @@ function RefLink({ row, t }: { row: EntryRow; t: Copy }) {
   )
 }
 
-function EntryRows({ rows, workday, reason, t }: { rows: EntryRow[]; workday: number; reason?: boolean; t: Copy }) {
+function EntryRows({
+  rows,
+  workday,
+  awayLimit,
+  reason,
+  t,
+}: {
+  rows: EntryRow[]
+  workday: number
+  awayLimit: number
+  reason?: boolean
+  t: Copy
+}) {
   return (
     <Table className="text-xs">
       <TableHeader>
@@ -634,9 +775,16 @@ function EntryRows({ rows, workday, reason, t }: { rows: EntryRow[]; workday: nu
               </TableCell>
             )}
             <TableCell className="whitespace-normal align-top">
-              {reason && <div className="text-muted-foreground">{t.notCounted[r.status] ?? r.status}</div>}
+              {reason && (
+                <div className="text-muted-foreground">
+                  {r.status === 'away' ? t.awayWhy(String(r.awayDays ?? '—'), awayLimit) : (t.notCounted[r.status] ?? r.status)}
+                </div>
+              )}
               <RefLink row={r} t={t} />
               <OffClockNote value={r.offClock} labels={t.offClockEntry} />
+              {r.longWait && r.arrivedAt && (
+                <div className="mt-0.5 text-[11px] text-warning-700">{t.longWait(daysBetween(r.arrivedAt, r.at))}</div>
+              )}
             </TableCell>
           </TableRow>
         ))}
@@ -661,6 +809,54 @@ function Source({ data, t }: { data: SupportUpdatesPayload; t: Copy }) {
   )
 }
 
+/**
+ * The week's colour bands and where they come from — or why the number is a trend only. Bounds are
+ * the server's, already at the shown decimal, so a value on the page and its colour always agree.
+ */
+function Bands({
+  data,
+  quarter,
+  benchmark,
+  metric,
+  unit,
+  t,
+}: {
+  data: SupportUpdatesPayload
+  quarter: string
+  benchmark: Benchmark | undefined
+  metric: Metric
+  unit: Unit
+  t: Copy
+}) {
+  const line = benchmark?.lines[metric]
+  if (!benchmark || !line) return <p className="text-[11px] text-muted-foreground">{t.noBenchmark(t.quarter(quarter))}</p>
+  const from = t.quarter(benchmark.from)
+  if (line.green === null || line.yellow === null) {
+    return <p className="text-[11px] text-muted-foreground">{t.trendWhy(from, line.n, data.rules.minSamples)}</p>
+  }
+  const r = ranges(line, unit) as Record<'green' | 'yellow' | 'red', string>
+  const bands: [Light, string][] = [
+    ['green', r.green],
+    ['yellow', r.yellow],
+    ['red', r.red],
+  ]
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        {bands.map(([status, bound]) => (
+          <span key={status} className="inline-flex items-center gap-1.5">
+            <StatusChip status={status} />
+            <span className="font-mono text-xs tabular-nums">{bound}</span>
+          </span>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        {t.benchmarkFrom(from, `${line.n} ${t.metrics[metric].noun(line.n)}`, data.rules.longWaitDays, benchmark.source === 'history')}
+      </p>
+    </div>
+  )
+}
+
 function MetricDialog({
   data,
   metric,
@@ -678,7 +874,7 @@ function MetricDialog({
   const tag = METRICS.find((m) => m.id === metric)?.tag ?? ''
   const [index, setIndex] = useState(initial)
   const workday = data.calendar.workdayHours
-  const { unit, stat, row, median } = reading(data, metric, index)
+  const { unit, stat, row, median, benchmark } = reading(data, metric, index)
   const week = data.weeks[index]
   const { counted: rows, other } = week ? rowsFor(data, metric, week.monday) : { counted: [], other: [] }
   // PM1 averages over tickets: each ticket's mean of its entries this week (server-computed).
@@ -700,7 +896,7 @@ function MetricDialog({
       <DialogContent container={root()} className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <StatusChip status="display" />
+            <StatusChip status={row.status} />
             <span className="text-[11px] text-muted-foreground">
               {tag} · {data.pm}
             </span>
@@ -717,13 +913,22 @@ function MetricDialog({
               {median !== null ? ` · ${t.median(show(median, unit))}` : ''}
             </div>
             <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-3xl font-semibold leading-none tracking-tight tabular-nums">{show(row.value, unit)}</span>
+              <span
+                className={cn(
+                  'text-3xl font-semibold leading-none tracking-tight tabular-nums',
+                  row.status === 'red' && 'text-danger-700',
+                  row.status === 'green' && 'text-success-700',
+                )}
+              >
+                {show(row.value, unit)}
+              </span>
               <span className="font-mono text-sm tabular-nums text-muted-foreground">{show(row.previous, unit)}</span>
               <Delta row={row} />
             </div>
           </div>
           <Sparkline row={row} width={150} height={44} />
         </div>
+        {week && <Bands data={data} quarter={week.quarter} benchmark={benchmark} metric={metric} unit={unit} t={t} />}
 
         <div>
           <Heading>{t.historyHeading}</Heading>
@@ -731,6 +936,7 @@ function MetricDialog({
             <Table className="text-xs tabular-nums">
               <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur">
                 <TableRow>
+                  <TableHead className="h-8 w-6 px-0" />
                   <TableHead className="h-8 px-3">{t.colWeek}</TableHead>
                   <TableHead className="h-8 px-3 text-right">{t.colAverage}</TableHead>
                   <TableHead className="h-8 px-3 text-right">{t.colCounted}</TableHead>
@@ -744,6 +950,9 @@ function MetricDialog({
                     onClick={() => setIndex(i)}
                     className={cn('cursor-pointer hover:bg-muted/40', i === index && 'bg-primary/5 font-medium')}
                   >
+                    <TableCell className="px-0 py-1.5">
+                      <span className={cn('mx-auto block h-2 w-2 rounded-full', STATUS_META[w.light[metric]].dot)} />
+                    </TableCell>
                     <TableCell className="px-3 py-1.5">
                       {w.label}
                       {w.partial === 'in-progress' && <span className="ml-1.5 text-muted-foreground">{t.thisWeek}</span>}
@@ -784,7 +993,7 @@ function MetricDialog({
               <ResponseRows rows={rows as ResponseRow[]} units={units} t={t} />
             </>
           ) : (
-            <EntryRows rows={rows as EntryRow[]} workday={workday} t={t} />
+            <EntryRows rows={rows as EntryRow[]} workday={workday} awayLimit={data.rules.awayDays} t={t} />
           )}
           {other.length > 0 && (
             <div className="rounded-md border border-dashed p-2">
@@ -792,7 +1001,7 @@ function MetricDialog({
               {metric === 'response' ? (
                 <ResponseRows rows={other as ResponseRow[]} reason t={t} />
               ) : (
-                <EntryRows rows={other as EntryRow[]} workday={workday} reason t={t} />
+                <EntryRows rows={other as EntryRow[]} workday={workday} awayLimit={data.rules.awayDays} reason t={t} />
               )}
             </div>
           )}
@@ -809,15 +1018,39 @@ function MetricDialog({
           </div>
         </div>
 
+        <div>
+          <Heading>{t.colourHeading}</Heading>
+          <div className="space-y-1.5">
+            {t.colourNotes(data.rules).map((note) => (
+              <p key={note} className="text-xs leading-relaxed text-muted-foreground">
+                {note}
+              </p>
+            ))}
+          </div>
+        </div>
+
         <Source data={data} t={t} />
       </DialogContent>
     </Dialog>
   )
 }
 
-function WaitingDialog({ data, onClose }: { data: SupportUpdatesPayload; onClose: () => void }) {
+function WaitingDialog({ data, index, onClose }: { data: SupportUpdatesPayload; index: number; onClose: () => void }) {
   const t = T[useLang()]
-  const rows = data.response.filter((r) => r.outcome === 'open')
+  const week: WeekRow | undefined = data.weeks[index]
+  const live = !week || week.partial === 'in-progress'
+  // Each entry aged to the week's end. For a past week its cycle keeps what happened afterwards, so
+  // the list says when it was answered; the working time is still the time up to the week's end.
+  const rowsOf = (state: string) =>
+    (week?.waiting ?? [])
+      .filter((w) => w.state === state)
+      .flatMap((w) => {
+        const base = data.response.find((r) => r.ticket === w.ticket && r.arrivedAt === w.arrivedAt)
+        return base ? [{ ...base, hours: w.hours, heldHours: w.heldHours, offClock: null, longWait: false }] : []
+      })
+  const rows = rowsOf('waiting')
+  const held = rowsOf('on-hold')
+  const notStarted = rowsOf('not-started')
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent container={root()} className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
@@ -825,16 +1058,26 @@ function WaitingDialog({ data, onClose }: { data: SupportUpdatesPayload; onClose
           <div className="flex items-center gap-2">
             <StatusChip status={rows.length ? 'yellow' : 'green'} />
             <span className="text-[11px] text-muted-foreground">
-              {t.asOfNow} · {data.pm}
+              {live ? t.asOfNow : t.asOfWeekEnd(week?.label ?? '')} · {data.pm}
             </span>
           </div>
           <DialogTitle className="text-base leading-snug">{t.waitingName}</DialogTitle>
           <DialogDescription className="text-xs">{t.waitingDescription}</DialogDescription>
         </DialogHeader>
+        {!live && <p className="text-[11px] text-muted-foreground">{t.laterNote(week?.label ?? '')}</p>}
         {rows.length === 0 ? (
           <p className="text-xs italic text-muted-foreground">{t.nothingWaiting}</p>
         ) : (
           <ResponseRows rows={rows} t={t} />
+        )}
+        {[[held, t.groupOnHold(held.length)] as const, [notStarted, t.groupNotStarted(notStarted.length)] as const].map(
+          ([group, heading]) =>
+            group.length > 0 ? (
+              <div key={heading} className="rounded-md border border-dashed p-2">
+                <div className="mb-1 text-[11px] text-muted-foreground">{heading}</div>
+                <ResponseRows rows={group} t={t} />
+              </div>
+            ) : null,
         )}
         <Source data={data} t={t} />
       </DialogContent>
@@ -844,11 +1087,261 @@ function WaitingDialog({ data, onClose }: { data: SupportUpdatesPayload; onClose
 
 /* ── page ── */
 
+/** "07-06 – 07-12" for a Monday, as the server labels weeks. */
+function weekSpan(monday: string): string {
+  const sunday = new Date(Date.parse(`${monday}T00:00:00Z`) + 6 * 86_400_000).toISOString().slice(0, 10)
+  return `${monday.slice(5)} – ${sunday.slice(5)}`
+}
+
+/** A sample's value in the number's unit, with the hours beside a day value. */
+function SampleValue({ hours, unit, workday }: { hours: number; unit: Unit; workday: number }) {
+  return (
+    <>
+      {show(inUnit(hours, unit, workday), unit)}
+      {unit === 'd' && <div className="text-[11px] text-muted-foreground">{hours.toFixed(1)} h</div>}
+    </>
+  )
+}
+
+function SampleTable({
+  rows,
+  unit,
+  workday,
+  why,
+  t,
+}: {
+  rows: Sample[]
+  unit: Unit
+  workday: number
+  why?: (x: Sample) => string
+  t: Copy
+}) {
+  return (
+    <Table className="text-xs tabular-nums">
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">{t.colTicket}</TableHead>
+          <TableHead className="w-32">{t.colWeek}</TableHead>
+          <TableHead className="w-20 text-right">{t.colValue}</TableHead>
+          <TableHead>{why ? t.colWhy : ''}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((x) => (
+          <TableRow key={`${x.ticket}-${x.week}-${x.hours}`}>
+            <TableCell className="align-top text-muted-foreground">#{x.ticket}</TableCell>
+            <TableCell className="align-top">{weekSpan(x.week)}</TableCell>
+            <TableCell className="text-right align-top">
+              <SampleValue hours={x.hours} unit={unit} workday={workday} />
+            </TableCell>
+            <TableCell className="whitespace-normal align-top text-muted-foreground">
+              {why ? why(x) : x.entries && x.entries > 1 ? t.entriesNote(x.entries) : ''}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  )
+}
+
+/**
+ * One benchmark, drilled into: the value, its bands, the baseline quarter week by week, and every
+ * sample — the counted ones, which average to the benchmark, and the ones listed but left out, with why.
+ */
+function BenchmarkDialog({
+  data,
+  benchmark,
+  metric,
+  onClose,
+}: {
+  data: SupportUpdatesPayload
+  benchmark: Benchmark
+  metric: Metric
+  onClose: () => void
+}) {
+  const t = T[useLang()]
+  const spec = METRICS.find((m) => m.id === metric) ?? METRICS[0]
+  const workday = data.calendar.workdayHours
+  const line = benchmark.lines[metric]
+  const from = t.quarter(benchmark.from)
+  const all = benchmark.samples.filter((x) => x.metric === metric)
+  const counted = all.filter((x) => !x.out)
+  const left = all.filter((x) => x.out)
+  const weeks = [...new Set(all.map((x) => x.week))].sort().map((week) => {
+    const inWeek = counted.filter((x) => x.week === week)
+    const avg = inWeek.length ? inWeek.reduce((a, x) => a + x.hours, 0) / inWeek.length : null
+    return {
+      week,
+      n: inWeek.length,
+      value: inUnit(avg, spec.unit, workday),
+      short: all.some((x) => x.week === week && x.out === 'short-week'),
+    }
+  })
+  const why = (x: Sample) =>
+    x.out === 'long-wait' ? t.longWaitOut(x.waitedDays ?? 0, data.rules.longWaitDays) : t.shortWeekOut(data.rules.minWorkdays)
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent container={root()} className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <span className="text-[11px] text-muted-foreground">
+            {spec.tag} · {t.benchmarksTitle(t.quarter(benchmark.quarter))}
+          </span>
+          <DialogTitle className="text-base leading-snug">{t.benchmarkTitle(t.metrics[metric].name)}</DialogTitle>
+          <DialogDescription className="text-xs">
+            {t.benchmarksFrom(from, benchmark.source === 'history')} {t.benchmarksLeftOut(data.rules.longWaitDays, data.rules.minWorkdays)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="rounded-lg border bg-muted/30 px-4 py-3">
+          {line.green !== null ? (
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-3xl font-semibold leading-none tracking-tight tabular-nums">{show(line.green, spec.unit)}</span>
+              <span className="text-xs text-muted-foreground">{t.benchmarkIs(from, line.n, t.metrics[metric].noun(line.n))}</span>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">{t.tooFew(line.n, data.rules.minSamples)}</p>
+          )}
+        </div>
+        <Bands data={data} quarter={benchmark.quarter} benchmark={benchmark} metric={metric} unit={spec.unit} t={t} />
+
+        <div>
+          <Heading>{t.byWeekHeading(from)}</Heading>
+          <div className="max-h-44 overflow-y-auto rounded-md border">
+            <Table className="text-xs tabular-nums">
+              <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur">
+                <TableRow>
+                  <TableHead className="h-8 px-3">{t.colWeek}</TableHead>
+                  <TableHead className="h-8 px-3 text-right">{t.colAverage}</TableHead>
+                  <TableHead className="h-8 px-3 text-right">{t.colCounted}</TableHead>
+                  <TableHead className="h-8 px-3" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {weeks.map((w) => (
+                  <TableRow key={w.week}>
+                    <TableCell className="px-3 py-1.5">{weekSpan(w.week)}</TableCell>
+                    <TableCell className="px-3 py-1.5 text-right">{show(w.value, spec.unit)}</TableCell>
+                    <TableCell className="px-3 py-1.5 text-right text-muted-foreground">{w.n}</TableCell>
+                    <TableCell className="px-3 py-1.5 text-muted-foreground">
+                      {w.short ? t.shortWeekOut(data.rules.minWorkdays) : ''}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Heading>{t.samplesHeading(counted.length)}</Heading>
+          {counted.length === 0 ? (
+            <p className="text-xs italic text-muted-foreground">{t.noSamples}</p>
+          ) : (
+            <SampleTable rows={counted} unit={spec.unit} workday={workday} t={t} />
+          )}
+          {left.length > 0 && (
+            <div className="rounded-md border border-dashed p-2">
+              <div className="mb-1 text-[11px] text-muted-foreground">{t.leftOutHeading}</div>
+              <SampleTable rows={left} unit={spec.unit} workday={workday} why={why} t={t} />
+            </div>
+          )}
+        </div>
+
+        <Source data={data} t={t} />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Every number's benchmark for the selected week's quarter, written out: the value and its three bands. */
+function BenchmarkCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index: number; onOpen: (m: Metric) => void }) {
+  const t = T[useLang()]
+  const week: WeekRow | undefined = data.weeks[index]
+  const benchmark = week ? data.benchmarks.find((b) => b.quarter === week.quarter) : undefined
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">{t.benchmarksTitle(week ? t.quarter(week.quarter) : '')}</CardTitle>
+        <CardDescription className="text-xs">
+          {benchmark
+            ? `${t.benchmarksFrom(t.quarter(benchmark.from), benchmark.source === 'history')} ${t.benchmarksLeftOut(data.rules.longWaitDays, data.rules.minWorkdays)}`
+            : t.noBenchmark(week ? t.quarter(week.quarter) : '')}
+        </CardDescription>
+      </CardHeader>
+      {benchmark && (
+        <CardContent>
+          <Table className="text-xs tabular-nums">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="h-8 px-2">{t.colMetric}</TableHead>
+                <TableHead className="h-8 px-2 text-right">{t.colBenchmark}</TableHead>
+                <TableHead className="h-8 px-2 text-right">
+                  <StatusChip status="green" />
+                </TableHead>
+                <TableHead className="h-8 px-2 text-right">
+                  <StatusChip status="yellow" />
+                </TableHead>
+                <TableHead className="h-8 px-2 text-right">
+                  <StatusChip status="red" />
+                </TableHead>
+                <TableHead className="h-8 px-2 text-right">{t.colSamples}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {METRICS.map((m) => {
+                const line = benchmark.lines[m.id]
+                const r = ranges(line, m.unit)
+                return (
+                  <TableRow key={m.id} onClick={() => onOpen(m.id)} className="cursor-pointer hover:bg-muted/40">
+                    <TableCell className="px-2 py-1.5">
+                      <span className="text-muted-foreground">{m.tag}</span> {t.metrics[m.id].name}
+                    </TableCell>
+                    {r && line.green !== null ? (
+                      <>
+                        <TableCell className="px-2 py-1.5 text-right font-mono font-semibold">{show(line.green, m.unit)}</TableCell>
+                        <TableCell className="px-2 py-1.5 text-right font-mono">{r.green}</TableCell>
+                        <TableCell className="px-2 py-1.5 text-right font-mono">{r.yellow}</TableCell>
+                        <TableCell className="px-2 py-1.5 text-right font-mono">{r.red}</TableCell>
+                      </>
+                    ) : (
+                      <TableCell colSpan={4} className="px-2 py-1.5 text-right text-muted-foreground">
+                        {t.tooFew(line.n, data.rules.minSamples)}
+                      </TableCell>
+                    )}
+                    <TableCell className="px-2 py-1.5 text-right text-muted-foreground">
+                      {line.n} {t.metrics[m.id].noun(line.n)}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      )}
+    </Card>
+  )
+}
+
 function OwnerCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index: number; onOpen: (m: Metric | 'waiting') => void }) {
   const t = T[useLang()]
   const week: WeekRow | undefined = data.weeks[index]
-  const open = data.response.filter((r) => r.outcome === 'open')
-  const oldest = open.reduce((m, r) => Math.max(m, r.hours ?? 0), 0)
+  // Waiting on the PM as the selected week ended (now, for the week in progress): the clock running,
+  // not on hold. Tickets on hold or not yet due are mentioned, not counted.
+  const all = week?.waiting ?? []
+  const open = all.filter((w) => w.state === 'waiting')
+  const oldest = open.reduce((m, w) => Math.max(m, w.hours), 0)
+  const live = !week || week.partial === 'in-progress'
+  const others = t.othersNote(all.filter((w) => w.state === 'on-hold').length, all.filter((w) => w.state === 'not-started').length)
+  const waitingSub = `${
+    open.length > 0
+      ? live
+        ? t.waitingSub(oldest.toFixed(1))
+        : t.waitingSubAt(week?.label ?? '', oldest.toFixed(1))
+      : live
+        ? t.waitingNone
+        : t.waitingNoneAt(week?.label ?? '')
+  }${others}`
   const shape = week?.shape
   const done = shape ? shape.elapsedHours / Math.max(shape.totalHours, 1) : 0
   const extras = [shape?.holidays ? t.holidays(shape.holidays) : '', shape?.makeupDays ? t.makeupDays(shape.makeupDays) : ''].filter(
@@ -897,15 +1390,20 @@ function OwnerCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index
       </CardHeader>
       <CardContent className="space-y-1">
         {METRICS.map((m) => {
-          const { row, stat, median, unit } = reading(data, m.id, index)
+          const { row, stat, median, unit, line } = reading(data, m.id, index)
           const n = stat?.n ?? 0
           const copy = t.metrics[m.id]
+          const target = targetText(t, line, unit)
           return (
             <Line
               key={m.id}
-              status="display"
+              status={row.status}
               name={copy.name}
-              sub={n > 0 ? t.rowSub(m.tag, countText(t, m.id, n, week?.responseEntries ?? n), show(median, unit)) : t.rowNone(m.tag)}
+              sub={
+                n > 0
+                  ? t.rowSub(m.tag, countText(t, m.id, n, week?.responseEntries ?? n), show(median, unit), target)
+                  : t.rowNone(m.tag, target)
+              }
               spark={<Sparkline row={row} width={56} height={18} />}
               value={show(row.value, unit)}
               delta={<Delta row={row} />}
@@ -916,7 +1414,7 @@ function OwnerCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index
         <Line
           status={open.length > 0 ? 'yellow' : 'green'}
           name={t.waitingName}
-          sub={open.length > 0 ? t.waitingSub(oldest.toFixed(1)) : t.waitingNone}
+          sub={waitingSub}
           value={String(open.length)}
           onClick={() => onOpen('waiting')}
         />
@@ -969,6 +1467,7 @@ export default function SupportTicketUpdates() {
   const { data, error, loading, reload, refresh } = useSupportUpdates()
   const [pick, setPick] = useState<string | null>(null)
   const [open, setOpen] = useState<Metric | 'waiting' | null>(null)
+  const [openBenchmark, setOpenBenchmark] = useState<{ quarter: string; metric: Metric } | null>(null)
 
   const index = data
     ? Math.max(
@@ -1052,6 +1551,14 @@ export default function SupportTicketUpdates() {
         <>
           <div className="grid gap-4 lg:grid-cols-2">
             <OwnerCard data={data} index={index} onOpen={setOpen} />
+            <BenchmarkCard
+              data={data}
+              index={index}
+              onOpen={(metric) => {
+                const quarter = data.weeks[index]?.quarter
+                if (quarter) setOpenBenchmark({ quarter, metric })
+              }}
+            />
           </div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
             <span>
@@ -1060,7 +1567,14 @@ export default function SupportTicketUpdates() {
             </span>
             <ImportButton onDone={reload} />
           </div>
-          {open === 'waiting' && <WaitingDialog data={data} onClose={() => setOpen(null)} />}
+          {open === 'waiting' && <WaitingDialog data={data} index={index} onClose={() => setOpen(null)} />}
+          {openBenchmark &&
+            (() => {
+              const benchmark = data.benchmarks.find((b) => b.quarter === openBenchmark.quarter)
+              return benchmark ? (
+                <BenchmarkDialog data={data} benchmark={benchmark} metric={openBenchmark.metric} onClose={() => setOpenBenchmark(null)} />
+              ) : null
+            })()}
           {open && open !== 'waiting' && <MetricDialog data={data} metric={open} initial={index} onClose={() => setOpen(null)} />}
         </>
       )}

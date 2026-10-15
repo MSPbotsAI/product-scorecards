@@ -2,7 +2,9 @@
  * The PM scorecard: three numbers, and the fourth kept beside them.
  *
  *   response  PM first response — every arrival into the PM's queue, to the PM's first reply to the
- *             customer, or hand-off out of the queue with a private note. Each arrival is its own
+ *             customer, or hand-off out of the queue with a private note. Time the ticket spends on
+ *             hold (SLA Hold: scheduled, waiting on the requester) does not count, as in Halo's own
+ *             SLA (decided by the PM, 2026-10-15). Each arrival is its own
  *             measurement: a ticket that comes back is answered again. The week's number is an
  *             average over TICKETS: a ticket answered more than once in a week counts once, at the
  *             mean of that week's entries, so a ticket that bounces back and forth weighs no more
@@ -23,11 +25,16 @@
  * lands in, so a finished week's numbers never move again. Nothing is averaged that is not also
  * listed: every counted row is shown behind its number, and every row that is not counted is shown
  * with the reason — a waiting ticket left out of an average is how an average lies.
+ *
+ * A request that spent more than AWAY_DAYS out of the queue on the way is listed but in no average.
+ * Each week is coloured against its quarter's benchmark, the previous quarter's average (benchmarkFor).
  */
-import { PM_NAME, inQueue, type Party, type PmEvent } from './actions.ts'
+import { HOLD, RELEASE, TICKET_CLOSED, inQueue, isPm, type Party, type PmEvent } from './actions.ts'
+import { HISTORY_BASELINES } from './baselines.ts'
 import { type EventStore, coverage } from './store.ts'
 import {
   type WeekShape,
+  WORKDAY_HOURS,
   clockStart,
   isWorkday,
   localDate,
@@ -48,6 +55,33 @@ const PAIR_WINDOW_MS = 30 * 60_000
  * into the queue by the PM at 16:46 — showed as "waiting", then "closed before any response".
  */
 const FILING_WINDOW_MS = 30 * 60_000
+
+/**
+ * A request that was out of the PM's queue for more than this many calendar days in one stretch is
+ * listed, but kept out of every average: the week's number and the quarter benchmark. This applies
+ * between its first arrival and the clock stopping, for example a ticket moved out and back later.
+ *
+ * The requirement and bug clocks run from the first arrival, and a month spent elsewhere is not the
+ * PM's time. Time INSIDE the queue always counts, however long it is: months waiting in the queue are
+ * the PM's wait (decided by the PM, 2026-10-15).
+ *
+ * First response is never affected. Its clock stops as soon as a ticket leaves the queue.
+ */
+export const AWAY_DAYS = 30
+
+/**
+ * A wait longer than this many calendar days counts in its week like any other wait, but stays out of
+ * the quarter benchmark (decided by the PM, 2026-10-15).
+ *
+ * Months spent in the queue are the PM's wait, so the week they end in shows them. In the benchmark,
+ * though, three such tickets would set the bar. Q3's first-response average was 28.8 h with them and
+ * 6.2 h without, and a bar at 29 h judges nothing.
+ *
+ * Since April 2026 no wait has fallen between 27 and 39 days, so the cut sits in a natural gap.
+ */
+export const LONG_WAIT_DAYS = 30
+const DAY_MS = 86_400_000
+const isLongWait = (fromIso: string, toIso: string) => Date.parse(toIso) - Date.parse(fromIso) > LONG_WAIT_DAYS * DAY_MS
 
 export type CycleOutcome =
   /** Counted: the PM emailed the customer. */
@@ -78,8 +112,13 @@ export interface ResponseRow {
   clockFrom: string | null
   outcome: CycleOutcome
   endedAt: string | null
-  /** Working hours arrival → response when counted; arrival → now when open; null otherwise. */
+  /**
+   * Working hours arrival → response when counted, or arrival → now when open, less the time on hold.
+   * Null otherwise.
+   */
   hours: number | null
+  /** Working hours of that span the ticket was on hold (SLA Hold), left out of `hours`. 0 when never on hold. */
+  heldHours: number
   /** The week it is reported in; null only for open cycles, which have not landed anywhere yet. */
   week: string | null
   /**
@@ -92,6 +131,8 @@ export interface ResponseRow {
   by: string | null
   /** Set when a counted response scored exactly zero because the working clock had not started. */
   offClock: OffClock
+  /** A counted response that waited more than LONG_WAIT_DAYS: in its week's average, not in a benchmark. */
+  longWait: boolean
 }
 
 /**
@@ -114,6 +155,8 @@ export type EntryStatus =
   | 'history-before-data'
   /** The history is complete but shows no arrival before the link — created straight into the queue. */
   | 'no-arrival-on-record'
+  /** Timed, but the ticket was out of the queue for more than AWAY_DAYS in one stretch on the way: listed, in no average. */
+  | 'away'
 
 export interface EntryRow {
   ticket: string
@@ -124,13 +167,18 @@ export interface EntryRow {
   via: 'link' | 'handoff'
   /** "PRD-19414", "MB-12057", a Canny post path, or for a hand-off the receiving party. */
   ref: string
+  /** The first arrival and the working hours from it, for counted and away rows; null otherwise. */
   arrivedAt: string | null
   at: string
   hours: number | null
+  /** The longest stretch out of the queue between the first arrival and the stop, in calendar days; null when not timed. */
+  awayDays: number | null
   week: string
   status: EntryStatus
   /** Set when a counted entry scored exactly zero because the working clock had not started. */
   offClock: OffClock
+  /** A counted entry that waited more than LONG_WAIT_DAYS: in its week's average, not in a benchmark. */
+  longWait: boolean
 }
 
 export interface Stat {
@@ -139,7 +187,7 @@ export interface Stat {
   medianHours: number | null
 }
 
-export interface WeekRow {
+interface WeekCore {
   monday: string
   label: string
   /** 'coverage' = the log starts mid-week; 'in-progress' = the week is not over yet. */
@@ -153,6 +201,33 @@ export interface WeekRow {
   prd: Stat
   mb: Stat
   canny: Stat
+  /**
+   * The tickets with no first response yet when the week ended, or now for the week in progress. Each
+   * one's hours run to that moment, less time on hold. Only state 'waiting' counts as waiting on the
+   * PM (decided by the PM, 2026-10-15): the others are listed, not counted.
+   */
+  waiting: WaitingAt[]
+}
+
+/** One ticket with no first response yet at a week's end. arrivedAt identifies its cycle in `response`. */
+export interface WaitingAt {
+  ticket: string
+  arrivedAt: string
+  hours: number
+  heldHours: number
+  /**
+   * 'waiting': the working clock is running, so the ticket is waiting on the PM. 'on-hold': it is
+   * parked (scheduled, waiting on the requester). 'not-started': it arrived outside working time,
+   * and no working time has passed yet.
+   */
+  state: 'waiting' | 'on-hold' | 'not-started'
+}
+
+export interface WeekRow extends WeekCore {
+  /** The quarter it is judged in — the one its Monday falls in, "2026-Q4". */
+  quarter: string
+  /** Each number against that quarter's benchmark. */
+  light: Record<Metric, Light>
 }
 
 /**
@@ -175,14 +250,44 @@ const party = (p?: Party): string | null => (p ? `${p.dept} · ${p.person}` : nu
 const byTime = (a: PmEvent, b: PmEvent) => Date.parse(a.at) - Date.parse(b.at) || a.seq - b.seq
 const isArrival = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.to) && !inQueue(e.from)
 const isDeparture = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.from) && !inQueue(e.to)
-const isReply = (e: PmEvent) => e.who === PM_NAME && (e.outcome === 'Email User' || e.outcome === 'Email Update')
-const isClose = (e: PmEvent) => e.who === PM_NAME && (e.outcome === 'Resolved' || e.outcome === 'Close')
+const isReply = (e: PmEvent) => isPm(e.who) && (e.outcome === 'Email User' || e.outcome === 'Email Update')
+/** The PM closing the ticket, or Halo's ticket list showing it closed (see TICKET_CLOSED). */
+const isClose = (e: PmEvent) => (isPm(e.who) && (e.outcome === 'Resolved' || e.outcome === 'Close')) || e.outcome === TICKET_CLOSED
+/** A response that counts: the PM replied, or handed the ticket off with a private note. */
+const counts = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off'
 const later = (a: string, b: string) => (Date.parse(a) >= Date.parse(b) ? a : b)
 
 /** Lucas takes bugs in for development; a move to him, or to anyone in Development, puts a bug into dev. */
 const BUG_INTAKE = 'Lucas Chen'
 const toDevelopment = (p?: Party) => !!p && (p.person === BUG_INTAKE || p.dept === 'Development')
-const isBugHandoff = (e: PmEvent) => e.who === PM_NAME && isDeparture(e) && toDevelopment(e.to)
+const isBugHandoff = (e: PmEvent) => isPm(e.who) && isDeparture(e) && toDevelopment(e.to)
+
+/** When a ticket was on hold: each SLA Hold until the next SLA Release, or open-ended. */
+type Hold = { from: number; to: number | null }
+
+function holdsOf(evs: PmEvent[]): Hold[] {
+  const holds: Hold[] = []
+  for (const e of evs) {
+    const last = holds[holds.length - 1]
+    if (e.outcome === HOLD && (!last || last.to !== null)) holds.push({ from: Date.parse(e.at), to: null })
+    else if (e.outcome === RELEASE && last && last.to === null) last.to = Date.parse(e.at)
+  }
+  return holds
+}
+
+/** Working time from → to, less the part on hold. `all` keeps the whole, for the rest-day label. */
+function waitBetween(holds: Hold[], fromIso: string, toIso: string): { hours: number; held: number; all: number } {
+  const all = workingHoursBetween(fromIso, toIso)
+  let held = 0
+  for (const h of holds) {
+    const from = Math.max(h.from, Date.parse(fromIso))
+    const to = Math.min(h.to ?? Number.POSITIVE_INFINITY, Date.parse(toIso))
+    if (to > from) held += workingHoursBetween(new Date(from).toISOString(), new Date(to).toISOString())
+  }
+  return { hours: Math.max(0, all - held), held, all }
+}
+
+const onHoldAt = (holds: Hold[], ms: number) => holds.some((h) => h.from <= ms && (h.to === null || h.to > ms))
 
 /**
  * Walk one ticket's timeline and cut it into arrival → first-response cycles.
@@ -193,7 +298,7 @@ const isBugHandoff = (e: PmEvent) => e.who === PM_NAME && isDeparture(e) && toDe
  * starts "out" by assumption, so its responses have no start and are simply not measured.
  */
 function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client: string }, now: string): ResponseRow[] {
-  const notes = evs.filter((e) => e.who === PM_NAME && e.outcome === 'Private Note')
+  const notes = evs.filter((e) => isPm(e.who) && e.outcome === 'Private Note')
   const noteNear = (atMs: number, notBefore: number) => {
     let best: PmEvent | null = null
     let bestGap = Number.POSITIVE_INFINITY
@@ -212,34 +317,34 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
   const replyTimes = evs.filter(isReply).map((e) => Date.parse(e.at))
   /** The PM moving a ticket he has just answered into his own queue: see FILING_WINDOW_MS. */
   const isFiling = (e: PmEvent) => {
-    if (e.who !== PM_NAME) return false
+    if (!isPm(e.who)) return false
     const at = Date.parse(e.at)
     return replyTimes.some((t) => t <= at && at - t <= FILING_WINDOW_MS)
   }
 
+  const holds = holdsOf(evs)
+  const wait = (fromIso: string, toIso: string) => waitBetween(holds, fromIso, toIso)
+
   const rows: ResponseRow[] = []
   let state: 'out' | 'open' | 'answered' = 'out'
   let cur: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } | null = null
-  const close = (
-    outcome: CycleOutcome,
-    endedAt: string,
-    end: { action: string; to?: string | null; by?: string },
-    hours: number | null,
-  ) => {
+  const close = (outcome: CycleOutcome, endedAt: string, end: { action: string; to?: string | null; by?: string }, timed: boolean) => {
     if (!cur) return
-    const isCounted = outcome === 'replied' || outcome === 'handed-off'
+    const w = timed ? wait(cur.arrivedAt, endedAt) : null
     rows.push({
       ticket,
       ...meta,
       ...cur,
       outcome,
       endedAt,
-      hours,
+      hours: w ? w.hours : null,
+      heldHours: w ? w.held : 0,
       week: weekOf(endedAt),
       action: end.action,
       to: end.to ?? null,
       by: end.by ?? null,
-      offClock: isCounted ? offClock(hours, endedAt) : null,
+      offClock: w ? offClock(w.all, endedAt) : null,
+      longWait: !!w && isLongWait(cur.arrivedAt, endedAt),
     })
     cur = null
   }
@@ -263,20 +368,20 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
     if (state === 'open' && cur) {
       const arrivedAt: string = cur.arrivedAt
       if (isReply(e)) {
-        close('replied', e.at, { action: e.outcome }, workingHoursBetween(arrivedAt, e.at))
+        close('replied', e.at, { action: e.outcome }, true)
         state = 'answered'
       } else if (isDeparture(e)) {
         const move = { action: e.outcome, to: party(e.to) }
-        if (e.who === PM_NAME) {
+        if (isPm(e.who)) {
           const n = noteNear(Date.parse(e.at), Date.parse(arrivedAt))
           if (n) {
             const end = later(e.at, n.at)
-            close('handed-off', end, move, workingHoursBetween(arrivedAt, end))
-          } else close('no-note', e.at, move, null)
-        } else close('taken-out', e.at, { ...move, by: e.who }, null)
+            close('handed-off', end, move, true)
+          } else close('no-note', e.at, move, false)
+        } else close('taken-out', e.at, { ...move, by: e.who }, false)
         state = 'out'
       } else if (isClose(e)) {
-        close('closed', e.at, { action: e.outcome }, null)
+        close('closed', e.at, { action: e.outcome }, false)
         state = 'out'
       }
       continue
@@ -286,21 +391,46 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
 
   if (state === 'open' && cur) {
     const open: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } = cur
+    const w = wait(open.arrivedAt, now)
     rows.push({
       ticket,
       ...meta,
       ...open,
       outcome: 'open',
       endedAt: null,
-      hours: workingHoursBetween(open.arrivedAt, now),
+      hours: w.hours,
+      heldHours: w.held,
       week: null,
       action: null,
       to: null,
       by: null,
       offClock: null,
+      longWait: false,
     })
   }
   return rows
+}
+
+/**
+ * The longest single stretch a ticket spent out of the queue between two instants, in milliseconds:
+ * from a move out to the next move back in, or to `toIso` if it never came back.
+ */
+function longestAway(evs: PmEvent[], fromIso: string, toIso: string): number {
+  const from = Date.parse(fromIso)
+  const to = Date.parse(toIso)
+  let outSince: number | null = null
+  let longest = 0
+  for (const e of evs) {
+    const t = Date.parse(e.at)
+    if (t <= from) continue
+    if (t >= to) break
+    if (outSince === null && isDeparture(e)) outSince = t
+    else if (outSince !== null && isArrival(e)) {
+      longest = Math.max(longest, t - outSince)
+      outSince = null
+    }
+  }
+  return outSince === null ? longest : Math.max(longest, to - outSince)
 }
 
 /**
@@ -312,17 +442,21 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
   const firstArrival = evs.find(isArrival)?.at ?? null
   const out: EntryRow[] = []
   for (const kind of ['prd', 'mb', 'canny'] as const) {
-    const link = evs.find((x) => x.who === PM_NAME && x[kind].length > 0)
+    const link = evs.find((x) => isPm(x.who) && x[kind].length > 0)
     const handoff = kind === 'mb' ? evs.find(isBugHandoff) : undefined
     const e = [link, handoff].filter((x): x is PmEvent => !!x).sort(byTime)[0]
     if (!e) continue
     const via: EntryRow['via'] = e === link ? 'link' : 'handoff'
+    const timed = complete && !!firstArrival && Date.parse(firstArrival) <= Date.parse(e.at)
+    const away = timed && firstArrival ? longestAway(evs, firstArrival, e.at) : null
     const status: EntryStatus = !complete
       ? 'history-before-data'
-      : !firstArrival || Date.parse(firstArrival) > Date.parse(e.at)
+      : !timed
         ? 'no-arrival-on-record'
-        : 'counted'
-    const hours = status === 'counted' && firstArrival ? workingHoursBetween(firstArrival, e.at) : null
+        : (away ?? 0) > AWAY_DAYS * DAY_MS
+          ? 'away'
+          : 'counted'
+    const hours = timed && firstArrival ? workingHoursBetween(firstArrival, e.at) : null
     out.push({
       ticket,
       ...meta,
@@ -330,12 +464,14 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
       via,
       // A hand-off always names its receiver: isBugHandoff only matches a move whose "to" is known.
       ref: via === 'link' ? e[kind][0] : (party(e.to) ?? ''),
-      arrivedAt: status === 'counted' ? firstArrival : null,
+      arrivedAt: timed ? firstArrival : null,
       at: e.at,
       hours,
+      awayDays: away === null ? null : Math.round((away / DAY_MS) * 10) / 10,
       week: weekOf(e.at),
       status,
       offClock: status === 'counted' ? offClock(hours, e.at) : null,
+      longWait: status === 'counted' && !!firstArrival && isLongWait(firstArrival, e.at),
     })
   }
   return out
@@ -357,18 +493,194 @@ function stat(hours: number[]): Stat {
   }
 }
 
+/* ── benchmarks ── */
+
+export type Metric = 'response' | EntryKind
+/** A number's colour. 'display' = nothing to judge it by: no benchmark, or nothing measured that week. */
+export type Light = 'green' | 'yellow' | 'red' | 'display'
+
+/** A benchmark needs this many measurements behind it; with fewer, one fast or slow ticket would set the bar. */
+export const MIN_SAMPLES = 10
+/** Yellow runs from the benchmark up to this multiple of it; red is past that. */
+export const YELLOW_FACTOR = 1.25
+/** A week with fewer working days than this is a holiday week, not a normal one, and stays out of a benchmark. */
+export const MIN_WORKDAYS = 3
+
+const METRIC_IDS: Metric[] = ['response', 'prd', 'mb', 'canny']
+/** How the page shows each number. Colours compare the value as shown, so a shown "7.3 h" is judged as 7.3. */
+const SHOWN_IN: Record<Metric, 'h' | 'd'> = { response: 'h', prd: 'd', mb: 'd', canny: 'd' }
+const inShownUnit = (hours: number, metric: Metric) => (SHOWN_IN[metric] === 'h' ? hours : hours / WORKDAY_HOURS)
+const round1 = (v: number) => Math.round(v * 10) / 10
+
+/**
+ * One measurement in a benchmark's quarter, written out so the benchmark can be drilled into. For
+ * first response it is a ticket's week (the mean of its entries that week); for the rest one entry.
+ * `out` says why a measurement is listed but not averaged.
+ */
+export interface Sample {
+  metric: Metric
+  ticket: string
+  /** The Monday of the week it landed in. */
+  week: string
+  hours: number
+  /** First response only: how many queue entries this week's value averages. */
+  entries?: number
+  /** 'long-wait': waited over LONG_WAIT_DAYS. 'short-week': its week had under MIN_WORKDAYS working days. */
+  out?: 'long-wait' | 'short-week'
+  /** Calendar days waited, for a long wait. */
+  waitedDays?: number
+}
+
+export interface Line {
+  /** The mean of the counted samples in working hours, and how many there are; hours is null when there are none. */
+  hours: number | null
+  n: number
+  /**
+   * The bounds, in the number's shown unit at the shown one decimal: green up to `green`, yellow up to
+   * `yellow`, red above. Null when n is under MIN_SAMPLES — that number is then shown as a trend only.
+   */
+  green: number | null
+  yellow: number | null
+}
+
+export interface Benchmark {
+  /** The quarter judged, "2026-Q4", and the quarter whose average judges it, "2026-Q3". */
+  quarter: string
+  from: string
+  /** 'history': averaged from Halo's full action history (baselines.ts). 'log': averaged from this log. */
+  source: 'history' | 'log'
+  lines: Record<Metric, Line>
+  /** Every measurement behind the lines, counted or not — exactly what each line averages, and nothing else. */
+  samples: Sample[]
+}
+
+/** The quarter a week is judged in: the one its Monday falls in, "2026-Q4". */
+export function quarterOf(monday: string): string {
+  return `${monday.slice(0, 4)}-Q${Math.floor((Number(monday.slice(5, 7)) - 1) / 3) + 1}`
+}
+
+function previousQuarter(quarter: string): string {
+  const year = Number(quarter.slice(0, 4))
+  const q = Number(quarter.slice(6))
+  return q === 1 ? `${year - 1}-Q4` : `${year}-Q${q - 1}`
+}
+
+/** The Mondays that fall in a quarter, oldest first. */
+function mondaysIn(quarter: string): string[] {
+  const year = Number(quarter.slice(0, 4))
+  const q = Number(quarter.slice(6))
+  const start = Date.UTC(year, (q - 1) * 3, 1)
+  const end = Date.UTC(year, q * 3, 1)
+  const out: string[] = []
+  for (let t = start + ((8 - new Date(start).getUTCDay()) % 7) * DAY_MS; t < end; t += 7 * DAY_MS) {
+    out.push(new Date(t).toISOString().slice(0, 10))
+  }
+  return out
+}
+
+const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
+
+const daysBetween = (fromIso: string, toIso: string) => Math.round((Date.parse(toIso) - Date.parse(fromIso)) / DAY_MS)
+const METRIC_ORDER: Record<Metric, number> = { response: 0, prd: 1, canny: 2, mb: 3 }
+
+/**
+ * Every measurement of a quarter, with the ones a benchmark leaves out marked: weeks with fewer than
+ * MIN_WORKDAYS working days, and waits longer than LONG_WAIT_DAYS. The counted ones are the same
+ * units the weeks average: per-ticket weeks for first response, entries for the rest. Null unless
+ * every week of the quarter is in the log, complete and free of gaps, so a benchmark is never
+ * averaged from part of a quarter.
+ */
+export function quarterSamples(
+  card: { weeks: WeekCore[]; gaps: { from: string; to: string }[]; response: ResponseRow[]; entries: EntryRow[] },
+  quarter: string,
+): Sample[] | null {
+  const mondays = mondaysIn(quarter)
+  const byMonday = new Map(card.weeks.map((w) => [w.monday, w]))
+  const startMs = Date.parse(`${mondays[0]}T00:00:00+08:00`)
+  const endMs = Date.parse(`${mondays[mondays.length - 1]}T00:00:00+08:00`) + 7 * DAY_MS
+  const covered =
+    mondays.every((m) => byMonday.has(m) && byMonday.get(m)?.partial === null) &&
+    !card.gaps.some((g) => Date.parse(g.from) < endMs && Date.parse(g.to) > startMs)
+  if (!covered) return null
+  const inQuarter = new Set(mondays)
+  const short = (week: string) => (byMonday.get(week)?.shape.workdays ?? 0) < MIN_WORKDAYS
+  const out: Sample[] = []
+
+  const responses = card.response.filter((r) => counts(r) && inQuarter.has(r.week as string))
+  for (const t of ticketWeeks(responses.filter((r) => !r.longWait && !short(r.week as string)))) {
+    out.push({ metric: 'response', ticket: t.ticket, week: t.week, hours: t.meanHours, entries: t.entries })
+  }
+  for (const r of responses) {
+    const week = r.week as string
+    const hours = r.hours as number
+    if (short(week)) out.push({ metric: 'response', ticket: r.ticket, week, hours, out: 'short-week' })
+    else if (r.longWait) {
+      out.push({
+        metric: 'response',
+        ticket: r.ticket,
+        week,
+        hours,
+        out: 'long-wait',
+        waitedDays: daysBetween(r.arrivedAt, r.endedAt as string),
+      })
+    }
+  }
+  for (const r of card.entries.filter((x) => x.status === 'counted' && inQuarter.has(x.week))) {
+    const base = { metric: r.kind, ticket: r.ticket, week: r.week, hours: r.hours as number }
+    if (short(r.week)) out.push({ ...base, out: 'short-week' })
+    else if (r.longWait) out.push({ ...base, out: 'long-wait', waitedDays: daysBetween(r.arrivedAt as string, r.at) })
+    else out.push(base)
+  }
+  return out.sort(
+    (a, b) => METRIC_ORDER[a.metric] - METRIC_ORDER[b.metric] || a.week.localeCompare(b.week) || a.ticket.localeCompare(b.ticket),
+  )
+}
+
+/** A line from the samples it averages: only those not marked `out`. */
+function lineOf(metric: Metric, samples: Sample[]): Line {
+  const hours = samples.filter((x) => x.metric === metric && !x.out).map((x) => x.hours)
+  const n = hours.length
+  if (n === 0) return { hours: null, n, green: null, yellow: null }
+  const average = mean(hours)
+  if (n < MIN_SAMPLES) return { hours: average, n, green: null, yellow: null }
+  const shown = inShownUnit(average, metric)
+  return { hours: average, n, green: round1(shown), yellow: round1(shown * YELLOW_FACTOR) }
+}
+
+/**
+ * The benchmark a quarter is judged by: the previous quarter's average, fixed for the whole quarter
+ * (decided by the PM, 2026-10-14). It comes from baselines.ts for quarters the log does not reach,
+ * and is averaged from the log itself once the log covers the whole previous quarter. Null when
+ * neither has it; every number in that quarter is then shown as a trend.
+ */
+function benchmarkFor(quarter: string, card: Parameters<typeof quarterSamples>[0]): Benchmark | null {
+  const known = HISTORY_BASELINES[quarter]
+  const from = known?.from ?? previousQuarter(quarter)
+  const samples = known?.samples ?? quarterSamples(card, from)
+  if (!samples) return null
+  const lines = Object.fromEntries(METRIC_IDS.map((m) => [m, lineOf(m, samples)])) as Record<Metric, Line>
+  return { quarter, from, source: known ? 'history' : 'log', lines, samples }
+}
+
+/** A week's colour: its number, as shown, against the benchmark's bounds. */
+function lightOf(metric: Metric, s: Stat, line: Line | undefined): Light {
+  if (!line || line.green === null || line.yellow === null || s.n === 0 || s.meanHours === null) return 'display'
+  const v = round1(inShownUnit(s.meanHours, metric))
+  return v <= line.green ? 'green' : v <= line.yellow ? 'yellow' : 'red'
+}
+
 export interface PmScorecard {
   asOf: string
   coverageFrom: string | null
   gaps: { from: string; to: string }[]
   weeks: WeekRow[]
+  /** The benchmark of each quarter the weeks fall in, newest first; a quarter without one is absent. */
+  benchmarks: Benchmark[]
   response: ResponseRow[]
   /** The per-ticket units each week's PM1 average is taken over. */
   responseTickets: TicketWeek[]
   entries: EntryRow[]
 }
-
-const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
 
 /** Group the counted first responses by ticket and week, keeping each ticket's all-weeks mean beside it. */
 function ticketWeeks(rows: ResponseRow[]): TicketWeek[] {
@@ -405,8 +717,10 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
 
   const response: ResponseRow[] = []
   const entryRows: EntryRow[] = []
+  const holdsByTicket = new Map<string, Hold[]>()
   for (const [ticket, list] of byTicket) {
     const evs = list.sort(byTime)
+    holdsByTicket.set(ticket, holdsOf(evs))
     const meta = store.tickets[ticket] ?? { summary: '', client: '' }
     response.push(...cycles(ticket, evs, meta, now))
     // History is complete only if the log holds the ticket's first action.
@@ -416,13 +730,27 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
   entryRows.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
 
   const { from, gaps } = coverage(store)
-  const coverageWeek = from ? weekOf(from) : null
+  // A log that opens exactly at a Monday's midnight (a history import) holds that whole week.
+  const coverageWeek = from && Date.parse(from) > Date.parse(`${weekOf(from)}T00:00:00+08:00`) ? weekOf(from) : null
   const thisWeek = weekOf(now)
-  const counted = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off'
-  const countedResponses = response.filter(counted)
+  const countedResponses = response.filter(counts)
   const responseTickets = ticketWeeks(countedResponses)
 
-  const weeks: WeekRow[] = (from ? weeksBetween(from, now) : [])
+  /** Every cycle that had arrived and had no response yet at `atIso`, aged to that moment. */
+  const waitingAt = (atIso: string): WaitingAt[] => {
+    const at = Date.parse(atIso)
+    return response
+      .filter((r) => Date.parse(r.arrivedAt) < at && (r.endedAt === null || Date.parse(r.endedAt) > at))
+      .map((r) => {
+        const holds = holdsByTicket.get(r.ticket) ?? []
+        const w = waitBetween(holds, r.arrivedAt, atIso)
+        const state: WaitingAt['state'] = onHoldAt(holds, at) ? 'on-hold' : w.all === 0 ? 'not-started' : 'waiting'
+        return { ticket: r.ticket, arrivedAt: r.arrivedAt, hours: w.hours, heldHours: w.held, state }
+      })
+      .sort((a, b) => b.hours - a.hours)
+  }
+
+  const cores: WeekCore[] = (from ? weeksBetween(from, now) : [])
     .map((monday) => {
       const hours = (kind: EntryKind) =>
         entryRows.filter((r) => r.kind === kind && r.status === 'counted' && r.week === monday).map((r) => r.hours as number)
@@ -436,9 +764,21 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
         prd: stat(hours('prd')),
         mb: stat(hours('mb')),
         canny: stat(hours('canny')),
+        waiting: waitingAt(monday === thisWeek ? now : new Date(Date.parse(`${monday}T00:00:00+08:00`) + 7 * DAY_MS).toISOString()),
       }
     })
     .reverse()
 
-  return { asOf: now, coverageFrom: from, gaps, weeks, response, responseTickets, entries: entryRows }
+  const card = { weeks: cores, gaps, response, entries: entryRows }
+  const benchmarks = [...new Set(cores.map((w) => quarterOf(w.monday)))]
+    .map((q) => benchmarkFor(q, card))
+    .filter((b): b is Benchmark => b !== null)
+  const weeks: WeekRow[] = cores.map((w) => {
+    const quarter = quarterOf(w.monday)
+    const lines = benchmarks.find((b) => b.quarter === quarter)?.lines
+    const light = Object.fromEntries(METRIC_IDS.map((m) => [m, lightOf(m, w[m], lines?.[m])])) as Record<Metric, Light>
+    return { ...w, quarter, light }
+  })
+
+  return { asOf: now, coverageFrom: from, gaps, weeks, benchmarks, response, responseTickets, entries: entryRows }
 }
