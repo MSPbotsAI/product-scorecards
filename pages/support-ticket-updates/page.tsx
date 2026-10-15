@@ -178,9 +178,12 @@ const EN = {
   waitingNone: 'now · nothing waiting',
   waitingSubAt: (week: string, hours: string) => `end of ${week} · oldest ${hours} working h`,
   waitingNoneAt: (week: string) => `end of ${week} · nothing waiting`,
-  onHoldCount: (n: number) => ` · ${n} on hold`,
+  othersNote: (held: number, notStarted: number) =>
+    [held ? ` · ${held} on hold` : '', notStarted ? ` · ${notStarted} not yet due` : ''].join(''),
   asOfWeekEnd: (week: string) => `as of the end of ${week}`,
-  onHoldNow: 'on hold at that moment',
+  groupOnHold: (n: number) => `On hold at that moment — ${n}, not counted: scheduled, or waiting on the requester`,
+  groupNotStarted: (n: number) => `Arrived outside working time, clock not started yet — ${n}, not counted`,
+  laterNote: (week: string) => `Working time runs to the end of ${week}. First response and How show what happened afterwards.`,
   waitingBadge: (n: number) => `${n} waiting`,
   workingDays: (n: number) => `${n} working days`,
   holidays: (n: number) => (n === 1 ? '1 holiday' : `${n} holidays`),
@@ -252,7 +255,7 @@ const EN = {
   // waiting dialog
   asOfNow: 'as of now',
   waitingDescription:
-    'In the queue with no reply to the customer and no hand-off yet, at the end of the selected week (now, for this week). Working time up to then, less time on hold — not in any average until answered.',
+    'In the queue with no reply to the customer and no hand-off yet, at the end of the selected week (now, for this week), with the working clock running. Working time up to then, less time on hold — not in any average until answered. Tickets on hold, or not yet due, are listed below and not counted.',
   nothingWaiting: 'Nothing is waiting.',
   // banners and footer
   captureFailed: (at: string) => `The last refresh from Halo failed; showing the log as of ${at}.`,
@@ -365,9 +368,12 @@ const ZH: typeof EN = {
   waitingNone: '当前 · 无等待',
   waitingSubAt: (week: string, hours: string) => `${week} 周末 · 最久已等 ${hours} 工作小时`,
   waitingNoneAt: (week: string) => `${week} 周末 · 无等待`,
-  onHoldCount: (n: number) => ` · 其中 ${n} 张挂起中`,
+  othersNote: (held: number, notStarted: number) =>
+    [held ? ` · 另有 ${held} 张挂起中` : '', notStarted ? ` · ${notStarted} 张未开始计时` : ''].join(''),
   asOfWeekEnd: (week: string) => `截至 ${week} 周末`,
-  onHoldNow: '当时挂起中',
+  groupOnHold: (n: number) => `当时挂起中 — ${n} 张，不计入：排期或等客户回复`,
+  groupNotStarted: (n: number) => `在非工作时间到达、尚未开始计时 — ${n} 张，不计入`,
+  laterNote: (week: string) => `工作用时只算到 ${week} 周末；"首次响应"和"方式"两栏是后来实际发生的情况。`,
   waitingBadge: (n: number) => `${n} 个等待中`,
   workingDays: (n: number) => `${n} 个工作日`,
   holidays: (n: number) => `${n} 天假期`,
@@ -436,7 +442,7 @@ const ZH: typeof EN = {
   clock: (hours: string, confirmed: boolean) => `工作时间 ${hours}，中国节假日日历（${confirmed ? '已确认' : '待确认'}）`,
   asOfNow: '截至当前',
   waitingDescription:
-    '所选那一周结束时（本周为当前），已在队列中、尚未回复客户也未转出的工单。显示到那时为止的工作时长（不含挂起）——回复前不计入任何平均值。',
+    '所选那一周结束时（本周为当前），已在队列中、尚未回复客户也未转出、且正在计时的工单。显示到那时为止的工作时长（不含挂起）——回复前不计入任何平均值。挂起中、或还没开始计时的单列在下面，不计入数字。',
   nothingWaiting: '当前没有等待中的工单。',
   captureFailed: (at: string) => `最近一次从 Halo 刷新失败；当前显示的是截至 ${at} 的日志。`,
   gaps: (n: number, list: string) => `日志有 ${n} 处缺口（${list}）。其中的 action 在复制前已从 Halo 过期，涉及的周数据不完整。`,
@@ -648,20 +654,7 @@ function OffClockNote({ value, labels }: { value: OffClock; labels: Record<'rest
  * merged cell carries the ticket's average: the value the week's number is averaged over, so the
  * list adds up to the number at the top.
  */
-function ResponseRows({
-  rows,
-  reason,
-  units,
-  onHold,
-  t,
-}: {
-  rows: ResponseRow[]
-  reason?: boolean
-  units?: Map<string, TicketWeek>
-  /** "ticket|arrivedAt" of the waiting entries that were on hold at the moment shown. */
-  onHold?: Set<string>
-  t: Copy
-}) {
+function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?: boolean; units?: Map<string, TicketWeek>; t: Copy }) {
   const ordered = units ? groupByTicket(rows) : rows
   return (
     <Table className="text-xs">
@@ -720,7 +713,6 @@ function ResponseRows({
                 {reason ? `${t.notCounted[r.outcome] ?? r.outcome} · ${howText(r, t)}` : howText(r, t)}
                 <OffClockNote value={r.offClock} labels={t.offClockReply} />
                 {r.longWait && <div className="mt-0.5 text-[11px] text-warning-700">{t.longWait(daysBetween(r.arrivedAt, r.endedAt))}</div>}
-                {onHold?.has(`${r.ticket}|${r.arrivedAt}`) && <div className="mt-0.5 text-[11px] text-muted-foreground">{t.onHoldNow}</div>}
               </TableCell>
             </TableRow>
           )
@@ -1047,14 +1039,18 @@ function WaitingDialog({ data, index, onClose }: { data: SupportUpdatesPayload; 
   const t = T[useLang()]
   const week: WeekRow | undefined = data.weeks[index]
   const live = !week || week.partial === 'in-progress'
-  // Each waiting entry shown as its cycle stood at the week's end: no response yet, aged to then.
-  const rows = (week?.waiting ?? []).flatMap((w) => {
-    const base = data.response.find((r) => r.ticket === w.ticket && r.arrivedAt === w.arrivedAt)
-    return base
-      ? [{ ...base, outcome: 'open' as const, endedAt: null, hours: w.hours, heldHours: w.heldHours, offClock: null, longWait: false }]
-      : []
-  })
-  const onHold = new Set((week?.waiting ?? []).filter((w) => w.onHold).map((w) => `${w.ticket}|${w.arrivedAt}`))
+  // Each entry aged to the week's end. For a past week its cycle keeps what happened afterwards, so
+  // the list says when it was answered; the working time is still the time up to the week's end.
+  const rowsOf = (state: string) =>
+    (week?.waiting ?? [])
+      .filter((w) => w.state === state)
+      .flatMap((w) => {
+        const base = data.response.find((r) => r.ticket === w.ticket && r.arrivedAt === w.arrivedAt)
+        return base ? [{ ...base, hours: w.hours, heldHours: w.heldHours, offClock: null, longWait: false }] : []
+      })
+  const rows = rowsOf('waiting')
+  const held = rowsOf('on-hold')
+  const notStarted = rowsOf('not-started')
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent container={root()} className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
@@ -1068,10 +1064,20 @@ function WaitingDialog({ data, index, onClose }: { data: SupportUpdatesPayload; 
           <DialogTitle className="text-base leading-snug">{t.waitingName}</DialogTitle>
           <DialogDescription className="text-xs">{t.waitingDescription}</DialogDescription>
         </DialogHeader>
+        {!live && <p className="text-[11px] text-muted-foreground">{t.laterNote(week?.label ?? '')}</p>}
         {rows.length === 0 ? (
           <p className="text-xs italic text-muted-foreground">{t.nothingWaiting}</p>
         ) : (
-          <ResponseRows rows={rows} onHold={onHold} t={t} />
+          <ResponseRows rows={rows} t={t} />
+        )}
+        {[[held, t.groupOnHold(held.length)] as const, [notStarted, t.groupNotStarted(notStarted.length)] as const].map(
+          ([group, heading]) =>
+            group.length > 0 ? (
+              <div key={heading} className="rounded-md border border-dashed p-2">
+                <div className="mb-1 text-[11px] text-muted-foreground">{heading}</div>
+                <ResponseRows rows={group} t={t} />
+              </div>
+            ) : null,
         )}
         <Source data={data} t={t} />
       </DialogContent>
@@ -1320,17 +1326,22 @@ function BenchmarkCard({ data, index, onOpen }: { data: SupportUpdatesPayload; i
 function OwnerCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index: number; onOpen: (m: Metric | 'waiting') => void }) {
   const t = T[useLang()]
   const week: WeekRow | undefined = data.weeks[index]
-  // Waiting as the selected week ended (now, for the week in progress).
-  const open = week?.waiting ?? []
+  // Waiting on the PM as the selected week ended (now, for the week in progress): the clock running,
+  // not on hold. Tickets on hold or not yet due are mentioned, not counted.
+  const all = week?.waiting ?? []
+  const open = all.filter((w) => w.state === 'waiting')
   const oldest = open.reduce((m, w) => Math.max(m, w.hours), 0)
   const live = !week || week.partial === 'in-progress'
-  const onHold = open.filter((w) => w.onHold).length
-  const waitingSub =
+  const others = t.othersNote(all.filter((w) => w.state === 'on-hold').length, all.filter((w) => w.state === 'not-started').length)
+  const waitingSub = `${
     open.length > 0
-      ? `${live ? t.waitingSub(oldest.toFixed(1)) : t.waitingSubAt(week?.label ?? '', oldest.toFixed(1))}${onHold ? t.onHoldCount(onHold) : ''}`
+      ? live
+        ? t.waitingSub(oldest.toFixed(1))
+        : t.waitingSubAt(week?.label ?? '', oldest.toFixed(1))
       : live
         ? t.waitingNone
         : t.waitingNoneAt(week?.label ?? '')
+  }${others}`
   const shape = week?.shape
   const done = shape ? shape.elapsedHours / Math.max(shape.totalHours, 1) : 0
   const extras = [shape?.holidays ? t.holidays(shape.holidays) : '', shape?.makeupDays ? t.makeupDays(shape.makeupDays) : ''].filter(

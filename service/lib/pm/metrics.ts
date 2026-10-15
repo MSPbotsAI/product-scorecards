@@ -202,21 +202,25 @@ interface WeekCore {
   mb: Stat
   canny: Stat
   /**
-   * The tickets waiting for a first response when the week ended, or now for the week in progress.
-   * Each one had arrived and had no response yet at that moment. Its hours run to that moment, less
-   * time on hold.
+   * The tickets with no first response yet when the week ended, or now for the week in progress. Each
+   * one's hours run to that moment, less time on hold. Only state 'waiting' counts as waiting on the
+   * PM (decided by the PM, 2026-10-15): the others are listed, not counted.
    */
   waiting: WaitingAt[]
 }
 
-/** One ticket waiting at a week's end. arrivedAt identifies its cycle in `response`. */
+/** One ticket with no first response yet at a week's end. arrivedAt identifies its cycle in `response`. */
 export interface WaitingAt {
   ticket: string
   arrivedAt: string
   hours: number
   heldHours: number
-  /** On hold at that moment: scheduled, or waiting on the requester. */
-  onHold: boolean
+  /**
+   * 'waiting': the working clock is running, so the ticket is waiting on the PM. 'on-hold': it is
+   * parked (scheduled, waiting on the requester). 'not-started': it arrived outside working time,
+   * and no working time has passed yet.
+   */
+  state: 'waiting' | 'on-hold' | 'not-started'
 }
 
 export interface WeekRow extends WeekCore {
@@ -740,7 +744,8 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
       .map((r) => {
         const holds = holdsByTicket.get(r.ticket) ?? []
         const w = waitBetween(holds, r.arrivedAt, atIso)
-        return { ticket: r.ticket, arrivedAt: r.arrivedAt, hours: w.hours, heldHours: w.held, onHold: onHoldAt(holds, at) }
+        const state: WaitingAt['state'] = onHoldAt(holds, at) ? 'on-hold' : w.all === 0 ? 'not-started' : 'waiting'
+        return { ticket: r.ticket, arrivedAt: r.arrivedAt, hours: w.hours, heldHours: w.held, state }
       })
       .sort((a, b) => b.hours - a.hours)
   }
