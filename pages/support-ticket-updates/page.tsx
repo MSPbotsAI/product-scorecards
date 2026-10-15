@@ -133,8 +133,17 @@ const EN = {
   },
   rowSub: (tag: string, count: string, median: string, target: string) => `${tag} · ${count} · median ${median} · ${target}`,
   rowNone: (tag: string, target: string) => `${tag} · none measured in this week · ${target}`,
-  target: (green: string) => `target ≤ ${green}`,
+  target: (benchmark: string) => `benchmark ${benchmark}`,
   trendOnly: 'trend only',
+  benchmarksTitle: (quarter: string) => `Benchmarks · ${quarter}`,
+  benchmarksFrom: (from: string, history: boolean) =>
+    `The ${from} average, held for the whole quarter${history ? ' — from Halo’s full history, which the log does not reach' : ''}.`,
+  benchmarksLeftOut: (longWait: number, minWorkdays: number) =>
+    `Left out of it: waits of over ${longWait} days, and weeks with fewer than ${minWorkdays} working days.`,
+  colMetric: 'Number',
+  colBenchmark: 'Benchmark',
+  colSamples: 'Samples',
+  tooFew: (n: number, min: number) => `trend only — ${n} of ${min} needed`,
   quarter: (q: string) => `${q.slice(5)} ${q.slice(0, 4)}`,
   benchmarkFrom: (quarter: string, count: string, longWait: number, history: boolean) =>
     `Benchmark: the ${quarter} average over ${count}, waits of over ${longWait} days left out${history ? ' — from Halo’s full history, which the log does not reach' : ''}.`,
@@ -295,8 +304,16 @@ const ZH: typeof EN = {
   },
   rowSub: (tag: string, count: string, median: string, target: string) => `${tag} · ${count} · 中位数 ${median} · ${target}`,
   rowNone: (tag: string, target: string) => `${tag} · 该周无测量 · ${target}`,
-  target: (green: string) => `目标 ≤ ${green}`,
+  target: (benchmark: string) => `基准 ${benchmark}`,
   trendOnly: '仅看趋势',
+  benchmarksTitle: (quarter: string) => `基准 · ${quarter}`,
+  benchmarksFrom: (from: string, history: boolean) =>
+    `取自 ${from} 的平均值，整个季度固定不变${history ? '；日志覆盖不到那个季度，取自 Halo 完整历史' : ''}。`,
+  benchmarksLeftOut: (longWait: number, minWorkdays: number) => `不含等了 ${longWait} 天以上的单，也不含不足 ${minWorkdays} 个工作日的周。`,
+  colMetric: '指标',
+  colBenchmark: '基准',
+  colSamples: '样本',
+  tooFew: (n: number, min: number) => `仅看趋势：只有 ${n} 个样本，需要 ${min} 个`,
   quarter: (q: string) => `${q.slice(0, 4)} ${q.slice(5)}`,
   benchmarkFrom: (quarter: string, count: string, longWait: number, history: boolean) =>
     `基准：${quarter} 平均（${count}，不含等了 ${longWait} 天以上的单）${history ? '——日志覆盖不到，取自 Halo 完整历史' : ''}。`,
@@ -468,9 +485,23 @@ function reading(data: SupportUpdatesPayload, metric: Metric, index: number) {
   return { unit, stat, row, benchmark, line, median: stat && stat.n > 0 ? inUnit(stat.medianHours, unit, workday) : null }
 }
 
-/** "target ≤ 7.3 h", or "trend only" when the quarter has no usable benchmark for this number. */
+/** "benchmark 7.7 h", or "trend only" when the quarter has no usable benchmark for this number. */
 function targetText(t: Copy, line: BenchmarkLine | undefined, unit: Unit): string {
   return line?.green != null ? t.target(show(line.green, unit)) : t.trendOnly
+}
+
+/**
+ * The three bands as ranges of the shown value. Values compare at one decimal, so yellow starts one
+ * tenth above the benchmark: "≤ 7.7 h", "7.8–9.6 h", "> 9.6 h".
+ */
+function ranges(line: BenchmarkLine, unit: Unit): Record<'green' | 'yellow' | 'red', string> | null {
+  if (line.green === null || line.yellow === null) return null
+  const from = round1(line.green + 0.1)
+  return {
+    green: `≤ ${show(line.green, unit)}`,
+    yellow: line.yellow >= from ? `${from.toFixed(1)}–${show(line.yellow, unit)}` : '—',
+    red: `> ${show(line.yellow, unit)}`,
+  }
 }
 
 /** Calendar days between two instants, for "waited 230 days". */
@@ -756,10 +787,11 @@ function Bands({
   if (line.green === null || line.yellow === null) {
     return <p className="text-[11px] text-muted-foreground">{t.trendWhy(from, line.n, data.rules.minSamples)}</p>
   }
+  const r = ranges(line, unit) as Record<'green' | 'yellow' | 'red', string>
   const bands: [Light, string][] = [
-    ['green', `≤ ${show(line.green, unit)}`],
-    ['yellow', `≤ ${show(line.yellow, unit)}`],
-    ['red', `> ${show(line.yellow, unit)}`],
+    ['green', r.green],
+    ['yellow', r.yellow],
+    ['red', r.red],
   ]
   return (
     <div className="space-y-1">
@@ -985,6 +1017,75 @@ function WaitingDialog({ data, onClose }: { data: SupportUpdatesPayload; onClose
 
 /* ── page ── */
 
+/** Every number's benchmark for the selected week's quarter, written out: the value and its three bands. */
+function BenchmarkCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index: number; onOpen: (m: Metric) => void }) {
+  const t = T[useLang()]
+  const week: WeekRow | undefined = data.weeks[index]
+  const benchmark = week ? data.benchmarks.find((b) => b.quarter === week.quarter) : undefined
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">{t.benchmarksTitle(week ? t.quarter(week.quarter) : '')}</CardTitle>
+        <CardDescription className="text-xs">
+          {benchmark
+            ? `${t.benchmarksFrom(t.quarter(benchmark.from), benchmark.source === 'history')} ${t.benchmarksLeftOut(data.rules.longWaitDays, data.rules.minWorkdays)}`
+            : t.noBenchmark(week ? t.quarter(week.quarter) : '')}
+        </CardDescription>
+      </CardHeader>
+      {benchmark && (
+        <CardContent>
+          <Table className="text-xs tabular-nums">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="h-8 px-2">{t.colMetric}</TableHead>
+                <TableHead className="h-8 px-2 text-right">{t.colBenchmark}</TableHead>
+                <TableHead className="h-8 px-2 text-right">
+                  <StatusChip status="green" />
+                </TableHead>
+                <TableHead className="h-8 px-2 text-right">
+                  <StatusChip status="yellow" />
+                </TableHead>
+                <TableHead className="h-8 px-2 text-right">
+                  <StatusChip status="red" />
+                </TableHead>
+                <TableHead className="h-8 px-2 text-right">{t.colSamples}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {METRICS.map((m) => {
+                const line = benchmark.lines[m.id]
+                const r = ranges(line, m.unit)
+                return (
+                  <TableRow key={m.id} onClick={() => onOpen(m.id)} className="cursor-pointer hover:bg-muted/40">
+                    <TableCell className="px-2 py-1.5">
+                      <span className="text-muted-foreground">{m.tag}</span> {t.metrics[m.id].name}
+                    </TableCell>
+                    {r && line.green !== null ? (
+                      <>
+                        <TableCell className="px-2 py-1.5 text-right font-mono font-semibold">{show(line.green, m.unit)}</TableCell>
+                        <TableCell className="px-2 py-1.5 text-right font-mono">{r.green}</TableCell>
+                        <TableCell className="px-2 py-1.5 text-right font-mono">{r.yellow}</TableCell>
+                        <TableCell className="px-2 py-1.5 text-right font-mono">{r.red}</TableCell>
+                      </>
+                    ) : (
+                      <TableCell colSpan={4} className="px-2 py-1.5 text-right text-muted-foreground">
+                        {t.tooFew(line.n, data.rules.minSamples)}
+                      </TableCell>
+                    )}
+                    <TableCell className="px-2 py-1.5 text-right text-muted-foreground">
+                      {line.n} {t.metrics[m.id].noun(line.n)}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </CardContent>
+      )}
+    </Card>
+  )
+}
+
 function OwnerCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index: number; onOpen: (m: Metric | 'waiting') => void }) {
   const t = T[useLang()]
   const week: WeekRow | undefined = data.weeks[index]
@@ -1198,6 +1299,7 @@ export default function SupportTicketUpdates() {
         <>
           <div className="grid gap-4 lg:grid-cols-2">
             <OwnerCard data={data} index={index} onOpen={setOpen} />
+            <BenchmarkCard data={data} index={index} onOpen={setOpen} />
           </div>
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
             <span>
