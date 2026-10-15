@@ -672,7 +672,8 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
   entryRows.sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
 
   const { from, gaps } = coverage(store)
-  const coverageWeek = from ? weekOf(from) : null
+  // A log that opens exactly at a Monday's midnight (a history import) holds that whole week.
+  const coverageWeek = from && Date.parse(from) > Date.parse(`${weekOf(from)}T00:00:00+08:00`) ? weekOf(from) : null
   const thisWeek = weekOf(now)
   const countedResponses = response.filter(counts)
   const responseTickets = ticketWeeks(countedResponses)
