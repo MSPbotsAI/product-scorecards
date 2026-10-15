@@ -2,7 +2,9 @@
  * The PM scorecard: three numbers, and the fourth kept beside them.
  *
  *   response  PM first response — every arrival into the PM's queue, to the PM's first reply to the
- *             customer, or hand-off out of the queue with a private note. Each arrival is its own
+ *             customer, or hand-off out of the queue with a private note. Time the ticket spends on
+ *             hold (SLA Hold: scheduled, waiting on the requester) does not count, as in Halo's own
+ *             SLA (decided by the PM, 2026-10-15). Each arrival is its own
  *             measurement: a ticket that comes back is answered again. The week's number is an
  *             average over TICKETS: a ticket answered more than once in a week counts once, at the
  *             mean of that week's entries, so a ticket that bounces back and forth weighs no more
@@ -27,7 +29,7 @@
  * A request that spent more than AWAY_DAYS out of the queue on the way is listed but in no average.
  * Each week is coloured against its quarter's benchmark, the previous quarter's average (benchmarkFor).
  */
-import { PM_NAME, inQueue, type Party, type PmEvent } from './actions.ts'
+import { HOLD, PM_NAME, RELEASE, TICKET_CLOSED, inQueue, type Party, type PmEvent } from './actions.ts'
 import { HISTORY_BASELINES } from './baselines.ts'
 import { type EventStore, coverage } from './store.ts'
 import {
@@ -110,8 +112,13 @@ export interface ResponseRow {
   clockFrom: string | null
   outcome: CycleOutcome
   endedAt: string | null
-  /** Working hours arrival → response when counted; arrival → now when open; null otherwise. */
+  /**
+   * Working hours arrival → response when counted, or arrival → now when open, less the time on hold.
+   * Null otherwise.
+   */
   hours: number | null
+  /** Working hours of that span the ticket was on hold (SLA Hold), left out of `hours`. 0 when never on hold. */
+  heldHours: number
   /** The week it is reported in; null only for open cycles, which have not landed anywhere yet. */
   week: string | null
   /**
@@ -224,7 +231,8 @@ const byTime = (a: PmEvent, b: PmEvent) => Date.parse(a.at) - Date.parse(b.at) |
 const isArrival = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.to) && !inQueue(e.from)
 const isDeparture = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.from) && !inQueue(e.to)
 const isReply = (e: PmEvent) => e.who === PM_NAME && (e.outcome === 'Email User' || e.outcome === 'Email Update')
-const isClose = (e: PmEvent) => e.who === PM_NAME && (e.outcome === 'Resolved' || e.outcome === 'Close')
+/** The PM closing the ticket, or Halo's ticket list showing it closed (see TICKET_CLOSED). */
+const isClose = (e: PmEvent) => (e.who === PM_NAME && (e.outcome === 'Resolved' || e.outcome === 'Close')) || e.outcome === TICKET_CLOSED
 /** A response that counts: the PM replied, or handed the ticket off with a private note. */
 const counts = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off'
 const later = (a: string, b: string) => (Date.parse(a) >= Date.parse(b) ? a : b)
@@ -267,30 +275,45 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
     return replyTimes.some((t) => t <= at && at - t <= FILING_WINDOW_MS)
   }
 
+  // When the ticket was on hold: each SLA Hold until the next SLA Release (or until now).
+  const holds: { from: number; to: number | null }[] = []
+  for (const e of evs) {
+    const last = holds[holds.length - 1]
+    if (e.outcome === HOLD && (!last || last.to !== null)) holds.push({ from: Date.parse(e.at), to: null })
+    else if (e.outcome === RELEASE && last && last.to === null) last.to = Date.parse(e.at)
+  }
+  /** Working time from → to, less the part on hold. `all` keeps the whole, for the rest-day label. */
+  const wait = (fromIso: string, toIso: string) => {
+    const all = workingHoursBetween(fromIso, toIso)
+    let held = 0
+    for (const h of holds) {
+      const from = Math.max(h.from, Date.parse(fromIso))
+      const to = Math.min(h.to ?? Number.POSITIVE_INFINITY, Date.parse(toIso))
+      if (to > from) held += workingHoursBetween(new Date(from).toISOString(), new Date(to).toISOString())
+    }
+    return { hours: Math.max(0, all - held), held, all }
+  }
+
   const rows: ResponseRow[] = []
   let state: 'out' | 'open' | 'answered' = 'out'
   let cur: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } | null = null
-  const close = (
-    outcome: CycleOutcome,
-    endedAt: string,
-    end: { action: string; to?: string | null; by?: string },
-    hours: number | null,
-  ) => {
+  const close = (outcome: CycleOutcome, endedAt: string, end: { action: string; to?: string | null; by?: string }, timed: boolean) => {
     if (!cur) return
-    const isCounted = outcome === 'replied' || outcome === 'handed-off'
+    const w = timed ? wait(cur.arrivedAt, endedAt) : null
     rows.push({
       ticket,
       ...meta,
       ...cur,
       outcome,
       endedAt,
-      hours,
+      hours: w ? w.hours : null,
+      heldHours: w ? w.held : 0,
       week: weekOf(endedAt),
       action: end.action,
       to: end.to ?? null,
       by: end.by ?? null,
-      offClock: isCounted ? offClock(hours, endedAt) : null,
-      longWait: isCounted && isLongWait(cur.arrivedAt, endedAt),
+      offClock: w ? offClock(w.all, endedAt) : null,
+      longWait: !!w && isLongWait(cur.arrivedAt, endedAt),
     })
     cur = null
   }
@@ -314,7 +337,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
     if (state === 'open' && cur) {
       const arrivedAt: string = cur.arrivedAt
       if (isReply(e)) {
-        close('replied', e.at, { action: e.outcome }, workingHoursBetween(arrivedAt, e.at))
+        close('replied', e.at, { action: e.outcome }, true)
         state = 'answered'
       } else if (isDeparture(e)) {
         const move = { action: e.outcome, to: party(e.to) }
@@ -322,12 +345,12 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
           const n = noteNear(Date.parse(e.at), Date.parse(arrivedAt))
           if (n) {
             const end = later(e.at, n.at)
-            close('handed-off', end, move, workingHoursBetween(arrivedAt, end))
-          } else close('no-note', e.at, move, null)
-        } else close('taken-out', e.at, { ...move, by: e.who }, null)
+            close('handed-off', end, move, true)
+          } else close('no-note', e.at, move, false)
+        } else close('taken-out', e.at, { ...move, by: e.who }, false)
         state = 'out'
       } else if (isClose(e)) {
-        close('closed', e.at, { action: e.outcome }, null)
+        close('closed', e.at, { action: e.outcome }, false)
         state = 'out'
       }
       continue
@@ -337,13 +360,15 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
 
   if (state === 'open' && cur) {
     const open: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } = cur
+    const w = wait(open.arrivedAt, now)
     rows.push({
       ticket,
       ...meta,
       ...open,
       outcome: 'open',
       endedAt: null,
-      hours: workingHoursBetween(open.arrivedAt, now),
+      hours: w.hours,
+      heldHours: w.held,
       week: null,
       action: null,
       to: null,

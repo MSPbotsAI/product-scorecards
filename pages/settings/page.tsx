@@ -74,6 +74,16 @@ const FIELD: Record<string, { en: [string, string]; zh: [string, string] }> = {
     ],
     zh: ['Halo 工单动作', 'Halo 工单上的每一条 action——驱动 Support Ticket Updates 页面。Halo 只保留约 14 天，页面会自留一份副本。'],
   },
+  'dataset.halo_tickets': {
+    en: [
+      'Halo tickets',
+      'One row per Halo ticket — tells Support Ticket Updates which waiting tickets are already closed, since a ticket closed by someone other than the PM leaves no action the page reads.',
+    ],
+    zh: [
+      'Halo 工单',
+      '每张 Halo 工单一行——让 Support Ticket Updates 知道哪些"等待中"的单其实已经关闭；非 PM 关闭的单在页面读取的 action 里没有痕迹。',
+    ],
+  },
   'clickup.ticket_url': {
     en: [
       'Ticket link template',

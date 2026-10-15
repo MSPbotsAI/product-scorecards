@@ -15,7 +15,8 @@ import { writeFileSync } from 'node:fs'
 import { type Metric, type Sample, buildScorecard, quarterOf, quarterSamples } from '../service/lib/pm/metrics.ts'
 import type { EventStore } from '../service/lib/pm/store.ts'
 import { WORKDAY_HOURS } from '../service/lib/pm/workTime.ts'
-import { eventsFor, firstActions, readActions, type Row } from './halo-ods.ts'
+import { HOLD, RELEASE } from '../service/lib/pm/actions.ts'
+import { eventsFor, firstActions, readActions, readTicketActions, type Row } from './halo-ods.ts'
 
 /**
  * The quarters averaged, and who counted as "the PM" in each (decided by the PM):
@@ -40,7 +41,11 @@ function storeFor(rows: Row[], team: string[], firstQuarter: string): EventStore
   return { version: 1, events, created: firstActions(events), tickets: {}, captures: [{ at: now, source: 'ods', rows: rows.length, oldest: opens, newest: now }] }
 }
 
-const rows = await readActions([...new Set(Object.values(QUARTERS).flat())])
+const people = [...new Set(Object.values(QUARTERS).flat())]
+const rows = await readActions(people)
+// First response does not run while a ticket is on hold, so each followed ticket's holds come too.
+const followed = [...new Set(Object.values(eventsFor(rows, people)).map((e) => e.ticket))]
+rows.push(...(await readTicketActions(followed, [HOLD, RELEASE])))
 console.log(`read ${rows.length} rows`)
 
 const out: Record<string, { from: string; samples: Sample[] }> = {}

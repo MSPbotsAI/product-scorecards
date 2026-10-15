@@ -98,7 +98,8 @@ const EN = {
         'A clock starts every time a ticket is moved into the PM queue (Product · product_zd@ or the PM) from anywhere else — Support, Development, anyone. A ticket that comes back is answered again, and that answer is timed on its own.',
         'It stops at the PM’s first email to the customer (Email User or Email Update), or at the PM moving the ticket out of the queue with a private note left alongside. Triage is not a response, and a private note on its own is not one either — even one that posts a ClickUp link.',
         'The week’s number is an average over tickets. A ticket that came into the queue more than once that week counts once, at the average of those first responses, so a ticket that bounces back and forth weighs no more than one that does not. A ticket whose entries fall in different weeks counts in each week with that week’s entries; the list shows its average over all of them beside it, and a finished week never changes.',
-        'Not counted, but listed with the reason: a hand-off with no private note, a ticket moved out by someone else first, or one closed before any response. A ticket still waiting is not in any average until it is answered.',
+        'Time the ticket spends on hold — SLA Hold, such as scheduled or waiting on the requester — does not count, the same as in Halo’s own SLA. The list shows how much was left out.',
+        'Not counted, but listed with the reason: a hand-off with no private note, a ticket moved out by someone else first, or one closed before any response — by the PM or, as Halo’s ticket list shows, by anyone else. A ticket still waiting is not in any average until it is answered.',
         'A reply on a rest day or outside working hours, to a ticket that arrived in the same off-hours stretch, scores 0.0 h: it came before the working clock started. It stays in the average as 0.0 h and is marked in the list.',
       ],
     },
@@ -221,6 +222,8 @@ const EN = {
   noNote: (to: string) => `Re-Assign → ${to}, no private note`,
   takenOut: (to: string, by: string) => `moved to ${to} by ${by}`,
   closedEarly: (action: string) => `${action} before any response`,
+  closedInHalo: 'closed in Halo before any response',
+  heldNote: (hours: string) => `on hold ${hours} h, not counted`,
   notYet: 'no response yet',
   handedTo: (to: string) => `handed to ${to}`,
   notCounted: {
@@ -279,7 +282,8 @@ const ZH: typeof EN = {
         '工单每次从其他任何地方（Support、Development 或任何人）被转入 PM 队列（Product · product_zd@ 或 PM 本人）时开始计时。工单退回后再次进入队列，就要再次响应，这次响应单独计时。',
         '在 PM 第一次给客户发邮件（Email User 或 Email Update）时停表，或在 PM 把工单转出队列、同时留下内部备注（private note）时停表。Triage 不算响应；单独一条内部备注也不算——即使里面贴了 ClickUp 链接。',
         '每周的数字按工单平均。同一张单在一周内多次进入队列，只算一张，取这几次首次响应的平均值，所以来回流转的单不会比只进一次的单占更多权重。一张单的几次进队列落在不同周时，每周只用当周的那几次计算，列表里另外标出它全部进队列的平均值；已结束的周，数字不会再变。',
-        '以下情况不计入，但会连同原因列出：转出时没留内部备注、PM 响应前已被他人转出、响应前已关闭。仍在等待的工单，在得到响应前不计入任何平均值。',
+        '单子挂起（SLA Hold，例如排期、等客户回复）期间不计时，与 Halo 自己的 SLA 一致；列表里会标出扣掉了多少。',
+        '以下情况不计入，但会连同原因列出：转出时没留内部备注、PM 响应前已被他人转出、响应前已关闭（PM 自己关的，或 Halo 工单列表显示已被别人关闭）。仍在等待的工单，在得到响应前不计入任何平均值。',
         '在休息日或非工作时段回复、且工单也是在同一段非工作时间内到达的，记为 0.0 h：回复发生在工作时钟开始之前。它按 0.0 h 计入平均值，并在列表中标注。',
       ],
     },
@@ -398,6 +402,8 @@ const ZH: typeof EN = {
   noNote: (to: string) => `转给 ${to}，无内部备注`,
   takenOut: (to: string, by: string) => `被 ${by} 转给 ${to}`,
   closedEarly: (action: string) => `响应前已 ${action}`,
+  closedInHalo: '响应前已在 Halo 关闭',
+  heldNote: (hours: string) => `挂起 ${hours} h 不计`,
   notYet: '尚未响应',
   handedTo: (to: string) => `转给 ${to}`,
   notCounted: {
@@ -554,7 +560,7 @@ function howText(r: ResponseRow, t: Copy): string {
     case 'taken-out':
       return t.takenOut(to, r.by ?? t.unknown)
     case 'closed':
-      return t.closedEarly(r.action ?? '')
+      return r.action === 'Ticket closed' ? t.closedInHalo : t.closedEarly(r.action ?? '')
     default:
       return t.notYet
   }
@@ -666,7 +672,10 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
               </TableCell>
               <TableCell className="align-top tabular-nums">{local(r.endedAt)}</TableCell>
               {!reason && (
-                <TableCell className="text-right align-top tabular-nums">{r.hours === null ? '—' : `${r.hours.toFixed(1)} h`}</TableCell>
+                <TableCell className="text-right align-top tabular-nums">
+                  {r.hours === null ? '—' : `${r.hours.toFixed(1)} h`}
+                  {r.heldHours >= 0.05 && <div className="text-[11px] text-muted-foreground">{t.heldNote(r.heldHours.toFixed(1))}</div>}
+                </TableCell>
               )}
               {units && opensGroup && (
                 <TableCell rowSpan={span} className="border-l text-right align-top font-medium tabular-nums">

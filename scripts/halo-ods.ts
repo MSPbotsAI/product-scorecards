@@ -89,6 +89,29 @@ export async function readActions(people: string[]): Promise<Row[]> {
   return rows
 }
 
+/**
+ * Every action of the given outcomes on each of these tickets, read ticket by ticket. Holds and
+ * releases are set by anyone, so a tenant-wide slice of them since 2019 would be enormous; the tickets
+ * the PM numbers follow are a few hundred.
+ */
+export async function readTicketActions(tickets: string[], outcomes: string[]): Promise<Row[]> {
+  const out: Row[] = []
+  const todo = [...tickets]
+  await Promise.all(
+    Array.from({ length: 3 }, async () => {
+      for (let t = todo.shift(); t !== undefined; t = todo.shift()) {
+        for (let n = 1, seen = 0; ; n++) {
+          const p = await page(ODS_ACTIONS, { ticket_id: t }, n, 500)
+          out.push(...p.rows.filter((r) => outcomes.includes(String(r.outcome))))
+          seen += p.rows.length
+          if (seen >= p.total || p.rows.length === 0) break
+        }
+      }
+    }),
+  )
+  return out
+}
+
 /** The other names a team member appears under on a queue move. */
 const ALIASES: Record<string, string[]> = {
   'Frank Tian': ['frank.tian@mspbots.ai'],

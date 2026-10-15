@@ -12,7 +12,7 @@
  * quiet fortnight cannot age actions out unseen. Any hole that does open is detected and shown.
  */
 import { readSettings } from '../settings.ts'
-import { type PmEvent, PM_NAME, type ReadAuth, readActions, relevant, sanitize } from './actions.ts'
+import { type PmEvent, PM_NAME, type ReadAuth, closureEvents, readActions, readTicketStates, relevant, sanitize } from './actions.ts'
 import { CALENDAR } from './calendar.ts'
 import { AWAY_DAYS, LONG_WAIT_DAYS, MIN_SAMPLES, MIN_WORKDAYS, YELLOW_FACTOR, buildScorecard } from './metrics.ts'
 import { type Batch, type Capture, batchOf, loadStore, mergeBatch, storeKind } from './store.ts'
@@ -44,16 +44,39 @@ function captureState(tenantId: string): TenantCapture {
 }
 
 /** Same rule as the scorecard: the tenant's own key when one is configured, else the caller's token. */
-async function readSetup(tenantId: string, token: string): Promise<{ datasetId: string; auth: ReadAuth }> {
+async function readSetup(tenantId: string, token: string): Promise<{ datasetId: string; ticketsId: string; auth: ReadAuth }> {
   const { values } = await readSettings(tenantId)
   const apiKey = values.public_api_key ?? ''
   return {
     datasetId: values['dataset.halo_actions'],
+    ticketsId: values['dataset.halo_tickets'],
     auth: { mode: apiKey ? 'public' : 'token', apiKey, token, tenantCode: tenantId },
   }
 }
 
-function startCapture(tenantId: string, datasetId: string, auth: ReadAuth): void {
+/**
+ * End the waits of tickets Halo has closed. The capture reads only the PM's own actions, queue moves
+ * and holds, so a ticket closed by Support, by automation or by a merge would otherwise wait for a
+ * first response forever. One lookup per waiting ticket, and only a handful wait on a normal day.
+ */
+async function closeFinished(tenantId: string, ticketsId: string, auth: ReadAuth): Promise<void> {
+  if (!ticketsId) return
+  const store = await loadStore(tenantId)
+  const waiting = [
+    ...new Set(
+      buildScorecard(store, new Date().toISOString())
+        .response.filter((r) => r.outcome === 'open')
+        .map((r) => r.ticket),
+    ),
+  ]
+  if (waiting.length === 0) return
+  const last: Record<string, string> = {}
+  for (const e of Object.values(store.events)) if (!last[e.ticket] || e.at > last[e.ticket]) last[e.ticket] = e.at
+  const events = closureEvents(await readTicketStates(ticketsId, auth, waiting), (t) => last[t])
+  if (events.length) await mergeBatch(tenantId, { events, created: {}, tickets: {}, captures: [], metaWins: 'existing' })
+}
+
+function startCapture(tenantId: string, datasetId: string, ticketsId: string, auth: ReadAuth): void {
   const state = captureState(tenantId)
   if (state.inflight) return
   state.lastAttemptAt = Date.now()
@@ -61,8 +84,10 @@ function startCapture(tenantId: string, datasetId: string, auth: ReadAuth): void
     state.lastError = 'no API key configured and no platform token on the request — set the API key on the Settings page'
     return
   }
-  state.inflight = readActions(datasetId, auth)
+  state.inflight = loadStore(tenantId)
+    .then((store) => readActions(datasetId, auth, new Set(Object.values(store.events).map((e) => e.ticket))))
     .then((read) => mergeBatch(tenantId, batchOf(read, new Date().toISOString())))
+    .then(() => closeFinished(tenantId, ticketsId, auth))
     .then(() => {
       state.lastError = null
       if (auth.mode === 'public') keepCapturing(tenantId)
@@ -92,8 +117,8 @@ function keepCapturing(tenantId: string): void {
   if (timers.has(tenantId)) return
   const timer = setInterval(() => {
     readSetup(tenantId, '')
-      .then(({ datasetId, auth }) => {
-        if (auth.mode === 'public') startCapture(tenantId, datasetId, auth)
+      .then(({ datasetId, ticketsId, auth }) => {
+        if (auth.mode === 'public') startCapture(tenantId, datasetId, ticketsId, auth)
       })
       .catch(() => {
         // Settings unreadable this round: the next tick or page view tries again, and says why.
@@ -104,13 +129,13 @@ function keepCapturing(tenantId: string): void {
 }
 
 export async function supportTicketUpdates(tenantId: string, token: string, force: boolean) {
-  const { datasetId, auth } = await readSetup(tenantId, token)
+  const { datasetId, ticketsId, auth } = await readSetup(tenantId, token)
   const store = await loadStore(tenantId)
   const last = store.captures.at(-1)
   const state = captureState(tenantId)
   const stale = !last || Date.now() - Date.parse(last.at) > STALE_MS
   const backingOff = !!state.lastError && state.lastAttemptAt !== null && Date.now() - state.lastAttemptAt < RETRY_AFTER_MS
-  if (force || (stale && !backingOff)) startCapture(tenantId, datasetId, auth)
+  if (force || (stale && !backingOff)) startCapture(tenantId, datasetId, ticketsId, auth)
 
   return {
     ...buildScorecard(store, new Date().toISOString()),
