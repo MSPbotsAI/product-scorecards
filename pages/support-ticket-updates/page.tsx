@@ -43,12 +43,15 @@ import {
   root,
 } from '@mspbots/ui'
 import { AlertTriangle, RefreshCw, Upload } from 'lucide-react'
-import { Delta, LangToggle, Sparkline, StatusChip, StatusIcon } from '../../lib/board'
+import { Delta, LangToggle, STATUS_META, Sparkline, StatusChip, StatusIcon } from '../../lib/board'
 import { useLang } from '../../lib/i18n'
 import type { RowStatus, ScorecardRow } from '../../lib/scorecard-client'
 import {
+  type Benchmark,
   type EntryKind,
   type EntryRow,
+  type Light,
+  type Line as BenchmarkLine,
   type OffClock,
   type ResponseRow,
   type SupportUpdatesPayload,
@@ -128,8 +131,24 @@ const EN = {
       ],
     },
   },
-  rowSub: (tag: string, count: string, median: string) => `${tag} · ${count} · median ${median} · target not set`,
-  rowNone: (tag: string) => `${tag} · none measured in this week · target not set`,
+  rowSub: (tag: string, count: string, median: string, target: string) => `${tag} · ${count} · median ${median} · ${target}`,
+  rowNone: (tag: string, target: string) => `${tag} · none measured in this week · ${target}`,
+  target: (green: string) => `target ≤ ${green}`,
+  trendOnly: 'trend only',
+  quarter: (q: string) => `${q.slice(5)} ${q.slice(0, 4)}`,
+  benchmarkFrom: (quarter: string, count: string, longWait: number, history: boolean) =>
+    `Benchmark: the ${quarter} average over ${count}, waits of over ${longWait} days left out${history ? ' — from Halo’s full history, which the log does not reach' : ''}.`,
+  trendWhy: (quarter: string, n: number, min: number) => `Trend only: ${quarter} has ${n} measurements, and a benchmark needs ${min}.`,
+  noBenchmark: (quarter: string) => `Trend only: there is no benchmark for ${quarter} yet.`,
+  longWait: (days: number) => `Waited ${days} days — counts this week, left out of the quarter benchmark`,
+  awayWhy: (days: string, limit: number) => `out of the queue ${days} days in one stretch on the way (over ${limit}) — in no average`,
+  colourHeading: 'Colours',
+  colourNotes: (r: { yellowFactor: number; minWorkdays: number; minSamples: number; longWaitDays: number; awayDays: number }) => [
+    `Green when the week’s number is at or under the benchmark, yellow up to ${r.yellowFactor} × the benchmark, red above that. The comparison uses the one decimal the page shows.`,
+    `The benchmark is the previous quarter’s average, fixed for the whole quarter. A week belongs to the quarter its Monday falls in. Weeks with fewer than ${r.minWorkdays} working days are left out of it, and it needs at least ${r.minSamples} measurements; with fewer, the number is shown as a trend only.`,
+    `A wait of more than ${r.longWaitDays} days counts in its week like any other, so the week that clears an old ticket shows it. It is left out of the benchmark, so a few months-old tickets do not set the bar.`,
+    `A request that was out of the queue for more than ${r.awayDays} days in one stretch, after it first arrived, is in no average at all: that time was not the PM’s. First response is never affected, because its clock stops when a ticket leaves the queue.`,
+  ],
   countTickets: (tickets: number, responses: number) =>
     `${tickets} ${tickets === 1 ? 'ticket' : 'tickets'}${responses > tickets ? ` (${responses} responses)` : ''}`,
   countRows: (n: number) => String(n),
@@ -274,8 +293,24 @@ const ZH: typeof EN = {
       ],
     },
   },
-  rowSub: (tag: string, count: string, median: string) => `${tag} · ${count} · 中位数 ${median} · 未设目标`,
-  rowNone: (tag: string) => `${tag} · 该周无测量 · 未设目标`,
+  rowSub: (tag: string, count: string, median: string, target: string) => `${tag} · ${count} · 中位数 ${median} · ${target}`,
+  rowNone: (tag: string, target: string) => `${tag} · 该周无测量 · ${target}`,
+  target: (green: string) => `目标 ≤ ${green}`,
+  trendOnly: '仅看趋势',
+  quarter: (q: string) => `${q.slice(0, 4)} ${q.slice(5)}`,
+  benchmarkFrom: (quarter: string, count: string, longWait: number, history: boolean) =>
+    `基准：${quarter} 平均（${count}，不含等了 ${longWait} 天以上的单）${history ? '——日志覆盖不到，取自 Halo 完整历史' : ''}。`,
+  trendWhy: (quarter: string, n: number, min: number) => `仅看趋势：${quarter} 只有 ${n} 个样本，基准至少需要 ${min} 个。`,
+  noBenchmark: (quarter: string) => `仅看趋势：${quarter} 还没有基准。`,
+  longWait: (days: number) => `等了 ${days} 天——计入本周，不计入季度基准`,
+  awayWhy: (days: string, limit: number) => `中途连续离开队列 ${days} 天（超过 ${limit} 天）——不计入任何平均值`,
+  colourHeading: '颜色规则',
+  colourNotes: (r: { yellowFactor: number; minWorkdays: number; minSamples: number; longWaitDays: number; awayDays: number }) => [
+    `本周数字 ≤ 基准为绿，≤ 基准 × ${r.yellowFactor} 为黄，超过为红；按页面显示的一位小数比较。`,
+    `基准 = 上一季度的平均值，整个季度固定不变；一周按它的周一归属季度。不足 ${r.minWorkdays} 个工作日的周不进基准；基准至少需要 ${r.minSamples} 个样本，不够时只显示趋势。`,
+    `等了 ${r.longWaitDays} 天以上的单照常计入当周，所以清理老单的那一周会显示出来；但不进基准，免得几张积压几个月的单把线拉高。`,
+    `首次进队列之后，中途连续离开队列超过 ${r.awayDays} 天的需求，不计入任何平均值——那段时间不在 PM 手上。首次响应不受影响：单子一离开队列，它的计时就停了。`,
+  ],
   countTickets: (tickets: number, responses: number) => `${tickets} 张单${responses > tickets ? `（${responses} 次响应）` : ''}`,
   countRows: (n: number) => `${n} 条`,
   waitingName: '等待首次响应',
@@ -413,6 +448,9 @@ function reading(data: SupportUpdatesPayload, metric: Metric, index: number) {
     .filter((w) => w[metric].n > 0)
     .map((w) => ({ week: w.label, value: inUnit(w[metric].meanHours, unit, workday) as number }))
     .reverse()
+  // Judged on the server against the week's quarter benchmark, at the one decimal shown here.
+  const benchmark = week ? data.benchmarks.find((b) => b.quarter === week.quarter) : undefined
+  const line = benchmark?.lines[metric]
   const row: ScorecardRow = {
     id: metric,
     name: metric,
@@ -422,13 +460,21 @@ function reading(data: SupportUpdatesPayload, metric: Metric, index: number) {
     compare: 'lte',
     value,
     previous,
-    status: 'display',
-    target: null,
+    status: week?.light[metric] ?? 'display',
+    target: line?.green ?? null,
     targetText: '',
     history,
   }
-  return { unit, stat, row, median: stat && stat.n > 0 ? inUnit(stat.medianHours, unit, workday) : null }
+  return { unit, stat, row, benchmark, line, median: stat && stat.n > 0 ? inUnit(stat.medianHours, unit, workday) : null }
 }
+
+/** "target ≤ 7.3 h", or "trend only" when the quarter has no usable benchmark for this number. */
+function targetText(t: Copy, line: BenchmarkLine | undefined, unit: Unit): string {
+  return line?.green != null ? t.target(show(line.green, unit)) : t.trendOnly
+}
+
+/** Calendar days between two instants, for "waited 230 days". */
+const daysBetween = (from: string, to: string | null) => Math.round(((to ? Date.parse(to) : Date.now()) - Date.parse(from)) / 86_400_000)
 
 /** "11 tickets (12 responses)" for PM1, whose average is over tickets; "1 requirement" for the rest. */
 function countText(t: Copy, metric: Metric, n: number, responses: number): string {
@@ -487,7 +533,11 @@ function Line({
       onClick={onClick}
       className={cn(
         'flex w-full cursor-pointer items-center gap-3 rounded-md border border-l-2 bg-card px-3 py-2 text-left transition-colors hover:bg-muted/40',
-        status === 'yellow' ? 'border-l-warning-500 bg-warning-500/[0.04] hover:bg-warning-500/[0.08]' : 'border-l-transparent',
+        status === 'red'
+          ? 'border-l-danger-500 bg-danger-500/[0.04] hover:bg-danger-500/[0.08]'
+          : status === 'yellow'
+            ? 'border-l-warning-500 bg-warning-500/[0.04] hover:bg-warning-500/[0.08]'
+            : 'border-l-transparent',
       )}
     >
       <StatusIcon status={status} className="w-5 justify-center" />
@@ -584,6 +634,7 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
               <TableCell className="whitespace-normal align-top text-muted-foreground">
                 {reason ? `${t.notCounted[r.outcome] ?? r.outcome} · ${howText(r, t)}` : howText(r, t)}
                 <OffClockNote value={r.offClock} labels={t.offClockReply} />
+                {r.longWait && <div className="mt-0.5 text-[11px] text-warning-700">{t.longWait(daysBetween(r.arrivedAt, r.endedAt))}</div>}
               </TableCell>
             </TableRow>
           )
@@ -607,7 +658,19 @@ function RefLink({ row, t }: { row: EntryRow; t: Copy }) {
   )
 }
 
-function EntryRows({ rows, workday, reason, t }: { rows: EntryRow[]; workday: number; reason?: boolean; t: Copy }) {
+function EntryRows({
+  rows,
+  workday,
+  awayLimit,
+  reason,
+  t,
+}: {
+  rows: EntryRow[]
+  workday: number
+  awayLimit: number
+  reason?: boolean
+  t: Copy
+}) {
   return (
     <Table className="text-xs">
       <TableHeader>
@@ -634,9 +697,16 @@ function EntryRows({ rows, workday, reason, t }: { rows: EntryRow[]; workday: nu
               </TableCell>
             )}
             <TableCell className="whitespace-normal align-top">
-              {reason && <div className="text-muted-foreground">{t.notCounted[r.status] ?? r.status}</div>}
+              {reason && (
+                <div className="text-muted-foreground">
+                  {r.status === 'away' ? t.awayWhy(String(r.awayDays ?? '—'), awayLimit) : (t.notCounted[r.status] ?? r.status)}
+                </div>
+              )}
               <RefLink row={r} t={t} />
               <OffClockNote value={r.offClock} labels={t.offClockEntry} />
+              {r.longWait && r.arrivedAt && (
+                <div className="mt-0.5 text-[11px] text-warning-700">{t.longWait(daysBetween(r.arrivedAt, r.at))}</div>
+              )}
             </TableCell>
           </TableRow>
         ))}
@@ -661,6 +731,53 @@ function Source({ data, t }: { data: SupportUpdatesPayload; t: Copy }) {
   )
 }
 
+/**
+ * The week's colour bands and where they come from — or why the number is a trend only. Bounds are
+ * the server's, already at the shown decimal, so a value on the page and its colour always agree.
+ */
+function Bands({
+  data,
+  quarter,
+  benchmark,
+  metric,
+  unit,
+  t,
+}: {
+  data: SupportUpdatesPayload
+  quarter: string
+  benchmark: Benchmark | undefined
+  metric: Metric
+  unit: Unit
+  t: Copy
+}) {
+  const line = benchmark?.lines[metric]
+  if (!benchmark || !line) return <p className="text-[11px] text-muted-foreground">{t.noBenchmark(t.quarter(quarter))}</p>
+  const from = t.quarter(benchmark.from)
+  if (line.green === null || line.yellow === null) {
+    return <p className="text-[11px] text-muted-foreground">{t.trendWhy(from, line.n, data.rules.minSamples)}</p>
+  }
+  const bands: [Light, string][] = [
+    ['green', `≤ ${show(line.green, unit)}`],
+    ['yellow', `≤ ${show(line.yellow, unit)}`],
+    ['red', `> ${show(line.yellow, unit)}`],
+  ]
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        {bands.map(([status, bound]) => (
+          <span key={status} className="inline-flex items-center gap-1.5">
+            <StatusChip status={status} />
+            <span className="font-mono text-xs tabular-nums">{bound}</span>
+          </span>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        {t.benchmarkFrom(from, `${line.n} ${t.metrics[metric].noun(line.n)}`, data.rules.longWaitDays, benchmark.source === 'history')}
+      </p>
+    </div>
+  )
+}
+
 function MetricDialog({
   data,
   metric,
@@ -678,7 +795,7 @@ function MetricDialog({
   const tag = METRICS.find((m) => m.id === metric)?.tag ?? ''
   const [index, setIndex] = useState(initial)
   const workday = data.calendar.workdayHours
-  const { unit, stat, row, median } = reading(data, metric, index)
+  const { unit, stat, row, median, benchmark } = reading(data, metric, index)
   const week = data.weeks[index]
   const { counted: rows, other } = week ? rowsFor(data, metric, week.monday) : { counted: [], other: [] }
   // PM1 averages over tickets: each ticket's mean of its entries this week (server-computed).
@@ -700,7 +817,7 @@ function MetricDialog({
       <DialogContent container={root()} className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <StatusChip status="display" />
+            <StatusChip status={row.status} />
             <span className="text-[11px] text-muted-foreground">
               {tag} · {data.pm}
             </span>
@@ -717,13 +834,22 @@ function MetricDialog({
               {median !== null ? ` · ${t.median(show(median, unit))}` : ''}
             </div>
             <div className="mt-1 flex items-baseline gap-2">
-              <span className="text-3xl font-semibold leading-none tracking-tight tabular-nums">{show(row.value, unit)}</span>
+              <span
+                className={cn(
+                  'text-3xl font-semibold leading-none tracking-tight tabular-nums',
+                  row.status === 'red' && 'text-danger-700',
+                  row.status === 'green' && 'text-success-700',
+                )}
+              >
+                {show(row.value, unit)}
+              </span>
               <span className="font-mono text-sm tabular-nums text-muted-foreground">{show(row.previous, unit)}</span>
               <Delta row={row} />
             </div>
           </div>
           <Sparkline row={row} width={150} height={44} />
         </div>
+        {week && <Bands data={data} quarter={week.quarter} benchmark={benchmark} metric={metric} unit={unit} t={t} />}
 
         <div>
           <Heading>{t.historyHeading}</Heading>
@@ -731,6 +857,7 @@ function MetricDialog({
             <Table className="text-xs tabular-nums">
               <TableHeader className="sticky top-0 bg-muted/80 backdrop-blur">
                 <TableRow>
+                  <TableHead className="h-8 w-6 px-0" />
                   <TableHead className="h-8 px-3">{t.colWeek}</TableHead>
                   <TableHead className="h-8 px-3 text-right">{t.colAverage}</TableHead>
                   <TableHead className="h-8 px-3 text-right">{t.colCounted}</TableHead>
@@ -744,6 +871,9 @@ function MetricDialog({
                     onClick={() => setIndex(i)}
                     className={cn('cursor-pointer hover:bg-muted/40', i === index && 'bg-primary/5 font-medium')}
                   >
+                    <TableCell className="px-0 py-1.5">
+                      <span className={cn('mx-auto block h-2 w-2 rounded-full', STATUS_META[w.light[metric]].dot)} />
+                    </TableCell>
                     <TableCell className="px-3 py-1.5">
                       {w.label}
                       {w.partial === 'in-progress' && <span className="ml-1.5 text-muted-foreground">{t.thisWeek}</span>}
@@ -784,7 +914,7 @@ function MetricDialog({
               <ResponseRows rows={rows as ResponseRow[]} units={units} t={t} />
             </>
           ) : (
-            <EntryRows rows={rows as EntryRow[]} workday={workday} t={t} />
+            <EntryRows rows={rows as EntryRow[]} workday={workday} awayLimit={data.rules.awayDays} t={t} />
           )}
           {other.length > 0 && (
             <div className="rounded-md border border-dashed p-2">
@@ -792,7 +922,7 @@ function MetricDialog({
               {metric === 'response' ? (
                 <ResponseRows rows={other as ResponseRow[]} reason t={t} />
               ) : (
-                <EntryRows rows={other as EntryRow[]} workday={workday} reason t={t} />
+                <EntryRows rows={other as EntryRow[]} workday={workday} awayLimit={data.rules.awayDays} reason t={t} />
               )}
             </div>
           )}
@@ -802,6 +932,17 @@ function MetricDialog({
           <Heading>{t.howHeading}</Heading>
           <div className="space-y-1.5">
             {copy.notes.map((note) => (
+              <p key={note} className="text-xs leading-relaxed text-muted-foreground">
+                {note}
+              </p>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <Heading>{t.colourHeading}</Heading>
+          <div className="space-y-1.5">
+            {t.colourNotes(data.rules).map((note) => (
               <p key={note} className="text-xs leading-relaxed text-muted-foreground">
                 {note}
               </p>
@@ -897,15 +1038,20 @@ function OwnerCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index
       </CardHeader>
       <CardContent className="space-y-1">
         {METRICS.map((m) => {
-          const { row, stat, median, unit } = reading(data, m.id, index)
+          const { row, stat, median, unit, line } = reading(data, m.id, index)
           const n = stat?.n ?? 0
           const copy = t.metrics[m.id]
+          const target = targetText(t, line, unit)
           return (
             <Line
               key={m.id}
-              status="display"
+              status={row.status}
               name={copy.name}
-              sub={n > 0 ? t.rowSub(m.tag, countText(t, m.id, n, week?.responseEntries ?? n), show(median, unit)) : t.rowNone(m.tag)}
+              sub={
+                n > 0
+                  ? t.rowSub(m.tag, countText(t, m.id, n, week?.responseEntries ?? n), show(median, unit), target)
+                  : t.rowNone(m.tag, target)
+              }
               spark={<Sparkline row={row} width={56} height={18} />}
               value={show(row.value, unit)}
               delta={<Delta row={row} />}

@@ -14,7 +14,7 @@
 import { readSettings } from '../settings.ts'
 import { type PmEvent, PM_NAME, type ReadAuth, readActions, relevant, sanitize } from './actions.ts'
 import { CALENDAR } from './calendar.ts'
-import { buildScorecard } from './metrics.ts'
+import { AWAY_DAYS, LONG_WAIT_DAYS, MIN_SAMPLES, MIN_WORKDAYS, YELLOW_FACTOR, buildScorecard } from './metrics.ts'
 import { type Batch, type Capture, batchOf, loadStore, mergeBatch, storeKind } from './store.ts'
 import { WORK_END, WORK_START, WORKDAY_HOURS } from './workTime.ts'
 
@@ -130,6 +130,14 @@ export async function supportTicketUpdates(tenantId: string, token: string, forc
       workdayHours: WORKDAY_HOURS,
       holidays: CALENDAR.holidays,
       makeupWorkdays: CALENDAR.makeupWorkdays,
+    },
+    /** The benchmark and exclusion rules, so the page states them from the same constants the engine uses. */
+    rules: {
+      awayDays: AWAY_DAYS,
+      longWaitDays: LONG_WAIT_DAYS,
+      minSamples: MIN_SAMPLES,
+      minWorkdays: MIN_WORKDAYS,
+      yellowFactor: YELLOW_FACTOR,
     },
   }
 }

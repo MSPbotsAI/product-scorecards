@@ -23,11 +23,16 @@
  * lands in, so a finished week's numbers never move again. Nothing is averaged that is not also
  * listed: every counted row is shown behind its number, and every row that is not counted is shown
  * with the reason — a waiting ticket left out of an average is how an average lies.
+ *
+ * A request that spent more than AWAY_DAYS out of the queue on the way is listed but in no average.
+ * Each week is coloured against its quarter's benchmark, the previous quarter's average (benchmarkFor).
  */
 import { PM_NAME, inQueue, type Party, type PmEvent } from './actions.ts'
+import { HISTORY_BASELINES } from './baselines.ts'
 import { type EventStore, coverage } from './store.ts'
 import {
   type WeekShape,
+  WORKDAY_HOURS,
   clockStart,
   isWorkday,
   localDate,
@@ -48,6 +53,33 @@ const PAIR_WINDOW_MS = 30 * 60_000
  * into the queue by the PM at 16:46 — showed as "waiting", then "closed before any response".
  */
 const FILING_WINDOW_MS = 30 * 60_000
+
+/**
+ * A request that was out of the PM's queue for more than this many calendar days in one stretch is
+ * listed, but kept out of every average: the week's number and the quarter benchmark. This applies
+ * between its first arrival and the clock stopping, for example a ticket moved out and back later.
+ *
+ * The requirement and bug clocks run from the first arrival, and a month spent elsewhere is not the
+ * PM's time. Time INSIDE the queue always counts, however long it is: months waiting in the queue are
+ * the PM's wait (decided by the PM, 2026-10-15).
+ *
+ * First response is never affected. Its clock stops as soon as a ticket leaves the queue.
+ */
+export const AWAY_DAYS = 30
+
+/**
+ * A wait longer than this many calendar days counts in its week like any other wait, but stays out of
+ * the quarter benchmark (decided by the PM, 2026-10-15).
+ *
+ * Months spent in the queue are the PM's wait, so the week they end in shows them. In the benchmark,
+ * though, three such tickets would set the bar. Q3's first-response average was 33.1 h with them and
+ * 7.7 h without, and a bar at 33 h judges nothing.
+ *
+ * Since April 2026 no wait has fallen between 29 and 41 days, so the cut sits in a natural gap.
+ */
+export const LONG_WAIT_DAYS = 30
+const DAY_MS = 86_400_000
+const isLongWait = (fromIso: string, toIso: string) => Date.parse(toIso) - Date.parse(fromIso) > LONG_WAIT_DAYS * DAY_MS
 
 export type CycleOutcome =
   /** Counted: the PM emailed the customer. */
@@ -92,6 +124,8 @@ export interface ResponseRow {
   by: string | null
   /** Set when a counted response scored exactly zero because the working clock had not started. */
   offClock: OffClock
+  /** A counted response that waited more than LONG_WAIT_DAYS: in its week's average, not in a benchmark. */
+  longWait: boolean
 }
 
 /**
@@ -114,6 +148,8 @@ export type EntryStatus =
   | 'history-before-data'
   /** The history is complete but shows no arrival before the link — created straight into the queue. */
   | 'no-arrival-on-record'
+  /** Timed, but the ticket was out of the queue for more than AWAY_DAYS in one stretch on the way: listed, in no average. */
+  | 'away'
 
 export interface EntryRow {
   ticket: string
@@ -124,13 +160,18 @@ export interface EntryRow {
   via: 'link' | 'handoff'
   /** "PRD-19414", "MB-12057", a Canny post path, or for a hand-off the receiving party. */
   ref: string
+  /** The first arrival and the working hours from it, for counted and away rows; null otherwise. */
   arrivedAt: string | null
   at: string
   hours: number | null
+  /** The longest stretch out of the queue between the first arrival and the stop, in calendar days; null when not timed. */
+  awayDays: number | null
   week: string
   status: EntryStatus
   /** Set when a counted entry scored exactly zero because the working clock had not started. */
   offClock: OffClock
+  /** A counted entry that waited more than LONG_WAIT_DAYS: in its week's average, not in a benchmark. */
+  longWait: boolean
 }
 
 export interface Stat {
@@ -139,7 +180,7 @@ export interface Stat {
   medianHours: number | null
 }
 
-export interface WeekRow {
+interface WeekCore {
   monday: string
   label: string
   /** 'coverage' = the log starts mid-week; 'in-progress' = the week is not over yet. */
@@ -153,6 +194,13 @@ export interface WeekRow {
   prd: Stat
   mb: Stat
   canny: Stat
+}
+
+export interface WeekRow extends WeekCore {
+  /** The quarter it is judged in — the one its Monday falls in, "2026-Q4". */
+  quarter: string
+  /** Each number against that quarter's benchmark. */
+  light: Record<Metric, Light>
 }
 
 /**
@@ -177,6 +225,8 @@ const isArrival = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.to) && 
 const isDeparture = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.from) && !inQueue(e.to)
 const isReply = (e: PmEvent) => e.who === PM_NAME && (e.outcome === 'Email User' || e.outcome === 'Email Update')
 const isClose = (e: PmEvent) => e.who === PM_NAME && (e.outcome === 'Resolved' || e.outcome === 'Close')
+/** A response that counts: the PM replied, or handed the ticket off with a private note. */
+const counts = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off'
 const later = (a: string, b: string) => (Date.parse(a) >= Date.parse(b) ? a : b)
 
 /** Lucas takes bugs in for development; a move to him, or to anyone in Development, puts a bug into dev. */
@@ -240,6 +290,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       to: end.to ?? null,
       by: end.by ?? null,
       offClock: isCounted ? offClock(hours, endedAt) : null,
+      longWait: isCounted && isLongWait(cur.arrivedAt, endedAt),
     })
     cur = null
   }
@@ -298,9 +349,32 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       to: null,
       by: null,
       offClock: null,
+      longWait: false,
     })
   }
   return rows
+}
+
+/**
+ * The longest single stretch a ticket spent out of the queue between two instants, in milliseconds:
+ * from a move out to the next move back in, or to `toIso` if it never came back.
+ */
+function longestAway(evs: PmEvent[], fromIso: string, toIso: string): number {
+  const from = Date.parse(fromIso)
+  const to = Date.parse(toIso)
+  let outSince: number | null = null
+  let longest = 0
+  for (const e of evs) {
+    const t = Date.parse(e.at)
+    if (t <= from) continue
+    if (t >= to) break
+    if (outSince === null && isDeparture(e)) outSince = t
+    else if (outSince !== null && isArrival(e)) {
+      longest = Math.max(longest, t - outSince)
+      outSince = null
+    }
+  }
+  return outSince === null ? longest : Math.max(longest, to - outSince)
 }
 
 /**
@@ -317,12 +391,16 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
     const e = [link, handoff].filter((x): x is PmEvent => !!x).sort(byTime)[0]
     if (!e) continue
     const via: EntryRow['via'] = e === link ? 'link' : 'handoff'
+    const timed = complete && !!firstArrival && Date.parse(firstArrival) <= Date.parse(e.at)
+    const away = timed && firstArrival ? longestAway(evs, firstArrival, e.at) : null
     const status: EntryStatus = !complete
       ? 'history-before-data'
-      : !firstArrival || Date.parse(firstArrival) > Date.parse(e.at)
+      : !timed
         ? 'no-arrival-on-record'
-        : 'counted'
-    const hours = status === 'counted' && firstArrival ? workingHoursBetween(firstArrival, e.at) : null
+        : (away ?? 0) > AWAY_DAYS * DAY_MS
+          ? 'away'
+          : 'counted'
+    const hours = timed && firstArrival ? workingHoursBetween(firstArrival, e.at) : null
     out.push({
       ticket,
       ...meta,
@@ -330,12 +408,14 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
       via,
       // A hand-off always names its receiver: isBugHandoff only matches a move whose "to" is known.
       ref: via === 'link' ? e[kind][0] : (party(e.to) ?? ''),
-      arrivedAt: status === 'counted' ? firstArrival : null,
+      arrivedAt: timed ? firstArrival : null,
       at: e.at,
       hours,
+      awayDays: away === null ? null : Math.round((away / DAY_MS) * 10) / 10,
       week: weekOf(e.at),
       status,
       offClock: status === 'counted' ? offClock(hours, e.at) : null,
+      longWait: status === 'counted' && !!firstArrival && isLongWait(firstArrival, e.at),
     })
   }
   return out
@@ -357,18 +437,150 @@ function stat(hours: number[]): Stat {
   }
 }
 
+/* ── benchmarks ── */
+
+export type Metric = 'response' | EntryKind
+/** A number's colour. 'display' = nothing to judge it by: no benchmark, or nothing measured that week. */
+export type Light = 'green' | 'yellow' | 'red' | 'display'
+
+/** A benchmark needs this many measurements behind it; with fewer, one fast or slow ticket would set the bar. */
+export const MIN_SAMPLES = 10
+/** Yellow runs from the benchmark up to this multiple of it; red is past that. */
+export const YELLOW_FACTOR = 1.25
+/** A week with fewer working days than this is a holiday week, not a normal one, and stays out of a benchmark. */
+export const MIN_WORKDAYS = 3
+
+const METRIC_IDS: Metric[] = ['response', 'prd', 'mb', 'canny']
+/** How the page shows each number. Colours compare the value as shown, so a shown "7.3 h" is judged as 7.3. */
+const SHOWN_IN: Record<Metric, 'h' | 'd'> = { response: 'h', prd: 'd', mb: 'd', canny: 'd' }
+const inShownUnit = (hours: number, metric: Metric) => (SHOWN_IN[metric] === 'h' ? hours : hours / WORKDAY_HOURS)
+const round1 = (v: number) => Math.round(v * 10) / 10
+
+/** A quarter's average of one number: working hours over `n` measurements; null when it had none. */
+export interface Average {
+  hours: number | null
+  n: number
+}
+
+export interface Line extends Average {
+  /**
+   * The bounds, in the number's shown unit at the shown one decimal: green up to `green`, yellow up to
+   * `yellow`, red above. Null when n is under MIN_SAMPLES — that number is then shown as a trend only.
+   */
+  green: number | null
+  yellow: number | null
+}
+
+export interface Benchmark {
+  /** The quarter judged, "2026-Q4", and the quarter whose average judges it, "2026-Q3". */
+  quarter: string
+  from: string
+  /** 'history': averaged from Halo's full action history (baselines.ts). 'log': averaged from this log. */
+  source: 'history' | 'log'
+  lines: Record<Metric, Line>
+}
+
+/** The quarter a week is judged in: the one its Monday falls in, "2026-Q4". */
+export function quarterOf(monday: string): string {
+  return `${monday.slice(0, 4)}-Q${Math.floor((Number(monday.slice(5, 7)) - 1) / 3) + 1}`
+}
+
+function previousQuarter(quarter: string): string {
+  const year = Number(quarter.slice(0, 4))
+  const q = Number(quarter.slice(6))
+  return q === 1 ? `${year - 1}-Q4` : `${year}-Q${q - 1}`
+}
+
+/** The Mondays that fall in a quarter, oldest first. */
+function mondaysIn(quarter: string): string[] {
+  const year = Number(quarter.slice(0, 4))
+  const q = Number(quarter.slice(6))
+  const start = Date.UTC(year, (q - 1) * 3, 1)
+  const end = Date.UTC(year, q * 3, 1)
+  const out: string[] = []
+  for (let t = start + ((8 - new Date(start).getUTCDay()) % 7) * DAY_MS; t < end; t += 7 * DAY_MS) {
+    out.push(new Date(t).toISOString().slice(0, 10))
+  }
+  return out
+}
+
+const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
+
+/**
+ * A quarter's average of each number, over the same measurements its weeks average: per-ticket units
+ * for first response, counted entries for the rest. Two things are left out:
+ * - weeks with fewer than MIN_WORKDAYS working days;
+ * - waits longer than LONG_WAIT_DAYS.
+ * Null unless every week of the quarter is in the log, complete and free of gaps, so a benchmark is
+ * never averaged from part of a quarter.
+ */
+export function quarterAverages(
+  card: { weeks: WeekCore[]; gaps: { from: string; to: string }[]; response: ResponseRow[]; entries: EntryRow[] },
+  quarter: string,
+): Record<Metric, Average> | null {
+  const mondays = mondaysIn(quarter)
+  const byMonday = new Map(card.weeks.map((w) => [w.monday, w]))
+  const startMs = Date.parse(`${mondays[0]}T00:00:00+08:00`)
+  const endMs = Date.parse(`${mondays[mondays.length - 1]}T00:00:00+08:00`) + 7 * DAY_MS
+  const covered =
+    mondays.every((m) => byMonday.has(m) && byMonday.get(m)?.partial === null) &&
+    !card.gaps.some((g) => Date.parse(g.from) < endMs && Date.parse(g.to) > startMs)
+  if (!covered) return null
+  const eligible = new Set(mondays.filter((m) => (byMonday.get(m)?.shape.workdays ?? 0) >= MIN_WORKDAYS))
+  const average = (hours: number[]): Average => ({ hours: hours.length ? mean(hours) : null, n: hours.length })
+  const responses = card.response.filter((r) => counts(r) && !r.longWait && eligible.has(r.week as string))
+  const entryHours = (kind: EntryKind) =>
+    card.entries
+      .filter((r) => r.kind === kind && r.status === 'counted' && !r.longWait && eligible.has(r.week))
+      .map((r) => r.hours as number)
+  return {
+    response: average(ticketWeeks(responses).map((t) => t.meanHours)),
+    prd: average(entryHours('prd')),
+    mb: average(entryHours('mb')),
+    canny: average(entryHours('canny')),
+  }
+}
+
+function lineOf(metric: Metric, { hours, n }: Average): Line {
+  if (hours === null || n < MIN_SAMPLES) return { hours, n, green: null, yellow: null }
+  const shown = inShownUnit(hours, metric)
+  return { hours, n, green: round1(shown), yellow: round1(shown * YELLOW_FACTOR) }
+}
+
+/**
+ * The benchmark a quarter is judged by: the previous quarter's average, fixed for the whole quarter
+ * (decided by the PM, 2026-10-14). It comes from baselines.ts for quarters the log does not reach,
+ * and is averaged from the log itself once the log covers the whole previous quarter. Null when
+ * neither has it; every number in that quarter is then shown as a trend.
+ */
+function benchmarkFor(quarter: string, card: Parameters<typeof quarterAverages>[0]): Benchmark | null {
+  const known = HISTORY_BASELINES[quarter]
+  const from = known?.from ?? previousQuarter(quarter)
+  const averages = known?.lines ?? quarterAverages(card, from)
+  if (!averages) return null
+  const lines = Object.fromEntries(METRIC_IDS.map((m) => [m, lineOf(m, averages[m])])) as Record<Metric, Line>
+  return { quarter, from, source: known ? 'history' : 'log', lines }
+}
+
+/** A week's colour: its number, as shown, against the benchmark's bounds. */
+function lightOf(metric: Metric, s: Stat, line: Line | undefined): Light {
+  if (!line || line.green === null || line.yellow === null || s.n === 0 || s.meanHours === null) return 'display'
+  const v = round1(inShownUnit(s.meanHours, metric))
+  return v <= line.green ? 'green' : v <= line.yellow ? 'yellow' : 'red'
+}
+
 export interface PmScorecard {
   asOf: string
   coverageFrom: string | null
   gaps: { from: string; to: string }[]
   weeks: WeekRow[]
+  /** The benchmark of each quarter the weeks fall in, newest first; a quarter without one is absent. */
+  benchmarks: Benchmark[]
   response: ResponseRow[]
   /** The per-ticket units each week's PM1 average is taken over. */
   responseTickets: TicketWeek[]
   entries: EntryRow[]
 }
-
-const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length
 
 /** Group the counted first responses by ticket and week, keeping each ticket's all-weeks mean beside it. */
 function ticketWeeks(rows: ResponseRow[]): TicketWeek[] {
@@ -418,11 +630,10 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
   const { from, gaps } = coverage(store)
   const coverageWeek = from ? weekOf(from) : null
   const thisWeek = weekOf(now)
-  const counted = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off'
-  const countedResponses = response.filter(counted)
+  const countedResponses = response.filter(counts)
   const responseTickets = ticketWeeks(countedResponses)
 
-  const weeks: WeekRow[] = (from ? weeksBetween(from, now) : [])
+  const cores: WeekCore[] = (from ? weeksBetween(from, now) : [])
     .map((monday) => {
       const hours = (kind: EntryKind) =>
         entryRows.filter((r) => r.kind === kind && r.status === 'counted' && r.week === monday).map((r) => r.hours as number)
@@ -440,5 +651,16 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
     })
     .reverse()
 
-  return { asOf: now, coverageFrom: from, gaps, weeks, response, responseTickets, entries: entryRows }
+  const card = { weeks: cores, gaps, response, entries: entryRows }
+  const benchmarks = [...new Set(cores.map((w) => quarterOf(w.monday)))]
+    .map((q) => benchmarkFor(q, card))
+    .filter((b): b is Benchmark => b !== null)
+  const weeks: WeekRow[] = cores.map((w) => {
+    const quarter = quarterOf(w.monday)
+    const lines = benchmarks.find((b) => b.quarter === quarter)?.lines
+    const light = Object.fromEntries(METRIC_IDS.map((m) => [m, lightOf(m, w[m], lines?.[m])])) as Record<Metric, Light>
+    return { ...w, quarter, light }
+  })
+
+  return { asOf: now, coverageFrom: from, gaps, weeks, benchmarks, response, responseTickets, entries: entryRows }
 }

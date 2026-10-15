@@ -158,7 +158,8 @@ function cannyPaths(note: string): string[] {
   return [...new Set(paths)]
 }
 
-function toEvent(r: Row): PmEvent | null {
+/** One Halo action row reduced to the facts the numbers read; null without an id, a ticket or a time. */
+export function toEvent(r: Row): PmEvent | null {
   const id = String(r.action_id ?? '')
   const ticket = String(r.ticket_id ?? '')
   const at = String(r.datetime ?? '')
