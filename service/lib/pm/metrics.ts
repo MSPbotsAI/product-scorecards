@@ -72,10 +72,10 @@ export const AWAY_DAYS = 30
  * the quarter benchmark (decided by the PM, 2026-10-15).
  *
  * Months spent in the queue are the PM's wait, so the week they end in shows them. In the benchmark,
- * though, three such tickets would set the bar. Q3's first-response average was 33.1 h with them and
- * 7.7 h without, and a bar at 33 h judges nothing.
+ * though, three such tickets would set the bar. Q3's first-response average was 28.8 h with them and
+ * 6.2 h without, and a bar at 29 h judges nothing.
  *
- * Since April 2026 no wait has fallen between 29 and 41 days, so the cut sits in a natural gap.
+ * Since April 2026 no wait has fallen between 27 and 39 days, so the cut sits in a natural gap.
  */
 export const LONG_WAIT_DAYS = 30
 const DAY_MS = 86_400_000

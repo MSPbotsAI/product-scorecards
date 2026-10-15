@@ -20,12 +20,14 @@ import { WORKDAY_HOURS } from '../service/lib/pm/workTime.ts'
 
 const DATASET = '1563065169343234049'
 /**
- * The quarters averaged, and who counted as "the PM" in each (decided by the PM, 2026-10-14): Grace
- * Guo and Micus Zhang worked the queue with Frank in Q2.
+ * The quarters averaged, and who counted as "the PM" in each (decided by the PM):
+ * - Q2 (2026-10-14): Grace Guo and Micus Zhang worked the queue with Frank, so all four accounts.
+ * - Q3 (2026-10-15): Frank only, the same as the page counts him. 122 of the 126 measurements were
+ *   his anyway.
  */
 const QUARTERS: Record<string, string[]> = {
   '2026-Q2': ['Frank Tian', 'Grace Guo', 'Micus Zhang', 'product_zd@mspbots.ai'],
-  '2026-Q3': ['Frank Tian', 'Grace Guo', 'Micus Zhang', 'product_zd@mspbots.ai'],
+  '2026-Q3': ['Frank Tian'],
 }
 /** The other names a team member appears under on a queue move. */
 const ALIASES: Record<string, string[]> = {
