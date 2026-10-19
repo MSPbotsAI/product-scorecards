@@ -12,9 +12,8 @@
  * note text is kept.
  */
 import { writeFileSync } from 'node:fs'
-import { type Metric, type Sample, buildScorecard, quarterOf, quarterSamples } from '../service/lib/pm/metrics.ts'
+import { DAY_HOURS, type Metric, type Sample, buildScorecard, quarterOf, quarterSamples } from '../service/lib/pm/metrics.ts'
 import type { EventStore } from '../service/lib/pm/store.ts'
-import { WORKDAY_HOURS } from '../service/lib/pm/workTime.ts'
 import { HOLD, PM_ACCOUNTS, RELEASE } from '../service/lib/pm/actions.ts'
 import { eventsFor, firstActions, readActions, readTicketActions, type Row } from './halo-ods.ts'
 
@@ -63,7 +62,7 @@ for (const [quarter, team] of Object.entries(QUARTERS)) {
   const line = (m: Metric) => {
     const hours = samples.filter((x) => x.metric === m && !x.out).map((x) => x.hours)
     const avg = hours.reduce((a, b) => a + b, 0) / hours.length
-    const shown = m === 'response' ? `${avg.toFixed(1)} h` : `${(avg / WORKDAY_HOURS).toFixed(1)} d`
+    const shown = m === 'response' ? `${avg.toFixed(1)} h` : `${(avg / DAY_HOURS).toFixed(1)} d`
     return `${m} ${shown} (n ${hours.length}, left out ${samples.filter((x) => x.metric === m && x.out).length})`
   }
   console.log(`${quarter} → judges ${judged} [${team.join(', ')}]: ${(['response', 'prd', 'canny', 'mb'] as const).map(line).join(' | ')}`)

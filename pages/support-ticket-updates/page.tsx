@@ -53,7 +53,6 @@ import {
   type EntryRow,
   type Light,
   type Line as BenchmarkLine,
-  type OffClock,
   type ResponseRow,
   type SupportUpdatesPayload,
   type TicketWeek,
@@ -85,7 +84,7 @@ const METRICS: { id: Metric; tag: string; unit: Unit }[] = [
 const EN = {
   title: 'Support Ticket Updates',
   subtitle:
-    'The PM’s numbers, read once a week. First response counts clock time from the moment a ticket is escalated into the PM queue — what the customer waits. The other three count the PM’s working days. A week runs Monday to Sunday. Every row opens the tickets behind it.',
+    'The PM’s numbers, read once a week, all in clock time from the moment a ticket is escalated into the PM queue — nights, weekends and holidays included, because that is what the customer waits. A week runs Monday to Sunday. Every row opens the tickets behind it.',
   refresh: 'Refresh',
   thisWeek: 'this week',
   logStartsMidWeek: 'log starts mid-week',
@@ -108,7 +107,7 @@ const EN = {
       noun: (n: number): string => (n === 1 ? 'requirement' : 'requirements'),
       short: 'The ticket’s first arrival in the queue, to the first ClickUp PRD link the PM posts on it.',
       notes: [
-        'Measured from the first time the ticket entered the PM queue, not from its latest return, so the whole path a requirement takes — clarification rounds included — is in the number.',
+        'Measured from the first time the ticket entered the PM queue, not from its latest return, so the whole path a requirement takes — clarification rounds included — is in the number. Counted in calendar days of 24 h, weekends and holidays included.',
         'Only a pasted ClickUp link counts (app.clickup.com/t/…/PRD-…); a bare "PRD-14894" in prose is usually a reference to something else.',
         'A ticket created before the log starts has no first arrival on record, so it is listed as not counted rather than guessed.',
       ],
@@ -127,7 +126,7 @@ const EN = {
       noun: (n: number): string => (n === 1 ? 'bug' : 'bugs'),
       short: 'The ticket’s first arrival in the queue, to the PM handing it into development.',
       notes: [
-        'The clock stops when the PM moves the ticket to Lucas (who takes bugs in for development) or to anyone in Development, or posts a ClickUp MB link himself — whichever comes first.',
+        'The clock stops when the PM moves the ticket to Lucas (who takes bugs in for development) or to anyone in Development, or posts a ClickUp MB link himself — whichever comes first. Counted in calendar days of 24 h, weekends and holidays included.',
         'The MB task Lucas logs afterwards does not stop it: reproducing and logging the bug is development’s time, not the PM’s.',
         'Kept apart from requirements: bugs and requirements move at different speeds, and one average over both would describe neither.',
       ],
@@ -215,7 +214,6 @@ const EN = {
   colArrived: 'Entered queue · from',
   colResponded: 'First response',
   colLeft: 'Left',
-  colTime: 'Working time',
   colElapsed: 'Time',
   colHow: 'How',
   colWhy: 'Why not counted',
@@ -239,14 +237,10 @@ const EN = {
     'history-before-data': 'created before the log starts — first arrival not on record',
     'no-arrival-on-record': 'no arrival into the queue on record',
   } as Record<string, string>,
-  offClockEntry: {
-    'rest-day': 'On a rest day — the working clock had not started',
-    'after-hours': 'Outside working hours — the working clock had not started',
-  },
   source: 'Source: ',
   logFrom: (date: string) => `log from ${date}`,
-  clock: (hours: string, confirmed: boolean) =>
-    `first response in clock time; the others in working time ${hours}, CN calendar (${confirmed ? 'confirmed' : 'proposed'})`,
+  clock: (confirmed: boolean) =>
+    `clock time, Asia/Shanghai; the CN calendar (${confirmed ? 'confirmed' : 'proposed'}) only marks holiday weeks`,
   // waiting dialog
   asOfNow: 'as of now',
   waitingDescription:
@@ -260,8 +254,8 @@ const EN = {
   emptyLog: 'No events in the log yet.',
   refreshing: 'Refreshing from Halo… ',
   captured: (at: string, source: string) => `Captured ${at} (${source}). `,
-  legend: (workday: number, from: string) =>
-    `First response in clock hours (h); the other three in working days (d) of ${workday} h. Halo keeps 14 days of actions, so they are copied into a log that starts ${from}.`,
+  legend: (dayHours: number, from: string) =>
+    `All clock time: h = hours, d = calendar days of ${dayHours} h. Halo keeps 14 days of actions, so they are copied into a log that starts ${from}.`,
   importLog: 'Import log',
   importHint: 'Backfill from an exported event log (the local PM Weekly file). Only what this log does not already hold is added.',
   imported: (added: number, read: number) => `Imported — ${added} new of ${read} events.`,
@@ -272,7 +266,7 @@ const EN = {
 const ZH: typeof EN = {
   title: 'Support 工单更新',
   subtitle:
-    'PM 的几个数字，每周看一次。首次响应从工单升级进 PM 队列那一刻起按自然时间计——就是客户等待的时长；其余三项按 PM 的工作日计。一周为周一至周日。每一行都能点开，查看背后的工单。',
+    'PM 的几个数字，每周看一次，全部从工单升级进 PM 队列那一刻起按自然时间计——晚上、周末和假期都算，因为客户就是等了这么久。一周为周一至周日。每一行都能点开，查看背后的工单。',
   refresh: '刷新',
   thisWeek: '本周',
   logStartsMidWeek: '日志从周中开始',
@@ -295,7 +289,7 @@ const ZH: typeof EN = {
       noun: () => '个需求',
       short: '工单首次进入队列，到 PM 在工单上贴出第一个 ClickUp PRD 链接为止。',
       notes: [
-        '从工单第一次进入 PM 队列起算，而不是从最近一次退回起算，因此需求走过的完整路径——包括来回澄清——都计在内。',
+        '从工单第一次进入 PM 队列起算，而不是从最近一次退回起算，因此需求走过的完整路径——包括来回澄清——都计在内。按日历天（每天 24 小时）计，周末和假期都算。',
         '只有贴出的 ClickUp 链接才算（app.clickup.com/t/…/PRD-…）；正文里单独写的 "PRD-14894" 通常是在引用别的东西。',
         '日志起点之前创建的工单没有首次到达记录，因此列为「不计入」，而不是去猜。',
       ],
@@ -314,7 +308,7 @@ const ZH: typeof EN = {
       noun: () => '个 bug',
       short: '工单首次进入队列，到 PM 把它交给研发为止。',
       notes: [
-        'PM 把工单转给 Lucas（负责接收 bug 进研发）或 Development 部门的任何人，或 PM 本人贴出 ClickUp MB 链接——以先发生者为准——即停表。',
+        'PM 把工单转给 Lucas（负责接收 bug 进研发）或 Development 部门的任何人，或 PM 本人贴出 ClickUp MB 链接——以先发生者为准——即停表。按日历天（每天 24 小时）计，周末和假期都算。',
         'Lucas 之后建的 MB 任务不作为停表点：复现和登记 bug 是研发的时间，不是 PM 的。',
         '与需求分开统计：bug 和需求的推进速度不同，混在一起的平均值哪个都描述不了。',
       ],
@@ -398,7 +392,6 @@ const ZH: typeof EN = {
   colArrived: '进队列时间 · 来源',
   colResponded: '首次响应时间',
   colLeft: '离开时间',
-  colTime: '工作用时',
   colElapsed: '用时',
   colHow: '方式',
   colWhy: '未计入原因',
@@ -422,14 +415,9 @@ const ZH: typeof EN = {
     'history-before-data': '工单创建早于日志起点——首次到达无记录',
     'no-arrival-on-record': '没有进入队列的记录',
   },
-  offClockEntry: {
-    'rest-day': '休息日完成——工作时钟尚未开始',
-    'after-hours': '非工作时段——工作时钟尚未开始',
-  },
   source: '数据源：',
   logFrom: (date: string) => `日志起点 ${date}`,
-  clock: (hours: string, confirmed: boolean) =>
-    `首次响应按自然时间；其余按工作时间 ${hours}，中国节假日日历（${confirmed ? '已确认' : '待确认'}）`,
+  clock: (confirmed: boolean) => `自然时间（Asia/Shanghai）；中国节假日日历（${confirmed ? '已确认' : '待确认'}）只用来标出假期周`,
   asOfNow: '截至当前',
   waitingDescription:
     '所选那一周结束时（本周为当前），已在队列中、尚未回复客户也未转出的工单。显示到那时为止的自然时间（不含挂起）——回复前不计入任何平均值。挂起中的单列在下面，不计入数字。',
@@ -440,8 +428,8 @@ const ZH: typeof EN = {
   emptyLog: '日志里还没有事件。',
   refreshing: '正在从 Halo 刷新… ',
   captured: (at: string, source: string) => `采集于 ${at}（${source}）。`,
-  legend: (workday: number, from: string) =>
-    `首次响应以自然小时（h）计；其余三项以工作日（d，每天 ${workday} 小时）计。Halo 只保留 14 天的 action，因此会复制到日志中，日志起点 ${from}。`,
+  legend: (dayHours: number, from: string) =>
+    `全部按自然时间：h = 小时，d = 日历天（每天 ${dayHours} 小时）。Halo 只保留 14 天的 action，因此会复制到日志中，日志起点 ${from}。`,
   importLog: '导入日志',
   importHint: '用导出的事件日志（本地 PM Weekly 文件）补齐更早的历史。只会添加当前日志里没有的内容。',
   imported: (added: number, read: number) => `已导入——${read} 条事件中新增 ${added} 条。`,
@@ -464,9 +452,9 @@ function local(iso: string | null): string {
 /** One decimal, as displayed — deltas are computed from the rounded values so they match what is shown. */
 const round1 = (v: number) => Math.round(v * 10) / 10
 
-function inUnit(hours: number | null, unit: Unit, workday: number): number | null {
+function inUnit(hours: number | null, unit: Unit, dayHours: number): number | null {
   if (hours === null) return null
-  return round1(unit === 'h' ? hours : hours / workday)
+  return round1(unit === 'h' ? hours : hours / dayHours)
 }
 
 const show = (v: number | null, unit: Unit) => (v === null ? '—' : `${v.toFixed(1)} ${unit}`)
@@ -488,16 +476,16 @@ function rowsFor(data: SupportUpdatesPayload, metric: Metric, week: string) {
  */
 function reading(data: SupportUpdatesPayload, metric: Metric, index: number) {
   const unit = METRICS.find((m) => m.id === metric)?.unit ?? 'h'
-  const workday = data.calendar.workdayHours
+  const dayHours = data.calendar.dayHours
   const week = data.weeks[index]
   const prev = data.weeks[index + 1]
   const stat = week?.[metric]
-  const value = stat && stat.n > 0 ? inUnit(stat.meanHours, unit, workday) : null
-  const previous = prev && prev[metric].n > 0 ? inUnit(prev[metric].meanHours, unit, workday) : null
+  const value = stat && stat.n > 0 ? inUnit(stat.meanHours, unit, dayHours) : null
+  const previous = prev && prev[metric].n > 0 ? inUnit(prev[metric].meanHours, unit, dayHours) : null
   const history = data.weeks
     .slice(index)
     .filter((w) => w[metric].n > 0)
-    .map((w) => ({ week: w.label, value: inUnit(w[metric].meanHours, unit, workday) as number }))
+    .map((w) => ({ week: w.label, value: inUnit(w[metric].meanHours, unit, dayHours) as number }))
     .reverse()
   // Judged on the server against the week's quarter benchmark, at the one decimal shown here.
   const benchmark = week ? data.benchmarks.find((b) => b.quarter === week.quarter) : undefined
@@ -516,7 +504,7 @@ function reading(data: SupportUpdatesPayload, metric: Metric, index: number) {
     targetText: '',
     history,
   }
-  return { unit, stat, row, benchmark, line, median: stat && stat.n > 0 ? inUnit(stat.medianHours, unit, workday) : null }
+  return { unit, stat, row, benchmark, line, median: stat && stat.n > 0 ? inUnit(stat.medianHours, unit, dayHours) : null }
 }
 
 /** "benchmark 7.7 h", or "trend only" when the quarter has no usable benchmark for this number. */
@@ -634,11 +622,6 @@ function Request({ summary, client }: { summary: string; client: string }) {
   )
 }
 
-function OffClockNote({ value, labels }: { value: OffClock; labels: Record<'rest-day' | 'after-hours', string> }) {
-  if (!value) return null
-  return <div className="mt-0.5 text-[11px] text-warning-700">{labels[value]}</div>
-}
-
 /**
  * First-response rows. Given `units` (the PM1 counted list), a ticket's entries sit together and one
  * merged cell carries the ticket's average: the value the week's number is averaged over, so the
@@ -726,13 +709,13 @@ function RefLink({ row, t }: { row: EntryRow; t: Copy }) {
 
 function EntryRows({
   rows,
-  workday,
+  dayHours,
   awayLimit,
   reason,
   t,
 }: {
   rows: EntryRow[]
-  workday: number
+  dayHours: number
   awayLimit: number
   reason?: boolean
   t: Copy
@@ -745,7 +728,7 @@ function EntryRows({
           <TableHead>{t.colRequest}</TableHead>
           <TableHead className="w-24">{t.colFirstArrival}</TableHead>
           <TableHead className="w-24">{t.colStopped}</TableHead>
-          {!reason && <TableHead className="w-16 text-right">{t.colTime}</TableHead>}
+          {!reason && <TableHead className="w-16 text-right">{t.colElapsed}</TableHead>}
           <TableHead className="w-48">{reason ? t.colWhy : t.colRef}</TableHead>
         </TableRow>
       </TableHeader>
@@ -758,7 +741,7 @@ function EntryRows({
             <TableCell className="align-top tabular-nums">{local(r.at)}</TableCell>
             {!reason && (
               <TableCell className="text-right align-top tabular-nums">
-                {r.hours === null ? '—' : `${(r.hours / workday).toFixed(1)} d`}
+                {r.hours === null ? '—' : `${(r.hours / dayHours).toFixed(1)} d`}
                 {r.hours !== null && <div className="text-[11px] text-muted-foreground">{r.hours.toFixed(1)} h</div>}
               </TableCell>
             )}
@@ -769,7 +752,6 @@ function EntryRows({
                 </div>
               )}
               <RefLink row={r} t={t} />
-              <OffClockNote value={r.offClock} labels={t.offClockEntry} />
               {r.longWait && r.arrivedAt && (
                 <div className="mt-0.5 text-[11px] text-warning-700">{t.longWait(daysBetween(r.arrivedAt, r.at))}</div>
               )}
@@ -791,7 +773,7 @@ function Source({ data, t }: { data: SupportUpdatesPayload; t: Copy }) {
           <span className="font-mono">Halo Actions ({data.dataset})</span>
         </span>
         <span>{t.logFrom(local(data.coverageFrom))}</span>
-        <span>{t.clock(data.calendar.hours, data.calendar.status === 'confirmed')}</span>
+        <span>{t.clock(data.calendar.status === 'confirmed')}</span>
       </div>
     </>
   )
@@ -861,7 +843,7 @@ function MetricDialog({
   const copy = t.metrics[metric]
   const tag = METRICS.find((m) => m.id === metric)?.tag ?? ''
   const [index, setIndex] = useState(initial)
-  const workday = data.calendar.workdayHours
+  const dayHours = data.calendar.dayHours
   const { unit, stat, row, median, benchmark } = reading(data, metric, index)
   const week = data.weeks[index]
   const { counted: rows, other } = week ? rowsFor(data, metric, week.monday) : { counted: [], other: [] }
@@ -872,9 +854,9 @@ function MetricDialog({
       : undefined
   // History newest first, each with its change against the week before it.
   const history = data.weeks.map((w, i) => {
-    const v = w[metric].n > 0 ? inUnit(w[metric].meanHours, unit, workday) : null
+    const v = w[metric].n > 0 ? inUnit(w[metric].meanHours, unit, dayHours) : null
     const next = data.weeks[i + 1]
-    const before = next && next[metric].n > 0 ? inUnit(next[metric].meanHours, unit, workday) : null
+    const before = next && next[metric].n > 0 ? inUnit(next[metric].meanHours, unit, dayHours) : null
     return { i, w, v, diff: v !== null && before !== null ? round1(v - before) : null }
   })
   const n = stat?.n ?? 0
@@ -979,7 +961,7 @@ function MetricDialog({
               <ResponseRows rows={rows as ResponseRow[]} units={units} t={t} />
             </>
           ) : (
-            <EntryRows rows={rows as EntryRow[]} workday={workday} awayLimit={data.rules.awayDays} t={t} />
+            <EntryRows rows={rows as EntryRow[]} dayHours={dayHours} awayLimit={data.rules.awayDays} t={t} />
           )}
           {other.length > 0 && (
             <div className="rounded-md border border-dashed p-2">
@@ -987,7 +969,7 @@ function MetricDialog({
               {metric === 'response' ? (
                 <ResponseRows rows={other as ResponseRow[]} reason t={t} />
               ) : (
-                <EntryRows rows={other as EntryRow[]} workday={workday} awayLimit={data.rules.awayDays} reason t={t} />
+                <EntryRows rows={other as EntryRow[]} dayHours={dayHours} awayLimit={data.rules.awayDays} reason t={t} />
               )}
             </div>
           )}
@@ -1078,10 +1060,10 @@ function weekSpan(monday: string): string {
 }
 
 /** A sample's value in the number's unit, with the hours beside a day value. */
-function SampleValue({ hours, unit, workday }: { hours: number; unit: Unit; workday: number }) {
+function SampleValue({ hours, unit, dayHours }: { hours: number; unit: Unit; dayHours: number }) {
   return (
     <>
-      {show(inUnit(hours, unit, workday), unit)}
+      {show(inUnit(hours, unit, dayHours), unit)}
       {unit === 'd' && <div className="text-[11px] text-muted-foreground">{hours.toFixed(1)} h</div>}
     </>
   )
@@ -1090,13 +1072,13 @@ function SampleValue({ hours, unit, workday }: { hours: number; unit: Unit; work
 function SampleTable({
   rows,
   unit,
-  workday,
+  dayHours,
   why,
   t,
 }: {
   rows: Sample[]
   unit: Unit
-  workday: number
+  dayHours: number
   why?: (x: Sample) => string
   t: Copy
 }) {
@@ -1116,7 +1098,7 @@ function SampleTable({
             <TableCell className="align-top text-muted-foreground">#{x.ticket}</TableCell>
             <TableCell className="align-top">{weekSpan(x.week)}</TableCell>
             <TableCell className="text-right align-top">
-              <SampleValue hours={x.hours} unit={unit} workday={workday} />
+              <SampleValue hours={x.hours} unit={unit} dayHours={dayHours} />
             </TableCell>
             <TableCell className="whitespace-normal align-top text-muted-foreground">
               {why ? why(x) : x.entries && x.entries > 1 ? t.entriesNote(x.entries) : ''}
@@ -1145,7 +1127,7 @@ function BenchmarkDialog({
 }) {
   const t = T[useLang()]
   const spec = METRICS.find((m) => m.id === metric) ?? METRICS[0]
-  const workday = data.calendar.workdayHours
+  const dayHours = data.calendar.dayHours
   const line = benchmark.lines[metric]
   const from = t.quarter(benchmark.from)
   const all = benchmark.samples.filter((x) => x.metric === metric)
@@ -1157,7 +1139,7 @@ function BenchmarkDialog({
     return {
       week,
       n: inWeek.length,
-      value: inUnit(avg, spec.unit, workday),
+      value: inUnit(avg, spec.unit, dayHours),
       short: all.some((x) => x.week === week && x.out === 'short-week'),
     }
   })
@@ -1222,12 +1204,12 @@ function BenchmarkDialog({
           {counted.length === 0 ? (
             <p className="text-xs italic text-muted-foreground">{t.noSamples}</p>
           ) : (
-            <SampleTable rows={counted} unit={spec.unit} workday={workday} t={t} />
+            <SampleTable rows={counted} unit={spec.unit} dayHours={dayHours} t={t} />
           )}
           {left.length > 0 && (
             <div className="rounded-md border border-dashed p-2">
               <div className="mb-1 text-[11px] text-muted-foreground">{t.leftOutHeading}</div>
-              <SampleTable rows={left} unit={spec.unit} workday={workday} why={why} t={t} />
+              <SampleTable rows={left} unit={spec.unit} dayHours={dayHours} why={why} t={t} />
             </div>
           )}
         </div>
@@ -1547,7 +1529,7 @@ export default function SupportTicketUpdates() {
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
             <span>
               {cap?.inFlight ? t.refreshing : cap?.lastAt ? t.captured(local(cap.lastAt), cap.source ?? '') : ''}
-              {t.legend(data.calendar.workdayHours, local(data.coverageFrom))}
+              {t.legend(data.calendar.dayHours, local(data.coverageFrom))}
             </span>
             <ImportButton onDone={reload} />
           </div>

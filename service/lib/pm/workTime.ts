@@ -1,11 +1,10 @@
 /**
  * The PM's working clock.
  *
- * The requirement, Canny and bug numbers are working time, not wall-clock time. A request that lands
- * at 18:30 on Friday and moves at 10:00 on Monday waited one working hour, not sixty-three and a half.
- * The clock is Asia/Shanghai, 09:30–19:00 (the PM's own hours), on the working days `calendar.ts`
- * defines. First response is the exception: it counts clock time, which is what the customer waits
- * (decided by the PM, 2026-10-19).
+ * Since 2026-10-19 every scorecard duration is clock time, which is what the customer waits (decided
+ * by the PM). This working clock — Asia/Shanghai, 09:30–19:00, on the working days `calendar.ts`
+ * defines — now only shapes the weeks: how many working days and hours each holds (the card's
+ * progress bar), and which weeks are too short to enter a benchmark.
  *
  * Asia/Shanghai has had no daylight saving since 1991, so a fixed UTC+8 offset is exact — no tz
  * database, and no chance of a DST edge quietly shifting an hour.

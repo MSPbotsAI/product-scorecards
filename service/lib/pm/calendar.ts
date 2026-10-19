@@ -1,11 +1,10 @@
 /**
  * The PM's working calendar — which local dates count as working time.
  *
- * The requirement, Canny and bug numbers are measured in working time, and the PM works to the CN
- * calendar: public holidays are off, and the make-up workdays that pay for them are on, even when
- * they fall on a weekend. Getting this wrong is not a rounding error: a request that lands on
- * 30 September and moves on 8 October waited zero working days across National Day, not six.
- * First response counts clock time and does not use this calendar.
+ * Every scorecard duration is clock time since 2026-10-19, so this calendar no longer changes how long
+ * anything took. It shapes the weeks: how many working days each holds, and which (fewer than three)
+ * stay out of a quarter's benchmark. The PM works to the CN calendar: public holidays are off, and the
+ * make-up workdays that pay for them are on, even when they fall on a weekend.
  *
  * Confirmed by the PM on 2026-09-30, and consistent with his own Halo activity where the data
  * reaches: Sunday 2026-09-20 carries 24 PM actions (a make-up workday) and Friday 2026-09-25 none

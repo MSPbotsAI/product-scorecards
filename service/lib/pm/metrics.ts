@@ -21,9 +21,10 @@
  *   canny     Requirement to Canny — first arrival, to the first Canny post link the PM posts
  *             (a new post or an existing one).
  *
- * First response is clock time: every hour from the escalation into the PM queue counts, nights,
- * weekends and public holidays included, because that is how long the customer waits (decided by the
- * PM, 2026-10-19). Time on hold does not count. The other three are PM working time (workTime.ts).
+ * Every duration is clock time: nights, weekends and public holidays all count, because that is how
+ * long the customer waits (decided by the PM, 2026-10-19). First response is in hours and leaves out
+ * time on hold; the other three are in calendar days of 24 h. The CN working calendar (workTime.ts)
+ * only shapes the weeks: how many working days each holds, and which stay out of a benchmark.
  * Each measurement is reported in the week its END
  * lands in, so a finished week's numbers never move again. Nothing is averaged that is not also
  * listed: every counted row is shown behind its number, and every row that is not counted is shown
@@ -35,17 +36,7 @@
 import { HOLD, RELEASE, TICKET_CLOSED, inQueue, isPm, type Party, type PmEvent } from './actions.ts'
 import { HISTORY_BASELINES } from './baselines.ts'
 import { type EventStore, coverage } from './store.ts'
-import {
-  type WeekShape,
-  WORKDAY_HOURS,
-  isWorkday,
-  localDate,
-  weekLabel,
-  weekOf,
-  weekShape,
-  weeksBetween,
-  workingHoursBetween,
-} from './workTime.ts'
+import { type WeekShape, weekLabel, weekOf, weekShape, weeksBetween } from './workTime.ts'
 
 /** How far apart a hand-off and its private note may be and still be one act. Observed gaps are seconds. */
 const PAIR_WINDOW_MS = 30 * 60_000
@@ -129,20 +120,6 @@ export interface ResponseRow {
   longWait: boolean
 }
 
-/**
- * Why a counted requirement, Canny or bug duration is exactly zero: the link or hand-off came before
- * the working clock started — on a rest day, or outside 09:30–19:00 — for a ticket that arrived in
- * the same off-hours stretch. Such a row stays in the average as 0.0 d (decided by the PM,
- * 2026-10-09); the label exists so it is not read as a data error. First response runs on clock
- * time, so it never has one.
- */
-export type OffClock = 'rest-day' | 'after-hours' | null
-
-function offClock(hours: number | null, endIso: string): OffClock {
-  if (hours !== 0) return null
-  return isWorkday(localDate(Date.parse(endIso))) ? 'after-hours' : 'rest-day'
-}
-
 export type EntryKind = 'prd' | 'mb' | 'canny'
 export type EntryStatus =
   | 'counted'
@@ -162,7 +139,7 @@ export interface EntryRow {
   via: 'link' | 'handoff'
   /** "PRD-19414", "MB-12057", a Canny post path, or for a hand-off the receiving party. */
   ref: string
-  /** The first arrival and the working hours from it, for counted and away rows; null otherwise. */
+  /** The first arrival and the clock hours from it, for counted and away rows; null otherwise. */
   arrivedAt: string | null
   at: string
   hours: number | null
@@ -170,8 +147,6 @@ export interface EntryRow {
   awayDays: number | null
   week: string
   status: EntryStatus
-  /** Set when a counted entry scored exactly zero because the working clock had not started. */
-  offClock: OffClock
   /** A counted entry that waited more than LONG_WAIT_DAYS: in its week's average, not in a benchmark. */
   longWait: boolean
 }
@@ -455,7 +430,8 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
         : (away ?? 0) > AWAY_DAYS * DAY_MS
           ? 'away'
           : 'counted'
-    const hours = timed && firstArrival ? workingHoursBetween(firstArrival, e.at) : null
+    // Clock time, like first response: the customer waits through weekends and holidays too.
+    const hours = timed && firstArrival ? (Date.parse(e.at) - Date.parse(firstArrival)) / HOUR_MS : null
     out.push({
       ticket,
       ...meta,
@@ -469,7 +445,6 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
       awayDays: away === null ? null : Math.round((away / DAY_MS) * 10) / 10,
       week: weekOf(e.at),
       status,
-      offClock: status === 'counted' ? offClock(hours, e.at) : null,
       longWait: status === 'counted' && !!firstArrival && isLongWait(firstArrival, e.at),
     })
   }
@@ -508,7 +483,9 @@ export const MIN_WORKDAYS = 3
 const METRIC_IDS: Metric[] = ['response', 'prd', 'mb', 'canny']
 /** How the page shows each number. Colours compare the value as shown, so a shown "7.3 h" is judged as 7.3. */
 const SHOWN_IN: Record<Metric, 'h' | 'd'> = { response: 'h', prd: 'd', mb: 'd', canny: 'd' }
-const inShownUnit = (hours: number, metric: Metric) => (SHOWN_IN[metric] === 'h' ? hours : hours / WORKDAY_HOURS)
+/** A shown day is a calendar day: 24 clock hours, not a working day. */
+export const DAY_HOURS = 24
+const inShownUnit = (hours: number, metric: Metric) => (SHOWN_IN[metric] === 'h' ? hours : hours / DAY_HOURS)
 const round1 = (v: number) => Math.round(v * 10) / 10
 
 /**
