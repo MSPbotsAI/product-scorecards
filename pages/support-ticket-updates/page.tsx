@@ -105,17 +105,17 @@ const EN = {
     prd: {
       name: 'Requirement → development',
       noun: (n: number): string => (n === 1 ? 'requirement' : 'requirements'),
-      short: 'The ticket’s first arrival in the queue, to the first ClickUp PRD link the PM posts on it.',
+      short: 'The ticket’s last entry into the queue, to the first ClickUp PRD link the PM posts on it.',
       notes: [
-        'Measured from the first time the ticket entered the PM queue, not from its latest return, so the whole path a requirement takes — clarification rounds included — is in the number. Counted in calendar days of 24 h, weekends and holidays included.',
+        'Measured from the last time the ticket entered the PM queue before the link. Earlier rounds — a question back to the customer, a return from the team — are timed by first response; this clock times the round the request moved in. Counted in calendar days of 24 h, weekends and holidays included.',
         'Only a pasted ClickUp link counts (app.clickup.com/t/…/PRD-…); a bare "PRD-14894" in prose is usually a reference to something else.',
-        'A ticket created before the log starts has no first arrival on record, so it is listed as not counted rather than guessed.',
+        'A ticket whose last entry came before the log starts has no start on record, so it is listed as not counted rather than guessed.',
       ],
     },
     canny: {
       name: 'Requirement → Canny',
       noun: (n: number): string => (n === 1 ? 'requirement' : 'requirements'),
-      short: 'The ticket’s first arrival in the queue, to the first Canny post link the PM posts on it.',
+      short: 'The ticket’s last entry into the queue, to the first Canny post link the PM posts on it.',
       notes: [
         'A new Canny post and adding the request to an existing post both count; only links the PM posts himself count.',
         'Same clock and the same rule for tickets older than the log as requirement → development.',
@@ -124,7 +124,7 @@ const EN = {
     mb: {
       name: 'Bug → development',
       noun: (n: number): string => (n === 1 ? 'bug' : 'bugs'),
-      short: 'The ticket’s first arrival in the queue, to the PM handing it into development.',
+      short: 'The ticket’s last entry into the queue, to the PM handing it into development.',
       notes: [
         'The clock stops when the PM moves the ticket to Lucas (who takes bugs in for development) or to anyone in Development, or posts a ClickUp MB link himself — whichever comes first. Counted in calendar days of 24 h, weekends and holidays included.',
         'The MB task Lucas logs afterwards does not stop it: reproducing and logging the bug is development’s time, not the PM’s.',
@@ -217,7 +217,7 @@ const EN = {
   colElapsed: 'Time',
   colHow: 'How',
   colWhy: 'Why not counted',
-  colFirstArrival: 'First arrival',
+  colFirstArrival: 'Entered queue',
   colStopped: 'Clock stopped',
   colRef: 'Link or hand-off',
   unknown: 'unknown',
@@ -234,7 +234,7 @@ const EN = {
     'no-note': 'handed off without a private note',
     'taken-out': 'moved out by someone else before a PM response',
     closed: 'closed before any response',
-    'history-before-data': 'created before the log starts — first arrival not on record',
+    'history-before-data': 'entered the queue before the log starts — start not on record',
     'no-arrival-on-record': 'no arrival into the queue on record',
   } as Record<string, string>,
   source: 'Source: ',
@@ -287,17 +287,17 @@ const ZH: typeof EN = {
     prd: {
       name: '需求进研发',
       noun: () => '个需求',
-      short: '工单首次进入队列，到 PM 在工单上贴出第一个 ClickUp PRD 链接为止。',
+      short: '工单最后一次进入队列，到 PM 在工单上贴出第一个 ClickUp PRD 链接为止。',
       notes: [
-        '从工单第一次进入 PM 队列起算，而不是从最近一次退回起算，因此需求走过的完整路径——包括来回澄清——都计在内。按日历天（每天 24 小时）计，周末和假期都算。',
+        '从贴链接之前工单最后一次进入 PM 队列起算。之前的几轮——问客户、被团队退回——由首次响应计时；这里只计需求真正推进的那一轮。按日历天（每天 24 小时）计，周末和假期都算。',
         '只有贴出的 ClickUp 链接才算（app.clickup.com/t/…/PRD-…）；正文里单独写的 "PRD-14894" 通常是在引用别的东西。',
-        '日志起点之前创建的工单没有首次到达记录，因此列为「不计入」，而不是去猜。',
+        '最后一次进队列早于日志起点的工单没有起点记录，因此列为「不计入」，而不是去猜。',
       ],
     },
     canny: {
       name: '需求推 Canny',
       noun: () => '个需求',
-      short: '工单首次进入队列，到 PM 在工单上贴出第一个 Canny 帖子链接为止。',
+      short: '工单最后一次进入队列，到 PM 在工单上贴出第一个 Canny 帖子链接为止。',
       notes: [
         '新建 Canny 帖子、或把需求挂到已有帖子上，都算；只统计 PM 本人贴出的链接。',
         '计时方式、以及对早于日志起点的工单的处理规则，都与「需求进研发」相同。',
@@ -306,7 +306,7 @@ const ZH: typeof EN = {
     mb: {
       name: 'Bug 进研发',
       noun: () => '个 bug',
-      short: '工单首次进入队列，到 PM 把它交给研发为止。',
+      short: '工单最后一次进入队列，到 PM 把它交给研发为止。',
       notes: [
         'PM 把工单转给 Lucas（负责接收 bug 进研发）或 Development 部门的任何人，或 PM 本人贴出 ClickUp MB 链接——以先发生者为准——即停表。按日历天（每天 24 小时）计，周末和假期都算。',
         'Lucas 之后建的 MB 任务不作为停表点：复现和登记 bug 是研发的时间，不是 PM 的。',
@@ -395,7 +395,7 @@ const ZH: typeof EN = {
   colElapsed: '用时',
   colHow: '方式',
   colWhy: '未计入原因',
-  colFirstArrival: '首次到达',
+  colFirstArrival: '进队列时间',
   colStopped: '停表时间',
   colRef: '链接或转交',
   unknown: '未知',
@@ -412,7 +412,7 @@ const ZH: typeof EN = {
     'no-note': '转出时没有留内部备注',
     'taken-out': 'PM 响应前已被他人转出',
     closed: '响应前已关闭',
-    'history-before-data': '工单创建早于日志起点——首次到达无记录',
+    'history-before-data': '进队列早于日志起点——起点无记录',
     'no-arrival-on-record': '没有进入队列的记录',
   },
   source: '数据源：',

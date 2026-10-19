@@ -11,14 +11,16 @@
  *             than one that does not (decided by the PM, 2026-10-14). A ticket whose entries fall in
  *             different weeks counts in each week with that week's entries, so a finished week
  *             still never moves.
- *   prd       Requirement into development — first arrival into the queue, to the first ClickUp PRD
- *             link the PM posts on the ticket.
+ *   prd       Requirement into development — the ticket's last entry into the queue before the link,
+ *             to the first ClickUp PRD link the PM posts on the ticket. Earlier rounds in the queue
+ *             are timed by first response; this clock times the round the request moved in
+ *             (decided by the PM, 2026-10-19).
  *   mb        Bug into development — the same clock, to the PM's own hand-off into development:
  *             moving the ticket to Lucas (the bug intake) or anyone in Development, or posting a
  *             ClickUp MB link, whichever comes first. The MB link Lucas logs afterwards is his time,
  *             not the PM's, so it does not stop this clock (decided by the PM, 2026-10-09). Kept apart
  *             from prd because bugs and requirements move at different speeds.
- *   canny     Requirement to Canny — first arrival, to the first Canny post link the PM posts
+ *   canny     Requirement to Canny — the same start, to the first Canny post link the PM posts
  *             (a new post or an existing one).
  *
  * Every duration is clock time: nights, weekends and public holidays all count, because that is how
@@ -52,11 +54,11 @@ const FILING_WINDOW_MS = 30 * 60_000
 /**
  * A request that was out of the PM's queue for more than this many calendar days in one stretch is
  * listed, but kept out of every average: the week's number and the quarter benchmark. This applies
- * between its first arrival and the clock stopping, for example a ticket moved out and back later.
+ * between the ticket's last entry and the clock stopping: a ticket moved out of the queue and linked
+ * a month later, while it was elsewhere.
  *
- * The requirement and bug clocks run from the first arrival, and a month spent elsewhere is not the
- * PM's time. Time INSIDE the queue always counts, however long it is: months waiting in the queue are
- * the PM's wait (decided by the PM, 2026-10-15).
+ * A month spent elsewhere is not the PM's time. Time INSIDE the queue always counts, however long it
+ * is: months waiting in the queue are the PM's wait (decided by the PM, 2026-10-15).
  *
  * First response is never affected. Its clock stops as soon as a ticket leaves the queue.
  */
@@ -123,9 +125,9 @@ export interface ResponseRow {
 export type EntryKind = 'prd' | 'mb' | 'canny'
 export type EntryStatus =
   | 'counted'
-  /** The ticket was created before the log starts, so its first arrival cannot be known. */
+  /** No entry into the queue before the stop is in the log, and the ticket is older than the log. */
   | 'history-before-data'
-  /** The history is complete but shows no arrival before the link — created straight into the queue. */
+  /** The history is complete but shows no entry before the link — created straight into the queue. */
   | 'no-arrival-on-record'
   /** Timed, but the ticket was out of the queue for more than AWAY_DAYS in one stretch on the way: listed, in no average. */
   | 'away'
@@ -139,11 +141,11 @@ export interface EntryRow {
   via: 'link' | 'handoff'
   /** "PRD-19414", "MB-12057", a Canny post path, or for a hand-off the receiving party. */
   ref: string
-  /** The first arrival and the clock hours from it, for counted and away rows; null otherwise. */
+  /** The entry the clock runs from — the last one into the queue before the stop — for counted and away rows; null otherwise. */
   arrivedAt: string | null
   at: string
   hours: number | null
-  /** The longest stretch out of the queue between the first arrival and the stop, in calendar days; null when not timed. */
+  /** The longest stretch out of the queue between that entry and the stop, in calendar days; null when not timed. */
   awayDays: number | null
   week: string
   status: EntryStatus
@@ -408,12 +410,11 @@ function longestAway(evs: PmEvent[], fromIso: string, toIso: string): number {
 }
 
 /**
- * When each kind of request entered development or Canny, measured from the ticket's first arrival:
- * the first link of that kind the PM posted, and for bugs also the PM's hand-off into development —
- * whichever came first.
+ * When each kind of request entered development or Canny: the first link of that kind the PM posted,
+ * and for bugs also the PM's hand-off into development — whichever came first. Measured from the
+ * ticket's last entry into the queue before it.
  */
 function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client: string }, complete: boolean): EntryRow[] {
-  const firstArrival = evs.find(isArrival)?.at ?? null
   const out: EntryRow[] = []
   for (const kind of ['prd', 'mb', 'canny'] as const) {
     const link = evs.find((x) => isPm(x.who) && x[kind].length > 0)
@@ -421,17 +422,20 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
     const e = [link, handoff].filter((x): x is PmEvent => !!x).sort(byTime)[0]
     if (!e) continue
     const via: EntryRow['via'] = e === link ? 'link' : 'handoff'
-    const timed = complete && !!firstArrival && Date.parse(firstArrival) <= Date.parse(e.at)
-    const away = timed && firstArrival ? longestAway(evs, firstArrival, e.at) : null
-    const status: EntryStatus = !complete
-      ? 'history-before-data'
-      : !timed
+    // The round the request moved in: its last entry into the queue before the link or hand-off.
+    // An entry the log holds is the last one whether or not older history is on record.
+    const entered = evs.filter((x) => isArrival(x) && Date.parse(x.at) <= Date.parse(e.at)).pop()?.at ?? null
+    const timed = entered !== null
+    const away = entered ? longestAway(evs, entered, e.at) : null
+    const status: EntryStatus = !timed
+      ? complete
         ? 'no-arrival-on-record'
-        : (away ?? 0) > AWAY_DAYS * DAY_MS
-          ? 'away'
-          : 'counted'
+        : 'history-before-data'
+      : (away ?? 0) > AWAY_DAYS * DAY_MS
+        ? 'away'
+        : 'counted'
     // Clock time, like first response: the customer waits through weekends and holidays too.
-    const hours = timed && firstArrival ? (Date.parse(e.at) - Date.parse(firstArrival)) / HOUR_MS : null
+    const hours = entered ? (Date.parse(e.at) - Date.parse(entered)) / HOUR_MS : null
     out.push({
       ticket,
       ...meta,
@@ -439,13 +443,13 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
       via,
       // A hand-off always names its receiver: isBugHandoff only matches a move whose "to" is known.
       ref: via === 'link' ? e[kind][0] : (party(e.to) ?? ''),
-      arrivedAt: timed ? firstArrival : null,
+      arrivedAt: entered,
       at: e.at,
       hours,
       awayDays: away === null ? null : Math.round((away / DAY_MS) * 10) / 10,
       week: weekOf(e.at),
       status,
-      longWait: status === 'counted' && !!firstArrival && isLongWait(firstArrival, e.at),
+      longWait: status === 'counted' && !!entered && isLongWait(entered, e.at),
     })
   }
   return out
