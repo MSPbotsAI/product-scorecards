@@ -85,7 +85,7 @@ const METRICS: { id: Metric; tag: string; unit: Unit }[] = [
 const EN = {
   title: 'Support Ticket Updates',
   subtitle:
-    'Three numbers, read once a week in the PM’s working time. A week runs Monday to Sunday, so weekend and make-up-day work lands in it; only working hours count. Every row opens the tickets behind it.',
+    'The PM’s numbers, read once a week. First response counts clock time from the moment a ticket is escalated into the PM queue — what the customer waits. The other three count the PM’s working days. A week runs Monday to Sunday. Every row opens the tickets behind it.',
   refresh: 'Refresh',
   thisWeek: 'this week',
   logStartsMidWeek: 'log starts mid-week',
@@ -96,11 +96,11 @@ const EN = {
       short: 'Each arrival into the queue, to the first reply to the customer or a hand-off with a private note.',
       notes: [
         'A clock starts every time a ticket is moved into the PM queue (Product · product_zd@ or the PM) from anywhere else — Support, Development, anyone. A ticket that comes back is answered again, and that answer is timed on its own.',
+        'It runs in clock time: nights, weekends and public holidays all count, because that is how long the customer waits.',
         'It stops at the PM’s first email to the customer (Email User or Email Update), or at the PM moving the ticket out of the queue with a private note left alongside. Triage is not a response, and a private note on its own is not one either — even one that posts a ClickUp link.',
         'The week’s number is an average over tickets. A ticket that came into the queue more than once that week counts once, at the average of those first responses, so a ticket that bounces back and forth weighs no more than one that does not. A ticket whose entries fall in different weeks counts in each week with that week’s entries; the list shows its average over all of them beside it, and a finished week never changes.',
         'Time the ticket spends on hold — SLA Hold, such as scheduled or waiting on the requester — does not count, the same as in Halo’s own SLA. The list shows how much was left out.',
         'Not counted, but listed with the reason: a hand-off with no private note, a ticket moved out by someone else first, or one closed before any response — by the PM or, as Halo’s ticket list shows, by anyone else. A ticket still waiting is not in any average until it is answered.',
-        'A reply on a rest day or outside working hours, to a ticket that arrived in the same off-hours stretch, scores 0.0 h: it came before the working clock started. It stays in the average as 0.0 h and is marked in the list.',
       ],
     },
     prd: {
@@ -174,16 +174,14 @@ const EN = {
     `${tickets} ${tickets === 1 ? 'ticket' : 'tickets'}${responses > tickets ? ` (${responses} responses)` : ''}`,
   countRows: (n: number) => String(n),
   waitingName: 'Waiting for a first response',
-  waitingSub: (hours: string) => `now · oldest ${hours} working h · in no average until answered`,
+  waitingSub: (hours: string) => `now · oldest ${hours} h · in no average until answered`,
   waitingNone: 'now · nothing waiting',
-  waitingSubAt: (week: string, hours: string) => `end of ${week} · oldest ${hours} working h`,
+  waitingSubAt: (week: string, hours: string) => `end of ${week} · oldest ${hours} h`,
   waitingNoneAt: (week: string) => `end of ${week} · nothing waiting`,
-  othersNote: (held: number, notStarted: number) =>
-    [held ? ` · ${held} on hold` : '', notStarted ? ` · ${notStarted} not yet due` : ''].join(''),
+  othersNote: (held: number) => (held ? ` · ${held} on hold` : ''),
   asOfWeekEnd: (week: string) => `as of the end of ${week}`,
   groupOnHold: (n: number) => `On hold at that moment — ${n}, not counted: scheduled, or waiting on the requester`,
-  groupNotStarted: (n: number) => `Arrived outside working time, clock not started yet — ${n}, not counted`,
-  laterNote: (week: string) => `Working time runs to the end of ${week}. First response and How show what happened afterwards.`,
+  laterNote: (week: string) => `Time runs to the end of ${week}. First response and How show what happened afterwards.`,
   waitingBadge: (n: number) => `${n} waiting`,
   workingDays: (n: number) => `${n} working days`,
   holidays: (n: number) => (n === 1 ? '1 holiday' : `${n} holidays`),
@@ -204,12 +202,11 @@ const EN = {
     `Tickets · ${label} — ${counted} counted${other > 0 ? `, ${other} not` : ''}`,
   colTicketAvg: 'Counts this week',
   colTicketAvgHint:
-    'What this ticket adds to the week’s average: its working time, or the average when it entered the queue more than once this week.',
+    'What this ticket adds to the week’s average: its time, or the average when it entered the queue more than once this week.',
   allEntries: (n: number, hours: string) => `all ${n} entries ${hours}`,
   avgOf: (parts: string[]) => `(${parts.join(' + ')}) ÷ ${parts.length}`,
-  clockFrom: (when: string) => `clock from ${when}`,
-  pm1TableNote: (label: string, avg: string, hours: string) =>
-    `${label}: ${avg} is the average of the “Counts this week” column. Working time counts only ${hours} on working days.`,
+  pm1TableNote: (label: string, avg: string) =>
+    `${label}: ${avg} is the average of the “Counts this week” column. Times are clock hours from entering the queue — nights, weekends and holidays included — less time on hold.`,
   nothingCounted: 'Nothing counted in this week.',
   notCountedHeading: 'Landed in this week, not counted',
   howHeading: 'How it is measured',
@@ -219,6 +216,7 @@ const EN = {
   colResponded: 'First response',
   colLeft: 'Left',
   colTime: 'Working time',
+  colElapsed: 'Time',
   colHow: 'How',
   colWhy: 'Why not counted',
   colFirstArrival: 'First arrival',
@@ -241,21 +239,18 @@ const EN = {
     'history-before-data': 'created before the log starts — first arrival not on record',
     'no-arrival-on-record': 'no arrival into the queue on record',
   } as Record<string, string>,
-  offClockReply: {
-    'rest-day': 'Rest-day reply — the working clock had not started',
-    'after-hours': 'Outside working hours — the working clock had not started',
-  },
   offClockEntry: {
     'rest-day': 'On a rest day — the working clock had not started',
     'after-hours': 'Outside working hours — the working clock had not started',
   },
   source: 'Source: ',
   logFrom: (date: string) => `log from ${date}`,
-  clock: (hours: string, confirmed: boolean) => `working time ${hours}, CN calendar (${confirmed ? 'confirmed' : 'proposed'})`,
+  clock: (hours: string, confirmed: boolean) =>
+    `first response in clock time; the others in working time ${hours}, CN calendar (${confirmed ? 'confirmed' : 'proposed'})`,
   // waiting dialog
   asOfNow: 'as of now',
   waitingDescription:
-    'In the queue with no reply to the customer and no hand-off yet, at the end of the selected week (now, for this week), with the working clock running. Working time up to then, less time on hold — not in any average until answered. Tickets on hold, or not yet due, are listed below and not counted.',
+    'In the queue with no reply to the customer and no hand-off yet, at the end of the selected week (now, for this week). Time up to then in clock hours, less time on hold — not in any average until answered. Tickets on hold are listed below and not counted.',
   nothingWaiting: 'Nothing is waiting.',
   // banners and footer
   captureFailed: (at: string) => `The last refresh from Halo failed; showing the log as of ${at}.`,
@@ -266,7 +261,7 @@ const EN = {
   refreshing: 'Refreshing from Halo… ',
   captured: (at: string, source: string) => `Captured ${at} (${source}). `,
   legend: (workday: number, from: string) =>
-    `h = working hours, d = working days of ${workday} h. Halo keeps 14 days of actions, so they are copied into a log that starts ${from}.`,
+    `First response in clock hours (h); the other three in working days (d) of ${workday} h. Halo keeps 14 days of actions, so they are copied into a log that starts ${from}.`,
   importLog: 'Import log',
   importHint: 'Backfill from an exported event log (the local PM Weekly file). Only what this log does not already hold is added.',
   imported: (added: number, read: number) => `Imported — ${added} new of ${read} events.`,
@@ -277,7 +272,7 @@ const EN = {
 const ZH: typeof EN = {
   title: 'Support 工单更新',
   subtitle:
-    '三个数字，每周看一次，按 PM 的工作时间计。一周为周一至周日，周末和调休补班日的工作都算在内；只计工作时段。每一行都能点开，查看背后的工单。',
+    'PM 的几个数字，每周看一次。首次响应从工单升级进 PM 队列那一刻起按自然时间计——就是客户等待的时长；其余三项按 PM 的工作日计。一周为周一至周日。每一行都能点开，查看背后的工单。',
   refresh: '刷新',
   thisWeek: '本周',
   logStartsMidWeek: '日志从周中开始',
@@ -288,11 +283,11 @@ const ZH: typeof EN = {
       short: '工单每次进入队列，到 PM 首次回复客户、或带内部备注转出为止。',
       notes: [
         '工单每次从其他任何地方（Support、Development 或任何人）被转入 PM 队列（Product · product_zd@ 或 PM 本人）时开始计时。工单退回后再次进入队列，就要再次响应，这次响应单独计时。',
+        '按自然时间计：晚上、周末和法定假期都算，因为客户就是等了这么久。',
         '在 PM 第一次给客户发邮件（Email User 或 Email Update）时停表，或在 PM 把工单转出队列、同时留下内部备注（private note）时停表。Triage 不算响应；单独一条内部备注也不算——即使里面贴了 ClickUp 链接。',
         '每周的数字按工单平均。同一张单在一周内多次进入队列，只算一张，取这几次首次响应的平均值，所以来回流转的单不会比只进一次的单占更多权重。一张单的几次进队列落在不同周时，每周只用当周的那几次计算，列表里另外标出它全部进队列的平均值；已结束的周，数字不会再变。',
         '单子挂起（SLA Hold，例如排期、等客户回复）期间不计时，与 Halo 自己的 SLA 一致；列表里会标出扣掉了多少。',
         '以下情况不计入，但会连同原因列出：转出时没留内部备注、PM 响应前已被他人转出、响应前已关闭（PM 自己关的，或 Halo 工单列表显示已被别人关闭）。仍在等待的工单，在得到响应前不计入任何平均值。',
-        '在休息日或非工作时段回复、且工单也是在同一段非工作时间内到达的，记为 0.0 h：回复发生在工作时钟开始之前。它按 0.0 h 计入平均值，并在列表中标注。',
       ],
     },
     prd: {
@@ -364,16 +359,14 @@ const ZH: typeof EN = {
   countTickets: (tickets: number, responses: number) => `${tickets} 张单${responses > tickets ? `（${responses} 次响应）` : ''}`,
   countRows: (n: number) => `${n} 条`,
   waitingName: '等待首次响应',
-  waitingSub: (hours: string) => `当前 · 最久已等 ${hours} 工作小时 · 回复前不计入任何平均值`,
+  waitingSub: (hours: string) => `当前 · 最久已等 ${hours} 小时 · 回复前不计入任何平均值`,
   waitingNone: '当前 · 无等待',
-  waitingSubAt: (week: string, hours: string) => `${week} 周末 · 最久已等 ${hours} 工作小时`,
+  waitingSubAt: (week: string, hours: string) => `${week} 周末 · 最久已等 ${hours} 小时`,
   waitingNoneAt: (week: string) => `${week} 周末 · 无等待`,
-  othersNote: (held: number, notStarted: number) =>
-    [held ? ` · 另有 ${held} 张挂起中` : '', notStarted ? ` · ${notStarted} 张未开始计时` : ''].join(''),
+  othersNote: (held: number) => (held ? ` · 另有 ${held} 张挂起中` : ''),
   asOfWeekEnd: (week: string) => `截至 ${week} 周末`,
   groupOnHold: (n: number) => `当时挂起中 — ${n} 张，不计入：排期或等客户回复`,
-  groupNotStarted: (n: number) => `在非工作时间到达、尚未开始计时 — ${n} 张，不计入`,
-  laterNote: (week: string) => `工作用时只算到 ${week} 周末；"首次响应"和"方式"两栏是后来实际发生的情况。`,
+  laterNote: (week: string) => `用时只算到 ${week} 周末；"首次响应"和"方式"两栏是后来实际发生的情况。`,
   waitingBadge: (n: number) => `${n} 个等待中`,
   workingDays: (n: number) => `${n} 个工作日`,
   holidays: (n: number) => `${n} 天假期`,
@@ -392,12 +385,11 @@ const ZH: typeof EN = {
   ticketsHeading: (label: string, counted: string, other: number) =>
     `工单 · ${label} — 计入 ${counted}${other > 0 ? `，未计入 ${other} 条` : ''}`,
   colTicketAvg: '本周计入',
-  colTicketAvgHint: '这张单计入本周平均的值：等于工作用时；本周多次进队列时取平均。',
+  colTicketAvgHint: '这张单计入本周平均的值：等于用时；本周多次进队列时取平均。',
   allEntries: (n: number, hours: string) => `全部 ${n} 次 ${hours}`,
   avgOf: (parts: string[]) => `(${parts.join(' + ')}) ÷ ${parts.length}`,
-  clockFrom: (when: string) => `从 ${when} 起算`,
-  pm1TableNote: (label: string, avg: string, hours: string) =>
-    `${label} 的 ${avg} = 下表「本周计入」一列的平均值；工作用时只算工作日 ${hours}。`,
+  pm1TableNote: (label: string, avg: string) =>
+    `${label} 的 ${avg} = 下表「本周计入」一列的平均值；用时按自然时间从进队列算起，晚上、周末、假期都算，挂起时间不算。`,
   nothingCounted: '该周没有计入的记录。',
   notCountedHeading: '落在该周、但未计入',
   howHeading: '口径',
@@ -407,6 +399,7 @@ const ZH: typeof EN = {
   colResponded: '首次响应时间',
   colLeft: '离开时间',
   colTime: '工作用时',
+  colElapsed: '用时',
   colHow: '方式',
   colWhy: '未计入原因',
   colFirstArrival: '首次到达',
@@ -429,20 +422,17 @@ const ZH: typeof EN = {
     'history-before-data': '工单创建早于日志起点——首次到达无记录',
     'no-arrival-on-record': '没有进入队列的记录',
   },
-  offClockReply: {
-    'rest-day': '休息日回复——工作时钟尚未开始',
-    'after-hours': '非工作时段——工作时钟尚未开始',
-  },
   offClockEntry: {
     'rest-day': '休息日完成——工作时钟尚未开始',
     'after-hours': '非工作时段——工作时钟尚未开始',
   },
   source: '数据源：',
   logFrom: (date: string) => `日志起点 ${date}`,
-  clock: (hours: string, confirmed: boolean) => `工作时间 ${hours}，中国节假日日历（${confirmed ? '已确认' : '待确认'}）`,
+  clock: (hours: string, confirmed: boolean) =>
+    `首次响应按自然时间；其余按工作时间 ${hours}，中国节假日日历（${confirmed ? '已确认' : '待确认'}）`,
   asOfNow: '截至当前',
   waitingDescription:
-    '所选那一周结束时（本周为当前），已在队列中、尚未回复客户也未转出、且正在计时的工单。显示到那时为止的工作时长（不含挂起）——回复前不计入任何平均值。挂起中、或还没开始计时的单列在下面，不计入数字。',
+    '所选那一周结束时（本周为当前），已在队列中、尚未回复客户也未转出的工单。显示到那时为止的自然时间（不含挂起）——回复前不计入任何平均值。挂起中的单列在下面，不计入数字。',
   nothingWaiting: '当前没有等待中的工单。',
   captureFailed: (at: string) => `最近一次从 Halo 刷新失败；当前显示的是截至 ${at} 的日志。`,
   gaps: (n: number, list: string) => `日志有 ${n} 处缺口（${list}）。其中的 action 在复制前已从 Halo 过期，涉及的周数据不完整。`,
@@ -451,7 +441,7 @@ const ZH: typeof EN = {
   refreshing: '正在从 Halo 刷新… ',
   captured: (at: string, source: string) => `采集于 ${at}（${source}）。`,
   legend: (workday: number, from: string) =>
-    `h = 工作小时，d = 工作日（每天 ${workday} 小时）。Halo 只保留 14 天的 action，因此会复制到日志中，日志起点 ${from}。`,
+    `首次响应以自然小时（h）计；其余三项以工作日（d，每天 ${workday} 小时）计。Halo 只保留 14 天的 action，因此会复制到日志中，日志起点 ${from}。`,
   importLog: '导入日志',
   importHint: '用导出的事件日志（本地 PM Weekly 文件）补齐更早的历史。只会添加当前日志里没有的内容。',
   imported: (added: number, read: number) => `已导入——${read} 条事件中新增 ${added} 条。`,
@@ -664,7 +654,7 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
           <TableHead>{t.colRequest}</TableHead>
           <TableHead className="w-36">{t.colArrived}</TableHead>
           <TableHead className="w-24">{reason ? t.colLeft : t.colResponded}</TableHead>
-          {!reason && <TableHead className="w-16 text-right">{t.colTime}</TableHead>}
+          {!reason && <TableHead className="w-16 text-right">{t.colElapsed}</TableHead>}
           {units && (
             <TableHead className="w-24 text-right" title={t.colTicketAvgHint}>
               {t.colTicketAvg}
@@ -684,7 +674,6 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
               <Request summary={r.summary} client={r.client} />
               <TableCell className="whitespace-normal align-top">
                 <div className="tabular-nums">{local(r.arrivedAt)}</div>
-                {r.clockFrom && <div className="text-[11px] italic text-muted-foreground">{t.clockFrom(local(r.clockFrom))}</div>}
                 <div className="text-[11px] text-muted-foreground">{r.arrivedFrom ?? t.unknown}</div>
               </TableCell>
               <TableCell className="align-top tabular-nums">{local(r.endedAt)}</TableCell>
@@ -711,7 +700,6 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
               )}
               <TableCell className="whitespace-normal align-top text-muted-foreground">
                 {reason ? `${t.notCounted[r.outcome] ?? r.outcome} · ${howText(r, t)}` : howText(r, t)}
-                <OffClockNote value={r.offClock} labels={t.offClockReply} />
                 {r.longWait && <div className="mt-0.5 text-[11px] text-warning-700">{t.longWait(daysBetween(r.arrivedAt, r.endedAt))}</div>}
               </TableCell>
             </TableRow>
@@ -987,9 +975,7 @@ function MetricDialog({
             <p className="text-xs italic text-muted-foreground">{t.nothingCounted}</p>
           ) : metric === 'response' ? (
             <>
-              <p className="text-[11px] text-muted-foreground">
-                {t.pm1TableNote(week?.label ?? '', show(row.value, unit), data.calendar.hours.split(' ')[0])}
-              </p>
+              <p className="text-[11px] text-muted-foreground">{t.pm1TableNote(week?.label ?? '', show(row.value, unit))}</p>
               <ResponseRows rows={rows as ResponseRow[]} units={units} t={t} />
             </>
           ) : (
@@ -1046,11 +1032,10 @@ function WaitingDialog({ data, index, onClose }: { data: SupportUpdatesPayload; 
       .filter((w) => w.state === state)
       .flatMap((w) => {
         const base = data.response.find((r) => r.ticket === w.ticket && r.arrivedAt === w.arrivedAt)
-        return base ? [{ ...base, hours: w.hours, heldHours: w.heldHours, offClock: null, longWait: false }] : []
+        return base ? [{ ...base, hours: w.hours, heldHours: w.heldHours, longWait: false }] : []
       })
   const rows = rowsOf('waiting')
   const held = rowsOf('on-hold')
-  const notStarted = rowsOf('not-started')
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent container={root()} className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
@@ -1070,14 +1055,13 @@ function WaitingDialog({ data, index, onClose }: { data: SupportUpdatesPayload; 
         ) : (
           <ResponseRows rows={rows} t={t} />
         )}
-        {[[held, t.groupOnHold(held.length)] as const, [notStarted, t.groupNotStarted(notStarted.length)] as const].map(
-          ([group, heading]) =>
-            group.length > 0 ? (
-              <div key={heading} className="rounded-md border border-dashed p-2">
-                <div className="mb-1 text-[11px] text-muted-foreground">{heading}</div>
-                <ResponseRows rows={group} t={t} />
-              </div>
-            ) : null,
+        {[[held, t.groupOnHold(held.length)] as const].map(([group, heading]) =>
+          group.length > 0 ? (
+            <div key={heading} className="rounded-md border border-dashed p-2">
+              <div className="mb-1 text-[11px] text-muted-foreground">{heading}</div>
+              <ResponseRows rows={group} t={t} />
+            </div>
+          ) : null,
         )}
         <Source data={data} t={t} />
       </DialogContent>
@@ -1332,7 +1316,7 @@ function OwnerCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index
   const open = all.filter((w) => w.state === 'waiting')
   const oldest = open.reduce((m, w) => Math.max(m, w.hours), 0)
   const live = !week || week.partial === 'in-progress'
-  const others = t.othersNote(all.filter((w) => w.state === 'on-hold').length, all.filter((w) => w.state === 'not-started').length)
+  const others = t.othersNote(all.filter((w) => w.state === 'on-hold').length)
   const waitingSub = `${
     open.length > 0
       ? live

@@ -21,7 +21,10 @@
  *   canny     Requirement to Canny — first arrival, to the first Canny post link the PM posts
  *             (a new post or an existing one).
  *
- * All durations are PM working time (workTime.ts). Each measurement is reported in the week its END
+ * First response is clock time: every hour from the escalation into the PM queue counts, nights,
+ * weekends and public holidays included, because that is how long the customer waits (decided by the
+ * PM, 2026-10-19). Time on hold does not count. The other three are PM working time (workTime.ts).
+ * Each measurement is reported in the week its END
  * lands in, so a finished week's numbers never move again. Nothing is averaged that is not also
  * listed: every counted row is shown behind its number, and every row that is not counted is shown
  * with the reason — a waiting ticket left out of an average is how an average lies.
@@ -35,7 +38,6 @@ import { type EventStore, coverage } from './store.ts'
 import {
   type WeekShape,
   WORKDAY_HOURS,
-  clockStart,
   isWorkday,
   localDate,
   weekLabel,
@@ -104,20 +106,14 @@ export interface ResponseRow {
   arrivedAt: string
   /** Who moved it in, "Support · Kinn Maagad"; null when the move note did not name both ends. */
   arrivedFrom: string | null
-  /**
-   * When the working clock started for this entry, if later than the arrival (it came in outside
-   * working hours); null when it arrived during working time. Display only: the hours already count
-   * from here.
-   */
-  clockFrom: string | null
   outcome: CycleOutcome
   endedAt: string | null
   /**
-   * Working hours arrival → response when counted, or arrival → now when open, less the time on hold.
+   * Clock hours arrival → response when counted, or arrival → now when open, less the time on hold.
    * Null otherwise.
    */
   hours: number | null
-  /** Working hours of that span the ticket was on hold (SLA Hold), left out of `hours`. 0 when never on hold. */
+  /** Clock hours of that span the ticket was on hold (SLA Hold), left out of `hours`. 0 when never on hold. */
   heldHours: number
   /** The week it is reported in; null only for open cycles, which have not landed anywhere yet. */
   week: string | null
@@ -129,17 +125,16 @@ export interface ResponseRow {
   action: string | null
   to: string | null
   by: string | null
-  /** Set when a counted response scored exactly zero because the working clock had not started. */
-  offClock: OffClock
   /** A counted response that waited more than LONG_WAIT_DAYS: in its week's average, not in a benchmark. */
   longWait: boolean
 }
 
 /**
- * Why a counted duration is exactly zero: the reply, hand-off or link came before the working clock
- * started — on a rest day, or outside 09:30–19:00 — for a ticket that arrived in the same off-hours
- * stretch. Such a row stays in the average as 0.0 h (decided by the PM, 2026-10-09: "even on a
- * holiday, if I replied, it counts"); the label exists so a 0.0 h row is not read as a data error.
+ * Why a counted requirement, Canny or bug duration is exactly zero: the link or hand-off came before
+ * the working clock started — on a rest day, or outside 09:30–19:00 — for a ticket that arrived in
+ * the same off-hours stretch. Such a row stays in the average as 0.0 d (decided by the PM,
+ * 2026-10-09); the label exists so it is not read as a data error. First response runs on clock
+ * time, so it never has one.
  */
 export type OffClock = 'rest-day' | 'after-hours' | null
 
@@ -216,11 +211,10 @@ export interface WaitingAt {
   hours: number
   heldHours: number
   /**
-   * 'waiting': the working clock is running, so the ticket is waiting on the PM. 'on-hold': it is
-   * parked (scheduled, waiting on the requester). 'not-started': it arrived outside working time,
-   * and no working time has passed yet.
+   * 'waiting': the customer is waiting on the PM. 'on-hold': it is parked (scheduled, or waiting on
+   * the requester), so its clock is stopped.
    */
-  state: 'waiting' | 'on-hold' | 'not-started'
+  state: 'waiting' | 'on-hold'
 }
 
 export interface WeekRow extends WeekCore {
@@ -276,13 +270,21 @@ function holdsOf(evs: PmEvent[]): Hold[] {
 }
 
 /** Working time from → to, less the part on hold. `all` keeps the whole, for the rest-day label. */
+const HOUR_MS = 3_600_000
+
+/**
+ * Clock time from → to, less the part on hold. First response counts every hour from the moment
+ * the ticket is escalated into the PM queue, working time or not (decided by the PM, 2026-10-19).
+ */
 function waitBetween(holds: Hold[], fromIso: string, toIso: string): { hours: number; held: number; all: number } {
-  const all = workingHoursBetween(fromIso, toIso)
+  const start = Date.parse(fromIso)
+  const end = Date.parse(toIso)
+  const all = Math.max(0, end - start) / HOUR_MS
   let held = 0
   for (const h of holds) {
-    const from = Math.max(h.from, Date.parse(fromIso))
-    const to = Math.min(h.to ?? Number.POSITIVE_INFINITY, Date.parse(toIso))
-    if (to > from) held += workingHoursBetween(new Date(from).toISOString(), new Date(to).toISOString())
+    const from = Math.max(h.from, start)
+    const to = Math.min(h.to ?? Number.POSITIVE_INFINITY, end)
+    if (to > from) held += (to - from) / HOUR_MS
   }
   return { hours: Math.max(0, all - held), held, all }
 }
@@ -327,7 +329,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
 
   const rows: ResponseRow[] = []
   let state: 'out' | 'open' | 'answered' = 'out'
-  let cur: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } | null = null
+  let cur: { arrivedAt: string; arrivedFrom: string | null } | null = null
   const close = (outcome: CycleOutcome, endedAt: string, end: { action: string; to?: string | null; by?: string }, timed: boolean) => {
     if (!cur) return
     const w = timed ? wait(cur.arrivedAt, endedAt) : null
@@ -343,7 +345,6 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       action: end.action,
       to: end.to ?? null,
       by: end.by ?? null,
-      offClock: w ? offClock(w.all, endedAt) : null,
       longWait: !!w && isLongWait(cur.arrivedAt, endedAt),
     })
     cur = null
@@ -359,8 +360,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       // An arrival while already open is a duplicate move; keep the first. An arrival while answered
       // means the ticket left by a route the log did not see, so it starts a fresh cycle.
       if (state !== 'open') {
-        const starts = clockStart(e.at)
-        cur = { arrivedAt: e.at, arrivedFrom: party(e.from), clockFrom: starts === e.at ? null : starts }
+        cur = { arrivedAt: e.at, arrivedFrom: party(e.from) }
         state = 'open'
       }
       continue
@@ -390,7 +390,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
   }
 
   if (state === 'open' && cur) {
-    const open: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } = cur
+    const open: { arrivedAt: string; arrivedFrom: string | null } = cur
     const w = wait(open.arrivedAt, now)
     rows.push({
       ticket,
@@ -404,7 +404,6 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       action: null,
       to: null,
       by: null,
-      offClock: null,
       longWait: false,
     })
   }
@@ -744,7 +743,7 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
       .map((r) => {
         const holds = holdsByTicket.get(r.ticket) ?? []
         const w = waitBetween(holds, r.arrivedAt, atIso)
-        const state: WaitingAt['state'] = onHoldAt(holds, at) ? 'on-hold' : w.all === 0 ? 'not-started' : 'waiting'
+        const state: WaitingAt['state'] = onHoldAt(holds, at) ? 'on-hold' : 'waiting'
         return { ticket: r.ticket, arrivedAt: r.arrivedAt, hours: w.hours, heldHours: w.held, state }
       })
       .sort((a, b) => b.hours - a.hours)
