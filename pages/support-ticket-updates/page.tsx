@@ -84,7 +84,7 @@ const METRICS: { id: Metric; tag: string; unit: Unit }[] = [
 const EN = {
   title: 'Support Ticket Updates',
   subtitle:
-    'The PM’s numbers, read once a week, all in clock time from the moment a ticket is escalated into the PM queue — nights, weekends and holidays included, because that is what the customer waits. A week runs Monday to Sunday. Every row opens the tickets behind it.',
+    'The PM’s numbers, read once a week, all in clock time from the moment a ticket is escalated into the PM queue. Nights and public holidays count, because the customer is waiting through them; Saturdays and Sundays do not, because the customer is off too. A week runs Monday to Sunday. Every row opens the tickets behind it.',
   refresh: 'Refresh',
   thisWeek: 'this week',
   logStartsMidWeek: 'log starts mid-week',
@@ -95,7 +95,7 @@ const EN = {
       short: 'Each arrival into the queue, to the first reply to the customer or a hand-off with a private note.',
       notes: [
         'A clock starts every time a ticket is moved into the PM queue (Product · product_zd@ or the PM) from anywhere else — Support, Development, anyone. A ticket that comes back is answered again, and that answer is timed on its own.',
-        'It runs in clock time: nights, weekends and public holidays all count, because that is how long the customer waits.',
+        'It runs in clock time without Saturdays and Sundays: nights and public holidays count, because the customer waits through them; the weekend does not, because the customer is off too.',
         'It stops at the PM’s first email to the customer (Email User or Email Update), or at the PM moving the ticket out of the queue with a private note left alongside. Triage is not a response, and a private note on its own is not one either — even one that posts a ClickUp link.',
         'The week’s number is an average over tickets. A ticket that came into the queue more than once that week counts once, at the average of those first responses, so a ticket that bounces back and forth weighs no more than one that does not. A ticket whose entries fall in different weeks counts in each week with that week’s entries; the list shows its average over all of them beside it, and a finished week never changes.',
         'Time the ticket spends on hold — SLA Hold, such as scheduled or waiting on the requester — does not count, the same as in Halo’s own SLA. The list shows how much was left out.',
@@ -107,7 +107,7 @@ const EN = {
       noun: (n: number): string => (n === 1 ? 'requirement' : 'requirements'),
       short: 'The ticket’s last entry into the queue, to the first ClickUp PRD link the PM posts on it.',
       notes: [
-        'Measured from the last time the ticket entered the PM queue before the link. Earlier rounds — a question back to the customer, a return from the team — are timed by first response; this clock times the round the request moved in. Counted in calendar days of 24 h, weekends and holidays included.',
+        'Measured from the last time the ticket entered the PM queue before the link. Earlier rounds — a question back to the customer, a return from the team — are timed by first response; this clock times the round the request moved in. Counted in days of 24 h, Saturdays and Sundays left out; public holidays count.',
         'Only a pasted ClickUp link counts (app.clickup.com/t/…/PRD-…); a bare "PRD-14894" in prose is usually a reference to something else.',
         'A ticket whose last entry came before the log starts has no start on record, so it is listed as not counted rather than guessed.',
       ],
@@ -126,7 +126,7 @@ const EN = {
       noun: (n: number): string => (n === 1 ? 'bug' : 'bugs'),
       short: 'The ticket’s last entry into the queue, to the PM handing it into development.',
       notes: [
-        'The clock stops when the PM moves the ticket to Lucas (who takes bugs in for development) or to anyone in Development, or posts a ClickUp MB link himself — whichever comes first. Counted in calendar days of 24 h, weekends and holidays included.',
+        'The clock stops when the PM moves the ticket to Lucas (who takes bugs in for development) or to anyone in Development, or posts a ClickUp MB link himself — whichever comes first. Counted in days of 24 h, Saturdays and Sundays left out; public holidays count.',
         'The MB task Lucas logs afterwards does not stop it: reproducing and logging the bug is development’s time, not the PM’s.',
         'Kept apart from requirements: bugs and requirements move at different speeds, and one average over both would describe neither.',
       ],
@@ -140,7 +140,7 @@ const EN = {
   benchmarksFrom: (from: string, history: boolean) =>
     `The ${from} average, held for the whole quarter${history ? ' — from Halo’s full history, which the log does not reach' : ''}.`,
   benchmarksLeftOut: (longWait: number, minWorkdays: number) =>
-    `Left out of it: waits of over ${longWait} days, and weeks with fewer than ${minWorkdays} working days.`,
+    `Left out of it: waits of over ${longWait} calendar days, and weeks with fewer than ${minWorkdays} working days.`,
   colMetric: 'Number',
   colBenchmark: 'Benchmark',
   colSamples: 'Samples',
@@ -153,21 +153,21 @@ const EN = {
   colValue: 'Value',
   entriesNote: (n: number) => `average of ${n} queue entries`,
   leftOutHeading: 'Listed, not averaged',
-  longWaitOut: (days: number, limit: number) => `waited ${days} days (over ${limit}) — counts in its week, not in the benchmark`,
+  longWaitOut: (days: number, limit: number) => `waited ${days} calendar days (over ${limit}) — counts in its week, not in the benchmark`,
   noSamples: 'No measurements.',
   quarter: (q: string) => `${q.slice(5)} ${q.slice(0, 4)}`,
   benchmarkFrom: (quarter: string, count: string, longWait: number, history: boolean) =>
-    `Benchmark: the ${quarter} average over ${count}, waits of over ${longWait} days left out${history ? ' — from Halo’s full history, which the log does not reach' : ''}.`,
+    `Benchmark: the ${quarter} average over ${count}, waits of over ${longWait} calendar days left out${history ? ' — from Halo’s full history, which the log does not reach' : ''}.`,
   trendWhy: (quarter: string, n: number, min: number) => `Trend only: ${quarter} has ${n} measurements, and a benchmark needs ${min}.`,
   noBenchmark: (quarter: string) => `Trend only: there is no benchmark for ${quarter} yet.`,
-  longWait: (days: number) => `Waited ${days} days — counts this week, left out of the quarter benchmark`,
+  longWait: (days: number) => `Waited ${days} calendar days — counts this week, left out of the quarter benchmark`,
   awayWhy: (days: string, limit: number) => `out of the queue ${days} days in one stretch on the way (over ${limit}) — in no average`,
   colourHeading: 'Colours',
   colourNotes: (r: { yellowFactor: number; minWorkdays: number; minSamples: number; longWaitDays: number; awayDays: number }) => [
     `Green when the week’s number is at or under the benchmark, yellow up to ${r.yellowFactor} × the benchmark, red above that. The comparison uses the one decimal the page shows.`,
     `The benchmark is the previous quarter’s average, fixed for the whole quarter. A week belongs to the quarter its Monday falls in. Weeks with fewer than ${r.minWorkdays} working days are left out of it, and it needs at least ${r.minSamples} measurements; with fewer, the number is shown as a trend only.`,
-    `A wait of more than ${r.longWaitDays} days counts in its week like any other, so the week that clears an old ticket shows it. It is left out of the benchmark, so a few months-old tickets do not set the bar.`,
-    `A request that was out of the queue for more than ${r.awayDays} days in one stretch, after it first arrived, is in no average at all: that time was not the PM’s. First response is never affected, because its clock stops when a ticket leaves the queue.`,
+    `A wait of more than ${r.longWaitDays} calendar days counts in its week like any other, so the week that clears an old ticket shows it. It is left out of the benchmark, so a few months-old tickets do not set the bar.`,
+    `A request that was out of the queue for more than ${r.awayDays} calendar days in one stretch, after its last entry, is in no average at all: that time was not the PM’s. First response is never affected, because its clock stops when a ticket leaves the queue.`,
   ],
   countTickets: (tickets: number, responses: number) =>
     `${tickets} ${tickets === 1 ? 'ticket' : 'tickets'}${responses > tickets ? ` (${responses} responses)` : ''}`,
@@ -205,7 +205,7 @@ const EN = {
   allEntries: (n: number, hours: string) => `all ${n} entries ${hours}`,
   avgOf: (parts: string[]) => `(${parts.join(' + ')}) ÷ ${parts.length}`,
   pm1TableNote: (label: string, avg: string) =>
-    `${label}: ${avg} is the average of the “Counts this week” column. Times are clock hours from entering the queue — nights, weekends and holidays included — less time on hold.`,
+    `${label}: ${avg} is the average of the “Counts this week” column. Times are clock hours from entering the queue — nights and holidays included, Saturdays and Sundays not — less time on hold.`,
   nothingCounted: 'Nothing counted in this week.',
   notCountedHeading: 'Landed in this week, not counted',
   howHeading: 'How it is measured',
@@ -240,11 +240,11 @@ const EN = {
   source: 'Source: ',
   logFrom: (date: string) => `log from ${date}`,
   clock: (confirmed: boolean) =>
-    `clock time, Asia/Shanghai; the CN calendar (${confirmed ? 'confirmed' : 'proposed'}) only marks holiday weeks`,
+    `clock time without weekends, Asia/Shanghai; the CN calendar (${confirmed ? 'confirmed' : 'proposed'}) only marks holiday weeks`,
   // waiting dialog
   asOfNow: 'as of now',
   waitingDescription:
-    'In the queue with no reply to the customer and no hand-off yet, at the end of the selected week (now, for this week). Time up to then in clock hours, less time on hold — not in any average until answered. Tickets on hold are listed below and not counted.',
+    'In the queue with no reply to the customer and no hand-off yet, at the end of the selected week (now, for this week). Time up to then in clock hours (Saturdays and Sundays left out), less time on hold — not in any average until answered. Tickets on hold are listed below and not counted.',
   nothingWaiting: 'Nothing is waiting.',
   // banners and footer
   captureFailed: (at: string) => `The last refresh from Halo failed; showing the log as of ${at}.`,
@@ -255,7 +255,7 @@ const EN = {
   refreshing: 'Refreshing from Halo… ',
   captured: (at: string, source: string) => `Captured ${at} (${source}). `,
   legend: (dayHours: number, from: string) =>
-    `All clock time: h = hours, d = calendar days of ${dayHours} h. Halo keeps 14 days of actions, so they are copied into a log that starts ${from}.`,
+    `Clock time without Saturdays and Sundays: h = hours, d = days of ${dayHours} h. Halo keeps 14 days of actions, so they are copied into a log that starts ${from}.`,
   importLog: 'Import log',
   importHint: 'Backfill from an exported event log (the local PM Weekly file). Only what this log does not already hold is added.',
   imported: (added: number, read: number) => `Imported — ${added} new of ${read} events.`,
@@ -266,7 +266,7 @@ const EN = {
 const ZH: typeof EN = {
   title: 'Support 工单更新',
   subtitle:
-    'PM 的几个数字，每周看一次，全部从工单升级进 PM 队列那一刻起按自然时间计——晚上、周末和假期都算，因为客户就是等了这么久。一周为周一至周日。每一行都能点开，查看背后的工单。',
+    'PM 的几个数字，每周看一次，全部从工单升级进 PM 队列那一刻起按自然时间计。晚上和法定假期都算，因为客户照常在等；周六周日不算，因为客户也在休息。一周为周一至周日。每一行都能点开，查看背后的工单。',
   refresh: '刷新',
   thisWeek: '本周',
   logStartsMidWeek: '日志从周中开始',
@@ -277,7 +277,7 @@ const ZH: typeof EN = {
       short: '工单每次进入队列，到 PM 首次回复客户、或带内部备注转出为止。',
       notes: [
         '工单每次从其他任何地方（Support、Development 或任何人）被转入 PM 队列（Product · product_zd@ 或 PM 本人）时开始计时。工单退回后再次进入队列，就要再次响应，这次响应单独计时。',
-        '按自然时间计：晚上、周末和法定假期都算，因为客户就是等了这么久。',
+        '按自然时间计，周六周日不算：晚上和法定假期都算，因为客户照常在等；周末客户也在休息，所以不算。',
         '在 PM 第一次给客户发邮件（Email User 或 Email Update）时停表，或在 PM 把工单转出队列、同时留下内部备注（private note）时停表。Triage 不算响应；单独一条内部备注也不算——即使里面贴了 ClickUp 链接。',
         '每周的数字按工单平均。同一张单在一周内多次进入队列，只算一张，取这几次首次响应的平均值，所以来回流转的单不会比只进一次的单占更多权重。一张单的几次进队列落在不同周时，每周只用当周的那几次计算，列表里另外标出它全部进队列的平均值；已结束的周，数字不会再变。',
         '单子挂起（SLA Hold，例如排期、等客户回复）期间不计时，与 Halo 自己的 SLA 一致；列表里会标出扣掉了多少。',
@@ -289,7 +289,7 @@ const ZH: typeof EN = {
       noun: () => '个需求',
       short: '工单最后一次进入队列，到 PM 在工单上贴出第一个 ClickUp PRD 链接为止。',
       notes: [
-        '从贴链接之前工单最后一次进入 PM 队列起算。之前的几轮——问客户、被团队退回——由首次响应计时；这里只计需求真正推进的那一轮。按日历天（每天 24 小时）计，周末和假期都算。',
+        '从贴链接之前工单最后一次进入 PM 队列起算。之前的几轮——问客户、被团队退回——由首次响应计时；这里只计需求真正推进的那一轮。按天（每天 24 小时）计，周六周日不算，法定假期照算。',
         '只有贴出的 ClickUp 链接才算（app.clickup.com/t/…/PRD-…）；正文里单独写的 "PRD-14894" 通常是在引用别的东西。',
         '最后一次进队列早于日志起点的工单没有起点记录，因此列为「不计入」，而不是去猜。',
       ],
@@ -308,7 +308,7 @@ const ZH: typeof EN = {
       noun: () => '个 bug',
       short: '工单最后一次进入队列，到 PM 把它交给研发为止。',
       notes: [
-        'PM 把工单转给 Lucas（负责接收 bug 进研发）或 Development 部门的任何人，或 PM 本人贴出 ClickUp MB 链接——以先发生者为准——即停表。按日历天（每天 24 小时）计，周末和假期都算。',
+        'PM 把工单转给 Lucas（负责接收 bug 进研发）或 Development 部门的任何人，或 PM 本人贴出 ClickUp MB 链接——以先发生者为准——即停表。按天（每天 24 小时）计，周六周日不算，法定假期照算。',
         'Lucas 之后建的 MB 任务不作为停表点：复现和登记 bug 是研发的时间，不是 PM 的。',
         '与需求分开统计：bug 和需求的推进速度不同，混在一起的平均值哪个都描述不了。',
       ],
@@ -321,7 +321,8 @@ const ZH: typeof EN = {
   benchmarksTitle: (quarter: string) => `基准 · ${quarter}`,
   benchmarksFrom: (from: string, history: boolean) =>
     `取自 ${from} 的平均值，整个季度固定不变${history ? '；日志覆盖不到那个季度，取自 Halo 完整历史' : ''}。`,
-  benchmarksLeftOut: (longWait: number, minWorkdays: number) => `不含等了 ${longWait} 天以上的单，也不含不足 ${minWorkdays} 个工作日的周。`,
+  benchmarksLeftOut: (longWait: number, minWorkdays: number) =>
+    `不含前后等了 ${longWait} 个自然日以上的单，也不含不足 ${minWorkdays} 个工作日的周。`,
   colMetric: '指标',
   colBenchmark: '基准',
   colSamples: '样本',
@@ -334,33 +335,33 @@ const ZH: typeof EN = {
   colValue: '值',
   entriesNote: (n: number) => `${n} 次进队列取平均`,
   leftOutHeading: '列出但不计入',
-  longWaitOut: (days: number, limit: number) => `等了 ${days} 天（超过 ${limit} 天）——计入当周，不计入基准`,
+  longWaitOut: (days: number, limit: number) => `前后 ${days} 个自然日（超过 ${limit} 天）——计入当周，不计入基准`,
   noSamples: '没有样本。',
   quarter: (q: string) => `${q.slice(0, 4)} ${q.slice(5)}`,
   benchmarkFrom: (quarter: string, count: string, longWait: number, history: boolean) =>
-    `基准：${quarter} 平均（${count}，不含等了 ${longWait} 天以上的单）${history ? '——日志覆盖不到，取自 Halo 完整历史' : ''}。`,
+    `基准：${quarter} 平均（${count}，不含前后等了 ${longWait} 个自然日以上的单）${history ? '——日志覆盖不到，取自 Halo 完整历史' : ''}。`,
   trendWhy: (quarter: string, n: number, min: number) => `仅看趋势：${quarter} 只有 ${n} 个样本，基准至少需要 ${min} 个。`,
   noBenchmark: (quarter: string) => `仅看趋势：${quarter} 还没有基准。`,
-  longWait: (days: number) => `等了 ${days} 天——计入本周，不计入季度基准`,
+  longWait: (days: number) => `前后 ${days} 个自然日——计入本周，不计入季度基准`,
   awayWhy: (days: string, limit: number) => `中途连续离开队列 ${days} 天（超过 ${limit} 天）——不计入任何平均值`,
   colourHeading: '颜色规则',
   colourNotes: (r: { yellowFactor: number; minWorkdays: number; minSamples: number; longWaitDays: number; awayDays: number }) => [
     `本周数字 ≤ 基准为绿，≤ 基准 × ${r.yellowFactor} 为黄，超过为红；按页面显示的一位小数比较。`,
     `基准 = 上一季度的平均值，整个季度固定不变；一周按它的周一归属季度。不足 ${r.minWorkdays} 个工作日的周不进基准；基准至少需要 ${r.minSamples} 个样本，不够时只显示趋势。`,
-    `等了 ${r.longWaitDays} 天以上的单照常计入当周，所以清理老单的那一周会显示出来；但不进基准，免得几张积压几个月的单把线拉高。`,
-    `首次进队列之后，中途连续离开队列超过 ${r.awayDays} 天的需求，不计入任何平均值——那段时间不在 PM 手上。首次响应不受影响：单子一离开队列，它的计时就停了。`,
+    `前后等了 ${r.longWaitDays} 个自然日以上的单照常计入当周，所以清理老单的那一周会显示出来；但不进基准，免得几张积压几个月的单把线拉高。`,
+    `最后一次进队列之后，连续离开队列超过 ${r.awayDays} 个自然日的需求，不计入任何平均值——那段时间不在 PM 手上。首次响应不受影响：单子一离开队列，它的计时就停了。`,
   ],
   countTickets: (tickets: number, responses: number) => `${tickets} 张单${responses > tickets ? `（${responses} 次响应）` : ''}`,
   countRows: (n: number) => `${n} 条`,
   waitingName: '等待首次响应',
   waitingSub: (hours: string) => `当前 · 最久已等 ${hours} 小时 · 回复前不计入任何平均值`,
   waitingNone: '当前 · 无等待',
-  waitingSubAt: (week: string, hours: string) => `${week} 周末 · 最久已等 ${hours} 小时`,
-  waitingNoneAt: (week: string) => `${week} 周末 · 无等待`,
+  waitingSubAt: (week: string, hours: string) => `${week} 这周结束时 · 最久已等 ${hours} 小时`,
+  waitingNoneAt: (week: string) => `${week} 这周结束时 · 无等待`,
   othersNote: (held: number) => (held ? ` · 另有 ${held} 张挂起中` : ''),
-  asOfWeekEnd: (week: string) => `截至 ${week} 周末`,
+  asOfWeekEnd: (week: string) => `截至 ${week} 这周结束时`,
   groupOnHold: (n: number) => `当时挂起中 — ${n} 张，不计入：排期或等客户回复`,
-  laterNote: (week: string) => `用时只算到 ${week} 周末；"首次响应"和"方式"两栏是后来实际发生的情况。`,
+  laterNote: (week: string) => `用时只算到 ${week} 这周结束时；"首次响应"和"方式"两栏是后来实际发生的情况。`,
   waitingBadge: (n: number) => `${n} 个等待中`,
   workingDays: (n: number) => `${n} 个工作日`,
   holidays: (n: number) => `${n} 天假期`,
@@ -383,7 +384,7 @@ const ZH: typeof EN = {
   allEntries: (n: number, hours: string) => `全部 ${n} 次 ${hours}`,
   avgOf: (parts: string[]) => `(${parts.join(' + ')}) ÷ ${parts.length}`,
   pm1TableNote: (label: string, avg: string) =>
-    `${label} 的 ${avg} = 下表「本周计入」一列的平均值；用时按自然时间从进队列算起，晚上、周末、假期都算，挂起时间不算。`,
+    `${label} 的 ${avg} = 下表「本周计入」一列的平均值；用时按自然时间从进队列算起，晚上和假期都算，周六周日和挂起时间不算。`,
   nothingCounted: '该周没有计入的记录。',
   notCountedHeading: '落在该周、但未计入',
   howHeading: '口径',
@@ -417,10 +418,11 @@ const ZH: typeof EN = {
   },
   source: '数据源：',
   logFrom: (date: string) => `日志起点 ${date}`,
-  clock: (confirmed: boolean) => `自然时间（Asia/Shanghai）；中国节假日日历（${confirmed ? '已确认' : '待确认'}）只用来标出假期周`,
+  clock: (confirmed: boolean) =>
+    `自然时间（Asia/Shanghai，周六周日不算）；中国节假日日历（${confirmed ? '已确认' : '待确认'}）只用来标出假期周`,
   asOfNow: '截至当前',
   waitingDescription:
-    '所选那一周结束时（本周为当前），已在队列中、尚未回复客户也未转出的工单。显示到那时为止的自然时间（不含挂起）——回复前不计入任何平均值。挂起中的单列在下面，不计入数字。',
+    '所选那一周结束时（本周为当前），已在队列中、尚未回复客户也未转出的工单。显示到那时为止的自然时间（周六周日和挂起时间不算）——回复前不计入任何平均值。挂起中的单列在下面，不计入数字。',
   nothingWaiting: '当前没有等待中的工单。',
   captureFailed: (at: string) => `最近一次从 Halo 刷新失败；当前显示的是截至 ${at} 的日志。`,
   gaps: (n: number, list: string) => `日志有 ${n} 处缺口（${list}）。其中的 action 在复制前已从 Halo 过期，涉及的周数据不完整。`,
@@ -429,7 +431,7 @@ const ZH: typeof EN = {
   refreshing: '正在从 Halo 刷新… ',
   captured: (at: string, source: string) => `采集于 ${at}（${source}）。`,
   legend: (dayHours: number, from: string) =>
-    `全部按自然时间：h = 小时，d = 日历天（每天 ${dayHours} 小时）。Halo 只保留 14 天的 action，因此会复制到日志中，日志起点 ${from}。`,
+    `自然时间，周六周日不算：h = 小时，d = 天（每天 ${dayHours} 小时）。Halo 只保留 14 天的 action，因此会复制到日志中，日志起点 ${from}。`,
   importLog: '导入日志',
   importHint: '用导出的事件日志（本地 PM Weekly 文件）补齐更早的历史。只会添加当前日志里没有的内容。',
   imported: (added: number, read: number) => `已导入——${read} 条事件中新增 ${added} 条。`,

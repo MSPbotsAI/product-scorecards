@@ -23,10 +23,13 @@
  *   canny     Requirement to Canny — the same start, to the first Canny post link the PM posts
  *             (a new post or an existing one).
  *
- * Every duration is clock time: nights, weekends and public holidays all count, because that is how
- * long the customer waits (decided by the PM, 2026-10-19). First response is in hours and leaves out
- * time on hold; the other three are in calendar days of 24 h. The CN working calendar (workTime.ts)
- * only shapes the weeks: how many working days each holds, and which stay out of a benchmark.
+ * Every duration is clock time without Saturdays and Sundays (Asia/Shanghai). Nights and CN public
+ * holidays count, because the customer works through them and waits; the weekend does not, because
+ * the customer is off too (decided by the PM, 2026-10-21; pure clock time from 2026-10-19 before
+ * that). First response is in hours and leaves out time on hold; the other three are in days of
+ * 24 h. The CN working calendar (workTime.ts) only shapes the weeks: how many working days each
+ * holds, and which stay out of a benchmark. The 30-day rules (LONG_WAIT_DAYS, AWAY_DAYS) count
+ * calendar days.
  * Each measurement is reported in the week its END
  * lands in, so a finished week's numbers never move again. Nothing is averaged that is not also
  * listed: every counted row is shown behind its number, and every row that is not counted is shown
@@ -38,7 +41,7 @@
 import { HOLD, RELEASE, TICKET_CLOSED, inQueue, isPm, type Party, type PmEvent } from './actions.ts'
 import { HISTORY_BASELINES } from './baselines.ts'
 import { type EventStore, coverage } from './store.ts'
-import { type WeekShape, weekLabel, weekOf, weekShape, weeksBetween } from './workTime.ts'
+import { type WeekShape, weekLabel, weekOf, weekShape, weekdayMsBetween, weeksBetween } from './workTime.ts'
 
 /** How far apart a hand-off and its private note may be and still be one act. Observed gaps are seconds. */
 const PAIR_WINDOW_MS = 30 * 60_000
@@ -246,22 +249,24 @@ function holdsOf(evs: PmEvent[]): Hold[] {
   return holds
 }
 
-/** Working time from → to, less the part on hold. `all` keeps the whole, for the rest-day label. */
 const HOUR_MS = 3_600_000
 
+/** Hours from → to on the scorecard's clock: every hour Monday to Friday, Asia/Shanghai. */
+const weekdayHours = (fromIso: string, toIso: string) => weekdayMsBetween(Date.parse(fromIso), Date.parse(toIso)) / HOUR_MS
+
 /**
- * Clock time from → to, less the part on hold. First response counts every hour from the moment
- * the ticket is escalated into the PM queue, working time or not (decided by the PM, 2026-10-19).
+ * First response's time from → to, less the part on hold: every weekday hour from the moment the
+ * ticket is escalated into the PM queue, working time or not.
  */
 function waitBetween(holds: Hold[], fromIso: string, toIso: string): { hours: number; held: number; all: number } {
   const start = Date.parse(fromIso)
   const end = Date.parse(toIso)
-  const all = Math.max(0, end - start) / HOUR_MS
+  const all = weekdayMsBetween(start, end) / HOUR_MS
   let held = 0
   for (const h of holds) {
     const from = Math.max(h.from, start)
     const to = Math.min(h.to ?? Number.POSITIVE_INFINITY, end)
-    if (to > from) held += (to - from) / HOUR_MS
+    if (to > from) held += weekdayMsBetween(from, to) / HOUR_MS
   }
   return { hours: Math.max(0, all - held), held, all }
 }
@@ -434,8 +439,8 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
       : (away ?? 0) > AWAY_DAYS * DAY_MS
         ? 'away'
         : 'counted'
-    // Clock time, like first response: the customer waits through weekends and holidays too.
-    const hours = entered ? (Date.parse(e.at) - Date.parse(entered)) / HOUR_MS : null
+    // The same clock as first response: weekdays only, holidays included.
+    const hours = entered ? weekdayHours(entered, e.at) : null
     out.push({
       ticket,
       ...meta,

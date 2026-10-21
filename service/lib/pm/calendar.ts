@@ -1,8 +1,8 @@
 /**
  * The PM's working calendar — which local dates count as working time.
  *
- * Every scorecard duration is clock time since 2026-10-19, so this calendar no longer changes how long
- * anything took. It shapes the weeks: how many working days each holds, and which (fewer than three)
+ * Every scorecard duration is clock time less Saturdays and Sundays (workTime.ts), so this calendar
+ * does not change how long anything took. It shapes the weeks: how many working days each holds, and which (fewer than three)
  * stay out of a quarter's benchmark. The PM works to the CN calendar: public holidays are off, and the
  * make-up workdays that pay for them are on, even when they fall on a weekend.
  *

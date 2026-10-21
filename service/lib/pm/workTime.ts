@@ -1,10 +1,11 @@
 /**
- * The PM's working clock.
+ * The PM's clocks.
  *
- * Since 2026-10-19 every scorecard duration is clock time, which is what the customer waits (decided
- * by the PM). This working clock — Asia/Shanghai, 09:30–19:00, on the working days `calendar.ts`
- * defines — now only shapes the weeks: how many working days and hours each holds (the card's
- * progress bar), and which weeks are too short to enter a benchmark.
+ * Every scorecard duration is clock time without Saturdays and Sundays (`weekdayMsBetween`, decided
+ * by the PM on 2026-10-21): the customer is off at the weekend too, but works through CN public
+ * holidays. The working clock — Asia/Shanghai, 09:30–19:00, on the working days `calendar.ts`
+ * defines — only shapes the weeks: how many working days and hours each holds (the card's progress
+ * bar), and which weeks are too short to enter a benchmark.
  *
  * Asia/Shanghai has had no daylight saving since 1991, so a fixed UTC+8 offset is exact — no tz
  * database, and no chance of a DST edge quietly shifting an hour.
@@ -44,6 +45,22 @@ function dayOfWeek(date: string): number {
 /** The UTC instant of local midnight at the start of a local date. */
 function localMidnight(date: string): number {
   return Date.parse(`${date}T00:00:00Z`) - OFFSET_MS
+}
+
+/**
+ * The part of from → to (epoch ms) that falls Monday to Friday in Asia/Shanghai, in ms. Nights and
+ * public holidays count; Saturdays and Sundays, make-up workdays included, do not.
+ */
+export function weekdayMsBetween(from: number, to: number): number {
+  let ms = 0
+  for (let t = from; t < to; ) {
+    const day = localDate(t)
+    const next = Math.min(localMidnight(day) + DAY_MS, to)
+    const dow = dayOfWeek(day)
+    if (dow >= 1 && dow <= 5) ms += next - t
+    t = next
+  }
+  return ms
 }
 
 /** Whether the PM works on this local date: weekday and not a holiday, or a listed make-up day. */
