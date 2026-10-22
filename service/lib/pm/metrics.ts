@@ -14,7 +14,9 @@
  *   prd       Requirement into development — the ticket's last entry into the queue before the link,
  *             to the first ClickUp PRD link the PM posts on the ticket. Earlier rounds in the queue
  *             are timed by first response; this clock times the round the request moved in
- *             (decided by the PM, 2026-10-19).
+ *             (decided by the PM, 2026-10-19). If the PM schedules the ticket (Schedule Ticket) in
+ *             that round before posting the link, the clock stops at the scheduling, and the link
+ *             that follows is paperwork (decided by the PM, 2026-10-22, on #49914).
  *   mb        Bug into development — the same clock, to the PM's own hand-off into development:
  *             moving the ticket to Lucas (the bug intake) or anyone in Development, or posting a
  *             ClickUp MB link, whichever comes first. The MB link Lucas logs afterwards is his time,
@@ -154,10 +156,15 @@ export interface EntryRow {
   summary: string
   client: string
   kind: EntryKind
-  /** How the clock stopped: a link the PM posted, or (bugs only) the PM's hand-off into development. */
-  via: 'link' | 'handoff'
+  /**
+   * How the clock stopped: a link the PM posted, (bugs only) the PM's hand-off into development, or
+   * (requirements only) the PM scheduling the ticket before he posted its link.
+   */
+  via: 'link' | 'handoff' | 'schedule'
   /** "PRD-19414", "MB-12057", a Canny post path, or for a hand-off the receiving party. */
   ref: string
+  /** For a requirement stopped at its scheduling: when its PRD link was posted. Null otherwise. */
+  linkedAt: string | null
   /** The entry the clock runs from — the last one into the queue before the stop — for counted and away rows; null otherwise. */
   arrivedAt: string | null
   /** That entry was a reopen while the queue held the ticket, not a move. */
@@ -289,6 +296,8 @@ const later = (a: string, b: string) => (Date.parse(a) >= Date.parse(b) ? a : b)
 /** Lucas takes bugs in for development; a move to him, or to anyone in Development, puts a bug into dev. */
 const BUG_INTAKE = 'Lucas Chen'
 const toDevelopment = (p?: Party) => !!p && (p.person === BUG_INTAKE || p.dept === 'Development')
+/** The Halo action that sets a ticket's scheduled date (status Scheduled). */
+const SCHEDULE_TICKET = 'Schedule Ticket'
 const isBugHandoff = (e: PmEvent) => isPm(e.who) && isDeparture(e) && toDevelopment(e.to)
 
 /** When a ticket was on hold: each SLA Hold until the next SLA Release, or open-ended. */
@@ -493,8 +502,9 @@ function longestAway(evs: PmEvent[], fromIso: string, toIso: string): number {
 
 /**
  * When each kind of request entered development or Canny: the first link of that kind the PM posted,
- * and for bugs also the PM's hand-off into development — whichever came first. Measured from the
- * ticket's last entry into the queue before it.
+ * for bugs also the PM's hand-off into development — whichever came first — and for requirements the
+ * PM's scheduling of the ticket, if it came before the link. Measured from the ticket's last entry
+ * into the queue before it.
  */
 function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client: string }, complete: boolean): EntryRow[] {
   const out: EntryRow[] = []
@@ -502,12 +512,20 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
   for (const kind of ['prd', 'mb', 'canny'] as const) {
     const link = evs.find((x) => isPm(x.who) && x[kind].length > 0)
     const handoff = kind === 'mb' ? evs.find(isBugHandoff) : undefined
-    const e = [link, handoff].filter((x): x is PmEvent => !!x).sort(byTime)[0]
-    if (!e) continue
-    const via: EntryRow['via'] = e === link ? 'link' : 'handoff'
+    const first = [link, handoff].filter((x): x is PmEvent => !!x).sort(byTime)[0]
+    if (!first) continue
     // The round the request moved in: its last entry into the queue before the link or hand-off — a
     // reopen counts. An entry the log holds is the last one whether or not older history is on record.
-    const entry = evs.filter((x) => into.has(x) && Date.parse(x.at) <= Date.parse(e.at)).pop()
+    const entry = evs.filter((x) => into.has(x) && Date.parse(x.at) <= Date.parse(first.at)).pop()
+    // A requirement the PM scheduled in that round before posting its link went to development when he
+    // scheduled it; the link followed as paperwork. The link still has to come: scheduling alone is not
+    // a requirement into development.
+    const scheduled =
+      kind === 'prd' && entry
+        ? evs.find((x) => isPm(x.who) && x.outcome === SCHEDULE_TICKET && byTime(x, entry) > 0 && byTime(x, first) < 0)
+        : undefined
+    const e = scheduled ?? first
+    const via: EntryRow['via'] = scheduled ? 'schedule' : first === link ? 'link' : 'handoff'
     const entered = entry?.at ?? null
     const timed = entered !== null
     const away = entered ? longestAway(evs, entered, e.at) : null
@@ -526,7 +544,8 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
       kind,
       via,
       // A hand-off always names its receiver: isBugHandoff only matches a move whose "to" is known.
-      ref: via === 'link' ? e[kind][0] : (party(e.to) ?? ''),
+      ref: via === 'handoff' ? (party(e.to) ?? '') : (link as PmEvent)[kind][0],
+      linkedAt: scheduled && link ? link.at : null,
       arrivedAt: entered,
       reopened: entry?.outcome === TICKET_REOPENED,
       at: e.at,

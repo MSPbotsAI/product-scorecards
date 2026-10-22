@@ -105,9 +105,11 @@ const EN = {
     prd: {
       name: 'Requirement → development',
       noun: (n: number): string => (n === 1 ? 'requirement' : 'requirements'),
-      short: 'The ticket’s last entry into the queue, to the first ClickUp PRD link the PM posts on it.',
+      short:
+        'The ticket’s last entry into the queue, to the PM scheduling it or posting its first ClickUp PRD link — whichever comes first.',
       notes: [
         'Measured from the last time the ticket entered the PM queue before the link — a reopen while it sits in the queue counts as entering it. Earlier rounds — a question back to the customer, a return from the team — are timed by first response; this clock times the round the request moved in. Counted in working days of 24 h; weekends and public holidays do not count.',
+        'If the PM schedules the ticket in Halo (Schedule Ticket) in that round before posting the link, the clock stops at the scheduling: the link is the paperwork that follows. The ticket still needs a PRD link to count — scheduling alone is not a requirement into development.',
         'Only a pasted ClickUp link counts (app.clickup.com/t/…/PRD-…); a bare "PRD-14894" in prose is usually a reference to something else.',
         'A ticket whose last entry came before the log starts has no start on record, so it is listed as not counted rather than guessed.',
       ],
@@ -239,6 +241,7 @@ const EN = {
   beforeClockSample: 'on a day off — counts as 0',
   notYet: 'no response yet',
   handedTo: (to: string) => `handed to ${to}`,
+  scheduledFirst: (when: string) => `stopped at the PM’s Schedule Ticket; link posted ${when}`,
   notCounted: {
     'no-note': 'handed off without a private note',
     'taken-out': 'moved out by someone else before a PM response',
@@ -296,9 +299,10 @@ const ZH: typeof EN = {
     prd: {
       name: '需求进研发',
       noun: () => '个需求',
-      short: '工单最后一次进入队列，到 PM 在工单上贴出第一个 ClickUp PRD 链接为止。',
+      short: '工单最后一次进入队列，到 PM 给它排期（Schedule Ticket）或贴出第一个 ClickUp PRD 链接为止，以先发生者为准。',
       notes: [
         '从贴链接之前工单最后一次进入 PM 队列起算（关闭后在队列里被重开，也算进入队列）。之前的几轮——问客户、被团队退回——由首次响应计时；这里只计需求真正推进的那一轮。按工作日计（每天 24 小时），周末和法定假期不算。',
+        '如果同一轮里 PM 先在 Halo 给工单排期（Schedule Ticket），之后才贴链接，就按排期那一刻停表——链接只是补的手续。单子仍要贴出 PRD 链接才计入，单独排期不算需求进研发。',
         '只有贴出的 ClickUp 链接才算（app.clickup.com/t/…/PRD-…）；正文里单独写的 "PRD-14894" 通常是在引用别的东西。',
         '最后一次进队列早于日志起点的工单没有起点记录，因此列为「不计入」，而不是去猜。',
       ],
@@ -427,6 +431,7 @@ const ZH: typeof EN = {
   beforeClockSample: '非工作日处理——记 0',
   notYet: '尚未响应',
   handedTo: (to: string) => `转给 ${to}`,
+  scheduledFirst: (when: string) => `按排期（Schedule Ticket）停表；链接 ${when} 才贴`,
   notCounted: {
     'no-note': '转出时没有留内部备注',
     'taken-out': 'PM 响应前已被他人转出',
@@ -723,9 +728,14 @@ function RefLink({ row, t }: { row: EntryRow; t: Copy }) {
   if (row.via === 'handoff') return <span className="text-muted-foreground">{t.handedTo(row.ref)}</span>
   const href = row.kind === 'canny' ? `https://mspbots.canny.io${row.ref}` : `https://app.clickup.com/t/${CLICKUP_WORKSPACE}/${row.ref}`
   return (
-    <a href={href} target="_blank" rel="noreferrer" className="break-all underline-offset-2 hover:underline">
-      {row.ref}
-    </a>
+    <>
+      <a href={href} target="_blank" rel="noreferrer" className="break-all underline-offset-2 hover:underline">
+        {row.ref}
+      </a>
+      {row.via === 'schedule' && row.linkedAt && (
+        <div className="text-[11px] text-muted-foreground">{t.scheduledFirst(local(row.linkedAt))}</div>
+      )}
+    </>
   )
 }
 
