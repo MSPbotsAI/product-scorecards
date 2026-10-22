@@ -94,7 +94,7 @@ const EN = {
       noun: (n: number): string => (n === 1 ? 'ticket' : 'tickets'),
       short: 'Each arrival into the queue, to the first reply to the customer or a hand-off with a private note.',
       notes: [
-        'A clock starts every time a ticket is moved into the PM queue (Product · product_zd@ or the PM) from anywhere else — Support, Development, anyone. A ticket that comes back is answered again, and that answer is timed on its own.',
+        'A clock starts every time a ticket is moved into the PM queue (Product · product_zd@ or the PM) from anywhere else — Support, Development, anyone. A ticket that comes back is answered again, and that answer is timed on its own. A ticket reopened while it sits in the queue — the customer replying to a closed ticket, or Support reopening it — enters the queue again at the reopen; one the PM reopens himself does not.',
         'It runs on the PM’s working days — the CN calendar as he works it: every hour of a working day counts, nights included; weekends and public holidays do not. A ticket that arrives on a day off is timed from 00:00 of the next working day; one answered before then counts as 0 h, stays in the average, and is marked in the list.',
         'It stops at the PM’s first email to the customer (Email User or Email Update), or at the PM moving the ticket out of the queue with a private note left alongside. Triage is not a response, and a private note on its own is not one either — even one that posts a ClickUp link.',
         'The week’s number is an average over tickets. A ticket that came into the queue more than once that week counts once, at the average of those first responses, so a ticket that bounces back and forth weighs no more than one that does not. A ticket whose entries fall in different weeks counts in each week with that week’s entries; the list shows its average over all of them beside it, and a finished week never changes.',
@@ -107,7 +107,7 @@ const EN = {
       noun: (n: number): string => (n === 1 ? 'requirement' : 'requirements'),
       short: 'The ticket’s last entry into the queue, to the first ClickUp PRD link the PM posts on it.',
       notes: [
-        'Measured from the last time the ticket entered the PM queue before the link. Earlier rounds — a question back to the customer, a return from the team — are timed by first response; this clock times the round the request moved in. Counted in working days of 24 h; weekends and public holidays do not count.',
+        'Measured from the last time the ticket entered the PM queue before the link — a reopen while it sits in the queue counts as entering it. Earlier rounds — a question back to the customer, a return from the team — are timed by first response; this clock times the round the request moved in. Counted in working days of 24 h; weekends and public holidays do not count.',
         'Only a pasted ClickUp link counts (app.clickup.com/t/…/PRD-…); a bare "PRD-14894" in prose is usually a reference to something else.',
         'A ticket whose last entry came before the log starts has no start on record, so it is listed as not counted rather than guessed.',
       ],
@@ -233,6 +233,7 @@ const EN = {
   closedInHalo: 'closed in Halo before any response',
   heldNote: (hours: string) => `on hold ${hours} h, not counted`,
   clockFrom: (when: string) => `clock from ${when}`,
+  reopened: 'reopened in the queue',
   beforeClockReply: 'Answered on a day off — the clock had not started',
   beforeClockEntry: 'Done on a day off — the clock had not started',
   beforeClockSample: 'on a day off — counts as 0',
@@ -284,7 +285,7 @@ const ZH: typeof EN = {
       noun: () => '张单',
       short: '工单每次进入队列，到 PM 首次回复客户、或带内部备注转出为止。',
       notes: [
-        '工单每次从其他任何地方（Support、Development 或任何人）被转入 PM 队列（Product · product_zd@ 或 PM 本人）时开始计时。工单退回后再次进入队列，就要再次响应，这次响应单独计时。',
+        '工单每次从其他任何地方（Support、Development 或任何人）被转入 PM 队列（Product · product_zd@ 或 PM 本人）时开始计时。工单退回后再次进入队列，就要再次响应，这次响应单独计时。单子关闭后被重开、且仍在 PM 队列里的（客户回复已关闭的单，或 Support 重开），也算在重开那一刻重新进入队列；PM 自己重开的不算。',
         '按 PM 的工作日计时（中国日历，按他实际上班的日子）：工作日的每个小时都算，包括晚上；周末和法定假期不算。非工作日进来的单，从下一个工作日 0 点起算；在那之前就回复了的记 0 h，照常计入平均，并在列表中标出。',
         '在 PM 第一次给客户发邮件（Email User 或 Email Update）时停表，或在 PM 把工单转出队列、同时留下内部备注（private note）时停表。Triage 不算响应；单独一条内部备注也不算——即使里面贴了 ClickUp 链接。',
         '每周的数字按工单平均。同一张单在一周内多次进入队列，只算一张，取这几次首次响应的平均值，所以来回流转的单不会比只进一次的单占更多权重。一张单的几次进队列落在不同周时，每周只用当周的那几次计算，列表里另外标出它全部进队列的平均值；已结束的周，数字不会再变。',
@@ -297,7 +298,7 @@ const ZH: typeof EN = {
       noun: () => '个需求',
       short: '工单最后一次进入队列，到 PM 在工单上贴出第一个 ClickUp PRD 链接为止。',
       notes: [
-        '从贴链接之前工单最后一次进入 PM 队列起算。之前的几轮——问客户、被团队退回——由首次响应计时；这里只计需求真正推进的那一轮。按工作日计（每天 24 小时），周末和法定假期不算。',
+        '从贴链接之前工单最后一次进入 PM 队列起算（关闭后在队列里被重开，也算进入队列）。之前的几轮——问客户、被团队退回——由首次响应计时；这里只计需求真正推进的那一轮。按工作日计（每天 24 小时），周末和法定假期不算。',
         '只有贴出的 ClickUp 链接才算（app.clickup.com/t/…/PRD-…）；正文里单独写的 "PRD-14894" 通常是在引用别的东西。',
         '最后一次进队列早于日志起点的工单没有起点记录，因此列为「不计入」，而不是去猜。',
       ],
@@ -420,6 +421,7 @@ const ZH: typeof EN = {
   closedInHalo: '响应前已在 Halo 关闭',
   heldNote: (hours: string) => `挂起 ${hours} h 不计`,
   clockFrom: (when: string) => `从 ${when} 起算`,
+  reopened: '在队列中重开',
   beforeClockReply: '非工作日回复——还没开始计时',
   beforeClockEntry: '非工作日完成——还没开始计时',
   beforeClockSample: '非工作日处理——记 0',
@@ -676,7 +678,7 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
               <TableCell className="whitespace-normal align-top">
                 <div className="tabular-nums">{local(r.arrivedAt)}</div>
                 {r.clockFrom && <div className="text-[11px] italic text-muted-foreground">{t.clockFrom(local(r.clockFrom))}</div>}
-                <div className="text-[11px] text-muted-foreground">{r.arrivedFrom ?? t.unknown}</div>
+                <div className="text-[11px] text-muted-foreground">{r.reopened ? t.reopened : (r.arrivedFrom ?? t.unknown)}</div>
               </TableCell>
               <TableCell className="align-top tabular-nums">{local(r.endedAt)}</TableCell>
               {!reason && (
@@ -760,6 +762,7 @@ function EntryRows({
             <TableCell className="align-top tabular-nums">
               {local(r.arrivedAt)}
               {r.clockFrom && <div className="text-[11px] italic text-muted-foreground">{t.clockFrom(local(r.clockFrom))}</div>}
+              {r.reopened && <div className="text-[11px] text-muted-foreground">{t.reopened}</div>}
             </TableCell>
             <TableCell className="align-top tabular-nums">{local(r.at)}</TableCell>
             {!reason && (

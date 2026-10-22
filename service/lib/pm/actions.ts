@@ -11,6 +11,8 @@
  *   outcome = SLA Hold / SLA Release
  *                       when a ticket the log follows is parked (scheduled, waiting on the requester)
  *                       and released: first response does not run while a ticket is on hold
+ *   old_status = Closed / Resolved
+ *                       when a ticket the log follows is reopened, whichever action did it
  *
  * The reports API filters server-side on any column passed as a query parameter, which keeps each
  * read to a page or two out of ~9k rows. Each page is slow (40–70 s), so pages after the first are
@@ -43,6 +45,17 @@ export const RELEASE = 'SLA Release'
  * without it the ticket would wait for a first response forever.
  */
 export const TICKET_CLOSED = 'Ticket closed'
+/**
+ * Not a Halo action either. The capture writes it when an action takes a ticket out of a done status
+ * (DONE_STATUSES) into any other. Halo reopens a ticket several ways: the customer's email, "Re-Open
+ * Ticket 1st", a status change. So the status is read, not the action's name. Halo keeps the
+ * assignee when it closes a ticket, so a reopen hands the ticket straight back to whoever held it:
+ * for the PM's queue that is an entry into it (decided by the PM, 2026-10-22, on #49470).
+ */
+export const TICKET_REOPENED = 'Ticket reopened'
+/** The statuses a ticket is done in. Leaving one for any other status reopens the ticket. */
+export const DONE_STATUSES = ['Closed', 'Resolved']
+
 /** Exactly "Product" — not "Product - Assets", which is a different team with its own queue. */
 export const PRODUCT_DEPT = 'Product'
 
@@ -203,13 +216,25 @@ export function toEvent(r: Row): PmEvent | null {
 }
 
 /**
+ * The reopen an action makes, given the status names it moves between: an event of its own beside
+ * the action, which may be a PM reply too. Null when the action does not take the ticket out of a
+ * done status.
+ */
+export function reopenEvent(action: PmEvent, oldStatus: string, newStatus: string): PmEvent | null {
+  if (!DONE_STATUSES.includes(oldStatus) || DONE_STATUSES.includes(newStatus)) return null
+  const { id, ticket, seq, at, who } = action
+  return { id: `${id}-reopened`, ticket, seq, at, who, outcome: TICKET_REOPENED, prd: [], mb: [], canny: [] }
+}
+
+/**
  * A Re-Assign is kept only if the PM's queue is on one end of it; the rest of the tenant is noise.
- * Holds, releases and closures are kept here too; the reader keeps them only for tickets the log follows.
+ * Holds, releases, closures and reopens are kept here too; the reader keeps them only for tickets the
+ * log follows.
  */
 export function relevant(e: PmEvent): boolean {
   if (isPm(e.who)) return true
   if (e.outcome === 'Re-Assign') return inQueue(e.from) || inQueue(e.to)
-  return e.outcome === HOLD || e.outcome === RELEASE || e.outcome === TICKET_CLOSED
+  return e.outcome === HOLD || e.outcome === RELEASE || e.outcome === TICKET_CLOSED || e.outcome === TICKET_REOPENED
 }
 
 const isPark = (e: PmEvent) => e.outcome === HOLD || e.outcome === RELEASE
@@ -233,11 +258,13 @@ export async function readActions(datasetId: string, auth: ReadAuth, known: Set<
   const read = reader(datasetId, auth)
   const slice = (params: Record<string, string>) => pullSlice((page) => read({ current: page, size: PAGE_SIZE, ...params }))
 
-  const [moves, firsts, holds, releases, ...perAccount] = await Promise.all([
+  const [moves, firsts, holds, releases, reopens, ...perAccount] = await Promise.all([
     slice({ outcome: 'Re-Assign' }),
     slice({ time_log_id: '1' }),
     slice({ outcome: HOLD }),
     slice({ outcome: RELEASE }),
+    // Actions on done tickets: the few that take one out of its done status are reopens.
+    Promise.all(DONE_STATUSES.map((status) => slice({ old_status: status }))).then((s) => s.flat()),
     ...PM_ACCOUNTS.map((who) => slice({ who })),
   ])
   const pm = perAccount.flat()
@@ -264,6 +291,11 @@ export async function readActions(datasetId: string, auth: ReadAuth, known: Set<
     const e = toEvent(r)
     if (e && followed.has(e.ticket) && !events.has(e.id)) events.set(e.id, e)
   }
+  for (const r of reopens) {
+    const e = toEvent(r)
+    const reopen = e && followed.has(e.ticket) ? reopenEvent(e, String(r.old_status ?? ''), String(r.new_status ?? '')) : null
+    if (reopen && !events.has(reopen.id)) events.set(reopen.id, reopen)
+  }
   const created: Record<string, string> = {}
   for (const r of firsts) {
     const t = String(r.ticket_id ?? '')
@@ -271,13 +303,15 @@ export async function readActions(datasetId: string, auth: ReadAuth, known: Set<
     if (t && Number.isFinite(at)) created[t] = new Date(at).toISOString()
   }
 
-  const all = [...pm, ...moves, ...firsts, ...holds, ...releases].map((r) => Date.parse(String(r.datetime ?? ''))).filter(Number.isFinite)
+  const all = [...pm, ...moves, ...firsts, ...holds, ...releases, ...reopens]
+    .map((r) => Date.parse(String(r.datetime ?? '')))
+    .filter(Number.isFinite)
   return {
     events: [...events.values()],
     created,
     tickets,
     source: auth.mode,
-    rows: pm.length + moves.length + firsts.length + holds.length + releases.length,
+    rows: pm.length + moves.length + firsts.length + holds.length + releases.length + reopens.length,
     oldest: all.length ? new Date(Math.min(...all)).toISOString() : null,
     newest: all.length ? new Date(Math.max(...all)).toISOString() : null,
   }

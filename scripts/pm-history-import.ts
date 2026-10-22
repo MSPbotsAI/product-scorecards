@@ -8,7 +8,8 @@
  * - The PM's own actions and every move into or out of the queue, reduced as the live capture reduces
  *   them, with no note text. "The PM" is PM_ACCOUNTS, as the page counts.
  * - Each ticket's first action. The history is complete, so tickets older than the log are timed too.
- * - Each ticket's holds and releases, because first response does not run while a ticket is on hold.
+ * - Each ticket's holds and releases, because first response does not run while a ticket is on hold,
+ *   and each action that reopened it, because a reopen in the queue is an entry into it.
  * - Each ticket's summary and client, from the Halo tickets table, for the ticket lists. The same table
  *   says which tickets are closed; a closure event ends any wait they still have open.
  * - One capture covering the log from local midnight of the given Monday. The weeks from that Monday on
@@ -30,7 +31,8 @@ if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || new Date(`${start}T00:00:00Z`).getUTCD
 }
 
 const rows = await readActions(PM_ACCOUNTS)
-// First response does not run while a ticket is on hold: each ticket's holds and releases come too.
+// First response does not run while a ticket is on hold, and a reopen in the queue is an entry into
+// it: each ticket's holds, releases and reopens come too.
 rows.push(...(await readTicketActions([...new Set(Object.values(eventsFor(rows, PM_ACCOUNTS)).map((e) => e.ticket))], [HOLD, RELEASE])))
 const events = eventsFor(rows, PM_ACCOUNTS)
 const created = firstActions(events)

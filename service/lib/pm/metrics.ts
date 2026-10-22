@@ -23,6 +23,11 @@
  *   canny     Requirement to Canny — the same start, to the first Canny post link the PM posts
  *             (a new post or an existing one).
  *
+ * An entry into the queue is a move into it from anywhere else, or a reopen by anyone but the PM
+ * while the queue holds the ticket: Halo keeps the assignee when it closes a ticket, so a reopen hands
+ * it straight back (decided by the PM, 2026-10-22, on #49470). Both start a first-response clock, and
+ * the last one before a link or hand-off starts the requirement, Canny and bug clocks.
+ *
  * Every duration runs on the PM's working days (calendar.ts — the CN calendar as he works it), each
  * counted whole, 24 h, Asia/Shanghai: nights on a working day count, weekends and public holidays do
  * not (decided by the PM, 2026-10-22; pure clock time from 2026-10-19, then weekdays from 2026-10-21).
@@ -38,7 +43,7 @@
  * A request that spent more than AWAY_DAYS out of the queue on the way is listed but in no average.
  * Each week is coloured against its quarter's benchmark, the previous quarter's average (benchmarkFor).
  */
-import { HOLD, RELEASE, TICKET_CLOSED, inQueue, isPm, type Party, type PmEvent } from './actions.ts'
+import { HOLD, RELEASE, TICKET_CLOSED, TICKET_REOPENED, inQueue, isPm, type Party, type PmEvent } from './actions.ts'
 import { HISTORY_BASELINES } from './baselines.ts'
 import { type EventStore, coverage } from './store.ts'
 import { type WeekShape, clockStart, weekLabel, weekOf, weekShape, weeksBetween, workdayMsBetween } from './workTime.ts'
@@ -100,8 +105,10 @@ export interface ResponseRow {
   summary: string
   client: string
   arrivedAt: string
-  /** Who moved it in, "Support · Kinn Maagad"; null when the move note did not name both ends. */
+  /** Who moved it in, "Support · Kinn Maagad"; null when the move note did not name both ends, or for a reopen. */
   arrivedFrom: string | null
+  /** It entered by being reopened while the queue held it, not by a move. */
+  reopened: boolean
   outcome: CycleOutcome
   endedAt: string | null
   /**
@@ -153,6 +160,8 @@ export interface EntryRow {
   ref: string
   /** The entry the clock runs from — the last one into the queue before the stop — for counted and away rows; null otherwise. */
   arrivedAt: string | null
+  /** That entry was a reopen while the queue held the ticket, not a move. */
+  reopened: boolean
   at: string
   hours: number | null
   /** When the clock started, if later than `arrivedAt` (an entry on a day off). */
@@ -238,6 +247,37 @@ export interface TicketWeek {
 const party = (p?: Party): string | null => (p ? `${p.dept} · ${p.person}` : null)
 const byTime = (a: PmEvent, b: PmEvent) => Date.parse(a.at) - Date.parse(b.at) || a.seq - b.seq
 const isArrival = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.to) && !inQueue(e.from)
+
+/**
+ * A reopen this soon after an entry is part of the same hand-over, not a second entry. Support often
+ * reassigns a closed ticket to the PM and reopens it in one go (#51292 on 10-08: seconds apart).
+ */
+const REOPEN_WITH_ENTRY_MS = 30 * 60_000
+
+/**
+ * A ticket's entries into the queue, in order: every move in (isArrival), and every reopen by anyone
+ * but the PM while the queue holds it. Whether it holds the ticket is read from the moves around it;
+ * before the first move in the log, that move's "from" says where the ticket was.
+ */
+function queueEntries(evs: PmEvent[]): Set<PmEvent> {
+  const out = new Set<PmEvent>()
+  let held = inQueue(evs.find((e) => e.outcome === 'Re-Assign' && e.from)?.from)
+  let last = Number.NEGATIVE_INFINITY
+  for (const e of evs) {
+    const at = Date.parse(e.at)
+    if (e.outcome === 'Re-Assign' && e.to) {
+      if (isArrival(e)) {
+        out.add(e)
+        last = at
+      }
+      held = inQueue(e.to)
+    } else if (e.outcome === TICKET_REOPENED && held && !isPm(e.who) && at - last > REOPEN_WITH_ENTRY_MS) {
+      out.add(e)
+      last = at
+    }
+  }
+  return out
+}
 const isDeparture = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.from) && !inQueue(e.to)
 const isReply = (e: PmEvent) => isPm(e.who) && (e.outcome === 'Email User' || e.outcome === 'Email Update')
 /** The PM closing the ticket, or Halo's ticket list showing it closed (see TICKET_CLOSED). */
@@ -335,10 +375,11 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
 
   const holds = holdsOf(evs)
   const wait = (fromIso: string, toIso: string) => waitBetween(holds, fromIso, toIso)
+  const entered = queueEntries(evs)
 
   const rows: ResponseRow[] = []
   let state: 'out' | 'open' | 'answered' = 'out'
-  let cur: { arrivedAt: string; arrivedFrom: string | null } | null = null
+  let cur: { arrivedAt: string; arrivedFrom: string | null; reopened: boolean } | null = null
   const close = (outcome: CycleOutcome, endedAt: string, end: { action: string; to?: string | null; by?: string }, timed: boolean) => {
     if (!cur) return
     const w = timed ? wait(cur.arrivedAt, endedAt) : null
@@ -361,16 +402,23 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
   }
 
   for (const e of evs) {
-    if (isArrival(e) && state !== 'open' && isFiling(e)) {
+    if (entered.has(e) && state !== 'open' && isFiling(e)) {
       // Filed by the PM right after his own reply: in the queue, already answered — no clock.
       state = 'answered'
       continue
     }
-    if (isArrival(e)) {
+    if (entered.has(e)) {
+      const reopened = e.outcome === TICKET_REOPENED
+      // A reopen while a cycle is open means the ticket was closed unanswered in between, by a route
+      // the log did not see: that wait ended unanswered, and the reopen starts a new one.
+      if (state === 'open' && reopened) {
+        close('closed', e.at, { action: TICKET_CLOSED }, false)
+        state = 'out'
+      }
       // An arrival while already open is a duplicate move; keep the first. An arrival while answered
       // means the ticket left by a route the log did not see, so it starts a fresh cycle.
       if (state !== 'open') {
-        cur = { arrivedAt: e.at, arrivedFrom: party(e.from) }
+        cur = { arrivedAt: e.at, arrivedFrom: reopened ? null : party(e.from), reopened }
         state = 'open'
       }
       continue
@@ -400,7 +448,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
   }
 
   if (state === 'open' && cur) {
-    const open: { arrivedAt: string; arrivedFrom: string | null } = cur
+    const open: { arrivedAt: string; arrivedFrom: string | null; reopened: boolean } = cur
     const w = wait(open.arrivedAt, now)
     rows.push({
       ticket,
@@ -450,15 +498,17 @@ function longestAway(evs: PmEvent[], fromIso: string, toIso: string): number {
  */
 function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client: string }, complete: boolean): EntryRow[] {
   const out: EntryRow[] = []
+  const into = queueEntries(evs)
   for (const kind of ['prd', 'mb', 'canny'] as const) {
     const link = evs.find((x) => isPm(x.who) && x[kind].length > 0)
     const handoff = kind === 'mb' ? evs.find(isBugHandoff) : undefined
     const e = [link, handoff].filter((x): x is PmEvent => !!x).sort(byTime)[0]
     if (!e) continue
     const via: EntryRow['via'] = e === link ? 'link' : 'handoff'
-    // The round the request moved in: its last entry into the queue before the link or hand-off.
-    // An entry the log holds is the last one whether or not older history is on record.
-    const entered = evs.filter((x) => isArrival(x) && Date.parse(x.at) <= Date.parse(e.at)).pop()?.at ?? null
+    // The round the request moved in: its last entry into the queue before the link or hand-off — a
+    // reopen counts. An entry the log holds is the last one whether or not older history is on record.
+    const entry = evs.filter((x) => into.has(x) && Date.parse(x.at) <= Date.parse(e.at)).pop()
+    const entered = entry?.at ?? null
     const timed = entered !== null
     const away = entered ? longestAway(evs, entered, e.at) : null
     const status: EntryStatus = !timed
@@ -478,6 +528,7 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
       // A hand-off always names its receiver: isBugHandoff only matches a move whose "to" is known.
       ref: via === 'link' ? e[kind][0] : (party(e.to) ?? ''),
       arrivedAt: entered,
+      reopened: entry?.outcome === TICKET_REOPENED,
       at: e.at,
       hours,
       ...(entered ? clockOf(entered, e.at) : { clockFrom: null, beforeClock: false }),
