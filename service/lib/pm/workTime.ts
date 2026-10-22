@@ -1,11 +1,10 @@
 /**
  * The PM's clocks.
  *
- * Every scorecard duration is clock time without Saturdays and Sundays (`weekdayMsBetween`, decided
- * by the PM on 2026-10-21): the customer is off at the weekend too, but works through CN public
- * holidays. The working clock — Asia/Shanghai, 09:30–19:00, on the working days `calendar.ts`
- * defines — only shapes the weeks: how many working days and hours each holds (the card's progress
- * bar), and which weeks are too short to enter a benchmark.
+ * Every scorecard duration runs on the PM's working days, whole days of 24 h (`workdayMsBetween`,
+ * decided by the PM on 2026-10-22): nights on a working day count, weekends and public holidays do
+ * not, make-up workdays do. `calendar.ts` defines the days. The 09:30–19:00 working hours only shape
+ * the weeks: how many working hours each holds (the card's progress bar).
  *
  * Asia/Shanghai has had no daylight saving since 1991, so a fixed UTC+8 offset is exact — no tz
  * database, and no chance of a DST edge quietly shifting an hour.
@@ -48,16 +47,15 @@ function localMidnight(date: string): number {
 }
 
 /**
- * The part of from → to (epoch ms) that falls Monday to Friday in Asia/Shanghai, in ms. Nights and
- * public holidays count; Saturdays and Sundays, make-up workdays included, do not.
+ * The part of from → to (epoch ms) that falls on the PM's working days (`isWorkday`), Asia/Shanghai,
+ * in ms. A working day counts whole, 00:00–24:00; a weekend or public holiday not at all.
  */
-export function weekdayMsBetween(from: number, to: number): number {
+export function workdayMsBetween(from: number, to: number): number {
   let ms = 0
   for (let t = from; t < to; ) {
     const day = localDate(t)
     const next = Math.min(localMidnight(day) + DAY_MS, to)
-    const dow = dayOfWeek(day)
-    if (dow >= 1 && dow <= 5) ms += next - t
+    if (isWorkday(day)) ms += next - t
     t = next
   }
   return ms
@@ -107,20 +105,18 @@ export function workingHoursBetween(startIso: string, endIso: string): number {
 }
 
 /**
- * When the working clock actually starts for something that arrives at `iso`: `iso` itself inside
- * working hours, otherwise the next opening (09:30 that day, or the next working day). Lets the page
- * say "clock from 09:30" instead of leaving a 04:35 arrival to look like a 5-hour wait.
+ * When the clock starts for something that arrives at `iso`: `iso` itself on a working day, otherwise
+ * 00:00 of the next working day. Lets the page say "clock from 10-08 00:00" for a ticket that arrived
+ * during a holiday, instead of leaving a week-long wait to look like a few hours.
  */
 export function clockStart(iso: string): string {
   const t = Date.parse(iso)
   if (!Number.isFinite(t)) return iso
   let day = localDate(t)
+  if (isWorkday(day)) return iso
   for (let guard = 0; guard < 400; guard++) {
-    if (isWorkday(day)) {
-      const midnight = localMidnight(day)
-      if (t < midnight + CLOSE_MS) return new Date(Math.max(t, midnight + OPEN_MS)).toISOString()
-    }
     day = localDate(localMidnight(day) + DAY_MS)
+    if (isWorkday(day)) return new Date(localMidnight(day)).toISOString()
   }
   return iso
 }

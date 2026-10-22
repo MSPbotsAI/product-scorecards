@@ -23,13 +23,13 @@
  *   canny     Requirement to Canny — the same start, to the first Canny post link the PM posts
  *             (a new post or an existing one).
  *
- * Every duration is clock time without Saturdays and Sundays (Asia/Shanghai). Nights and CN public
- * holidays count, because the customer works through them and waits; the weekend does not, because
- * the customer is off too (decided by the PM, 2026-10-21; pure clock time from 2026-10-19 before
- * that). First response is in hours and leaves out time on hold; the other three are in days of
- * 24 h. The CN working calendar (workTime.ts) only shapes the weeks: how many working days each
- * holds, and which stay out of a benchmark. The 30-day rules (LONG_WAIT_DAYS, AWAY_DAYS) count
- * calendar days.
+ * Every duration runs on the PM's working days (calendar.ts — the CN calendar as he works it), each
+ * counted whole, 24 h, Asia/Shanghai: nights on a working day count, weekends and public holidays do
+ * not (decided by the PM, 2026-10-22; pure clock time from 2026-10-19, then weekdays from 2026-10-21).
+ * A ticket that arrives on a day off is timed from 00:00 of the next working day; one answered before
+ * then scores 0, stays in the average and is marked (`beforeClock`). First response is in hours and
+ * leaves out time on hold; the other three are in days of 24 h. The 30-day rules (LONG_WAIT_DAYS,
+ * AWAY_DAYS) count calendar days.
  * Each measurement is reported in the week its END
  * lands in, so a finished week's numbers never move again. Nothing is averaged that is not also
  * listed: every counted row is shown behind its number, and every row that is not counted is shown
@@ -41,7 +41,7 @@
 import { HOLD, RELEASE, TICKET_CLOSED, inQueue, isPm, type Party, type PmEvent } from './actions.ts'
 import { HISTORY_BASELINES } from './baselines.ts'
 import { type EventStore, coverage } from './store.ts'
-import { type WeekShape, weekLabel, weekOf, weekShape, weekdayMsBetween, weeksBetween } from './workTime.ts'
+import { type WeekShape, clockStart, weekLabel, weekOf, weekShape, weeksBetween, workdayMsBetween } from './workTime.ts'
 
 /** How far apart a hand-off and its private note may be and still be one act. Observed gaps are seconds. */
 const PAIR_WINDOW_MS = 30 * 60_000
@@ -105,12 +105,19 @@ export interface ResponseRow {
   outcome: CycleOutcome
   endedAt: string | null
   /**
-   * Clock hours arrival → response when counted, or arrival → now when open, less the time on hold.
-   * Null otherwise.
+   * Working-day hours arrival → response when counted, or arrival → now when open, less the time on
+   * hold. Null otherwise.
    */
   hours: number | null
-  /** Clock hours of that span the ticket was on hold (SLA Hold), left out of `hours`. 0 when never on hold. */
+  /** Working-day hours of that span the ticket was on hold (SLA Hold), left out of `hours`. 0 when never on hold. */
   heldHours: number
+  /** When the clock started, if later than `arrivedAt`: 00:00 of the next working day for an arrival on a day off. */
+  clockFrom: string | null
+  /**
+   * Answered before the clock started — it arrived and was answered on days off — so it scores 0 h.
+   * It stays in the average and is marked in the list (decided by the PM, 2026-10-22).
+   */
+  beforeClock: boolean
   /** The week it is reported in; null only for open cycles, which have not landed anywhere yet. */
   week: string | null
   /**
@@ -148,6 +155,10 @@ export interface EntryRow {
   arrivedAt: string | null
   at: string
   hours: number | null
+  /** When the clock started, if later than `arrivedAt` (an entry on a day off). */
+  clockFrom: string | null
+  /** Done before the clock started — entered and linked or handed off on days off — so it scores 0. */
+  beforeClock: boolean
   /** The longest stretch out of the queue between that entry and the stop, in calendar days; null when not timed. */
   awayDays: number | null
   week: string
@@ -190,6 +201,8 @@ export interface WaitingAt {
   arrivedAt: string
   hours: number
   heldHours: number
+  /** When its clock starts or started, if later than `arrivedAt`: an arrival on a day off. */
+  clockFrom: string | null
   /**
    * 'waiting': the customer is waiting on the PM. 'on-hold': it is parked (scheduled, or waiting on
    * the requester), so its clock is stopped.
@@ -215,6 +228,8 @@ export interface TicketWeek {
   entries: number
   /** Their mean: the one value this ticket adds to the week's average. */
   meanHours: number
+  /** Every one of those entries was answered before the clock started, so the value is 0 for that reason. */
+  beforeClock: boolean
   /** Every counted first response of this ticket in the log, all weeks. Shown beside it, never averaged into a week. */
   allEntries: number
   allMeanHours: number
@@ -251,24 +266,36 @@ function holdsOf(evs: PmEvent[]): Hold[] {
 
 const HOUR_MS = 3_600_000
 
-/** Hours from → to on the scorecard's clock: every hour Monday to Friday, Asia/Shanghai. */
-const weekdayHours = (fromIso: string, toIso: string) => weekdayMsBetween(Date.parse(fromIso), Date.parse(toIso)) / HOUR_MS
+/** Hours from → to on the scorecard's clock: every hour of the PM's working days, Asia/Shanghai. */
+const clockHours = (fromIso: string, toIso: string) => workdayMsBetween(Date.parse(fromIso), Date.parse(toIso)) / HOUR_MS
 
 /**
- * First response's time from → to, less the part on hold: every weekday hour from the moment the
- * ticket is escalated into the PM queue, working time or not.
+ * First response's time from → to, less the part on hold: every working-day hour from the moment the
+ * ticket is escalated into the PM queue, working hours or not.
  */
 function waitBetween(holds: Hold[], fromIso: string, toIso: string): { hours: number; held: number; all: number } {
   const start = Date.parse(fromIso)
   const end = Date.parse(toIso)
-  const all = weekdayMsBetween(start, end) / HOUR_MS
+  const all = workdayMsBetween(start, end) / HOUR_MS
   let held = 0
   for (const h of holds) {
     const from = Math.max(h.from, start)
     const to = Math.min(h.to ?? Number.POSITIVE_INFINITY, end)
-    if (to > from) held += weekdayMsBetween(from, to) / HOUR_MS
+    if (to > from) held += workdayMsBetween(from, to) / HOUR_MS
   }
   return { hours: Math.max(0, all - held), held, all }
+}
+
+/**
+ * Where the clock starts for a start at `fromIso`, and whether the end came before it did. A start on
+ * a day off is timed from 00:00 of the next working day; an end before then scores 0, and the row
+ * says so rather than showing a bare 0.0.
+ */
+function clockOf(fromIso: string, endIso: string | null): { clockFrom: string | null; beforeClock: boolean } {
+  const start = clockStart(fromIso)
+  if (start === fromIso) return { clockFrom: null, beforeClock: false }
+  const before = endIso !== null && Date.parse(endIso) <= Date.parse(start)
+  return { clockFrom: before ? null : start, beforeClock: before }
 }
 
 const onHoldAt = (holds: Hold[], ms: number) => holds.some((h) => h.from <= ms && (h.to === null || h.to > ms))
@@ -323,6 +350,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       endedAt,
       hours: w ? w.hours : null,
       heldHours: w ? w.held : 0,
+      ...(timed ? clockOf(cur.arrivedAt, endedAt) : { clockFrom: null, beforeClock: false }),
       week: weekOf(endedAt),
       action: end.action,
       to: end.to ?? null,
@@ -382,6 +410,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       endedAt: null,
       hours: w.hours,
       heldHours: w.held,
+      ...clockOf(open.arrivedAt, null),
       week: null,
       action: null,
       to: null,
@@ -439,8 +468,8 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
       : (away ?? 0) > AWAY_DAYS * DAY_MS
         ? 'away'
         : 'counted'
-    // The same clock as first response: weekdays only, holidays included.
-    const hours = entered ? weekdayHours(entered, e.at) : null
+    // The same clock as first response: the PM's working days, 24 h each.
+    const hours = entered ? clockHours(entered, e.at) : null
     out.push({
       ticket,
       ...meta,
@@ -451,6 +480,7 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
       arrivedAt: entered,
       at: e.at,
       hours,
+      ...(entered ? clockOf(entered, e.at) : { clockFrom: null, beforeClock: false }),
       awayDays: away === null ? null : Math.round((away / DAY_MS) * 10) / 10,
       week: weekOf(e.at),
       status,
@@ -492,7 +522,7 @@ export const MIN_WORKDAYS = 3
 const METRIC_IDS: Metric[] = ['response', 'prd', 'mb', 'canny']
 /** How the page shows each number. Colours compare the value as shown, so a shown "7.3 h" is judged as 7.3. */
 const SHOWN_IN: Record<Metric, 'h' | 'd'> = { response: 'h', prd: 'd', mb: 'd', canny: 'd' }
-/** A shown day is a calendar day: 24 clock hours, not a working day. */
+/** A shown day is one working day counted whole: 24 hours, not the 9.5 working hours in it. */
 export const DAY_HOURS = 24
 const inShownUnit = (hours: number, metric: Metric) => (SHOWN_IN[metric] === 'h' ? hours : hours / DAY_HOURS)
 const round1 = (v: number) => Math.round(v * 10) / 10
@@ -514,6 +544,8 @@ export interface Sample {
   out?: 'long-wait' | 'short-week'
   /** Calendar days waited, for a long wait. */
   waitedDays?: number
+  /** Answered or done on a day off, before the clock started: it counts, as 0. */
+  beforeClock?: true
 }
 
 export interface Line {
@@ -593,12 +625,20 @@ export function quarterSamples(
 
   const responses = card.response.filter((r) => counts(r) && inQuarter.has(r.week as string))
   for (const t of ticketWeeks(responses.filter((r) => !r.longWait && !short(r.week as string)))) {
-    out.push({ metric: 'response', ticket: t.ticket, week: t.week, hours: t.meanHours, entries: t.entries })
+    out.push({
+      metric: 'response',
+      ticket: t.ticket,
+      week: t.week,
+      hours: t.meanHours,
+      entries: t.entries,
+      ...(t.beforeClock ? { beforeClock: true as const } : {}),
+    })
   }
   for (const r of responses) {
     const week = r.week as string
     const hours = r.hours as number
-    if (short(week)) out.push({ metric: 'response', ticket: r.ticket, week, hours, out: 'short-week' })
+    const marked = r.beforeClock ? { beforeClock: true as const } : {}
+    if (short(week)) out.push({ metric: 'response', ticket: r.ticket, week, hours, out: 'short-week', ...marked })
     else if (r.longWait) {
       out.push({
         metric: 'response',
@@ -607,11 +647,18 @@ export function quarterSamples(
         hours,
         out: 'long-wait',
         waitedDays: daysBetween(r.arrivedAt, r.endedAt as string),
+        ...marked,
       })
     }
   }
   for (const r of card.entries.filter((x) => x.status === 'counted' && inQuarter.has(x.week))) {
-    const base = { metric: r.kind, ticket: r.ticket, week: r.week, hours: r.hours as number }
+    const base = {
+      metric: r.kind,
+      ticket: r.ticket,
+      week: r.week,
+      hours: r.hours as number,
+      ...(r.beforeClock ? { beforeClock: true as const } : {}),
+    }
     if (short(r.week)) out.push({ ...base, out: 'short-week' })
     else if (r.longWait) out.push({ ...base, out: 'long-wait', waitedDays: daysBetween(r.arrivedAt as string, r.at) })
     else out.push(base)
@@ -670,13 +717,14 @@ export interface PmScorecard {
 /** Group the counted first responses by ticket and week, keeping each ticket's all-weeks mean beside it. */
 function ticketWeeks(rows: ResponseRow[]): TicketWeek[] {
   const all = new Map<string, number[]>()
-  const byWeek = new Map<string, { ticket: string; week: string; hours: number[] }>()
+  const byWeek = new Map<string, { ticket: string; week: string; hours: number[]; beforeClock: boolean }>()
   for (const r of rows) {
     const hours = r.hours as number
     all.set(r.ticket, [...(all.get(r.ticket) ?? []), hours])
     const key = `${r.ticket}|${r.week}`
-    const unit = byWeek.get(key) ?? { ticket: r.ticket, week: r.week as string, hours: [] }
+    const unit = byWeek.get(key) ?? { ticket: r.ticket, week: r.week as string, hours: [], beforeClock: true }
     unit.hours.push(hours)
+    unit.beforeClock = unit.beforeClock && r.beforeClock
     byWeek.set(key, unit)
   }
   return [...byWeek.values()].map((u) => {
@@ -686,6 +734,7 @@ function ticketWeeks(rows: ResponseRow[]): TicketWeek[] {
       week: u.week,
       entries: u.hours.length,
       meanHours: mean(u.hours),
+      beforeClock: u.beforeClock,
       allEntries: everything.length,
       allMeanHours: mean(everything),
     }
@@ -730,7 +779,9 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
         const holds = holdsByTicket.get(r.ticket) ?? []
         const w = waitBetween(holds, r.arrivedAt, atIso)
         const state: WaitingAt['state'] = onHoldAt(holds, at) ? 'on-hold' : 'waiting'
-        return { ticket: r.ticket, arrivedAt: r.arrivedAt, hours: w.hours, heldHours: w.held, state }
+        const start = clockStart(r.arrivedAt)
+        const clockFrom = start === r.arrivedAt ? null : start
+        return { ticket: r.ticket, arrivedAt: r.arrivedAt, hours: w.hours, heldHours: w.held, clockFrom, state }
       })
       .sort((a, b) => b.hours - a.hours)
   }

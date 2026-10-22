@@ -71,7 +71,7 @@ for (const [quarter, team] of Object.entries(QUARTERS)) {
 if (process.argv.includes('--write')) {
   const sample = (x: Sample) =>
     `      { metric: '${x.metric}', ticket: '${x.ticket}', week: '${x.week}', hours: ${Number(x.hours.toFixed(3))}` +
-    `${x.entries !== undefined ? `, entries: ${x.entries}` : ''}${x.out ? `, out: '${x.out}'` : ''}${x.waitedDays !== undefined ? `, waitedDays: ${x.waitedDays}` : ''} },`
+    `${x.entries !== undefined ? `, entries: ${x.entries}` : ''}${x.out ? `, out: '${x.out}'` : ''}${x.waitedDays !== undefined ? `, waitedDays: ${x.waitedDays}` : ''}${x.beforeClock ? ', beforeClock: true' : ''} },`
   const body = Object.entries(out)
     .map(([judged, b]) => `  '${judged}': {\n    from: '${b.from}',\n    samples: [\n${b.samples.map(sample).join('\n')}\n    ],\n  },`)
     .join('\n')

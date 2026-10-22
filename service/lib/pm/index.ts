@@ -153,7 +153,7 @@ export async function supportTicketUpdates(tenantId: string, token: string, forc
     calendar: {
       status: CALENDAR.status,
       hours: `${WORK_START}–${WORK_END} Asia/Shanghai`,
-      /** Hours in one shown day (d): a calendar day, since every duration is clock time. */
+      /** Hours in one shown day (d): a working day counted whole, since every duration runs on working days. */
       dayHours: DAY_HOURS,
       holidays: CALENDAR.holidays,
       makeupWorkdays: CALENDAR.makeupWorkdays,
