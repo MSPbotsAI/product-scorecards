@@ -183,7 +183,10 @@ const EN = {
   othersNote: (held: number) => (held ? ` · ${held} on hold` : ''),
   asOfWeekEnd: (week: string) => `as of the end of ${week}`,
   groupOnHold: (n: number) => `On hold at that moment — ${n}, not counted: scheduled, or waiting on the requester`,
-  laterNote: (week: string) => `Time runs to the end of ${week}. First response and How show what happened afterwards.`,
+  laterNote: (week: string) =>
+    `Time runs to the end of ${week}. First response and How show what happened afterwards, with the full first-response time ("in all") under the reply.`,
+  colElapsedAtWeekEnd: 'Time to week end',
+  finalTime: (hours: string) => `${hours} h in all`,
   waitingBadge: (n: number) => `${n} waiting`,
   workingDays: (n: number) => `${n} working days`,
   holidays: (n: number) => (n === 1 ? '1 holiday' : `${n} holidays`),
@@ -376,7 +379,10 @@ const ZH: typeof EN = {
   othersNote: (held: number) => (held ? ` · 另有 ${held} 张挂起中` : ''),
   asOfWeekEnd: (week: string) => `截至 ${week} 这周结束时`,
   groupOnHold: (n: number) => `当时挂起中 — ${n} 张，不计入：排期或等客户回复`,
-  laterNote: (week: string) => `用时只算到 ${week} 这周结束时；"首次响应"和"方式"两栏是后来实际发生的情况。`,
+  laterNote: (week: string) =>
+    `用时只算到 ${week} 这周结束时；"首次响应"和"方式"两栏是后来实际发生的情况，回复时间下面的"共 X h"是最终的首次响应用时。`,
+  colElapsedAtWeekEnd: '截至这周结束',
+  finalTime: (hours: string) => `共 ${hours} h`,
   waitingBadge: (n: number) => `${n} 个等待中`,
   workingDays: (n: number) => `${n} 个工作日`,
   holidays: (n: number) => `${n} 天假期`,
@@ -657,7 +663,25 @@ function Request({ summary, client }: { summary: string; client: string }) {
  * merged cell carries the ticket's average: the value the week's number is averaged over, so the
  * list adds up to the number at the top.
  */
-function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?: boolean; units?: Map<string, TicketWeek>; t: Copy }) {
+/**
+ * `later` (the waiting list of a past week): each wait's full first-response time, keyed by ticket and
+ * arrival, shown under the reply — the time column there stops at the week's end (`atWeekEnd`).
+ */
+function ResponseRows({
+  rows,
+  reason,
+  units,
+  later,
+  atWeekEnd,
+  t,
+}: {
+  rows: ResponseRow[]
+  reason?: boolean
+  units?: Map<string, TicketWeek>
+  later?: Map<string, number>
+  atWeekEnd?: boolean
+  t: Copy
+}) {
   const ordered = units ? groupByTicket(rows) : rows
   return (
     <Table className="text-xs">
@@ -667,7 +691,7 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
           <TableHead>{t.colRequest}</TableHead>
           <TableHead className="w-36">{t.colArrived}</TableHead>
           <TableHead className="w-24">{reason ? t.colLeft : t.colResponded}</TableHead>
-          {!reason && <TableHead className="w-16 text-right">{t.colElapsed}</TableHead>}
+          {!reason && <TableHead className="w-16 text-right">{atWeekEnd ? t.colElapsedAtWeekEnd : t.colElapsed}</TableHead>}
           {units && (
             <TableHead className="w-24 text-right" title={t.colTicketAvgHint}>
               {t.colTicketAvg}
@@ -690,7 +714,14 @@ function ResponseRows({ rows, reason, units, t }: { rows: ResponseRow[]; reason?
                 {r.clockFrom && <div className="text-[11px] italic text-muted-foreground">{t.clockFrom(local(r.clockFrom))}</div>}
                 <div className="text-[11px] text-muted-foreground">{r.reopened ? t.reopened : (r.arrivedFrom ?? t.unknown)}</div>
               </TableCell>
-              <TableCell className="align-top tabular-nums">{local(r.endedAt)}</TableCell>
+              <TableCell className="align-top tabular-nums">
+                {local(r.endedAt)}
+                {later?.has(`${r.ticket}-${r.arrivedAt}`) && (
+                  <div className="text-[11px] text-muted-foreground">
+                    {t.finalTime((later.get(`${r.ticket}-${r.arrivedAt}`) as number).toFixed(1))}
+                  </div>
+                )}
+              </TableCell>
               {!reason && (
                 <TableCell className="text-right align-top tabular-nums">
                   {r.hours === null ? '—' : `${r.hours.toFixed(1)} h`}
@@ -1081,6 +1112,14 @@ function WaitingDialog({ data, index, onClose }: { data: SupportUpdatesPayload; 
       })
   const rows = rowsOf('waiting')
   const held = rowsOf('on-hold')
+  // For a past week: what each wait came to in the end, beside the time it had reached by the week's end.
+  const later = new Map<string, number>()
+  if (!live) {
+    for (const w of week?.waiting ?? []) {
+      const base = data.response.find((r) => r.ticket === w.ticket && r.arrivedAt === w.arrivedAt)
+      if (base && counted(base) && base.hours !== null) later.set(`${w.ticket}-${w.arrivedAt}`, base.hours)
+    }
+  }
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent container={root()} className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
@@ -1098,13 +1137,13 @@ function WaitingDialog({ data, index, onClose }: { data: SupportUpdatesPayload; 
         {rows.length === 0 ? (
           <p className="text-xs italic text-muted-foreground">{t.nothingWaiting}</p>
         ) : (
-          <ResponseRows rows={rows} t={t} />
+          <ResponseRows rows={rows} later={later} atWeekEnd={!live} t={t} />
         )}
         {[[held, t.groupOnHold(held.length)] as const].map(([group, heading]) =>
           group.length > 0 ? (
             <div key={heading} className="rounded-md border border-dashed p-2">
               <div className="mb-1 text-[11px] text-muted-foreground">{heading}</div>
-              <ResponseRows rows={group} t={t} />
+              <ResponseRows rows={group} later={later} atWeekEnd={!live} t={t} />
             </div>
           ) : null,
         )}
