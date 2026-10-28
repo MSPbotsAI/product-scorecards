@@ -2,7 +2,9 @@
  * The PM scorecard: three numbers, and the fourth kept beside them.
  *
  *   response  PM first response — every arrival into the PM's queue, to the PM's first reply to the
- *             customer, or hand-off out of the queue with a private note. Time the ticket spends on
+ *             customer, hand-off out of the queue with a private note, or scheduling of the ticket
+ *             (Schedule Ticket: the request is decided and dated, so it no longer waits on him;
+ *             decided by the PM, 2026-10-28, on #41410). Time the ticket spends on
  *             hold (SLA Hold: scheduled, waiting on the requester) does not count, as in Halo's own
  *             SLA (decided by the PM, 2026-10-15). Each arrival is its own
  *             measurement: a ticket that comes back is answered again. The week's number is an
@@ -93,6 +95,8 @@ export type CycleOutcome =
   | 'replied'
   /** Counted: the PM moved the ticket out of the queue and left a private note. */
   | 'handed-off'
+  /** Counted: the PM scheduled the ticket (Schedule Ticket). It stays in his queue, but no longer waits on him. */
+  | 'scheduled'
   /** Not yet answered — shown with its working-time age so far. */
   | 'open'
   /** The PM moved it out with no private note: the definition asks for both. */
@@ -290,7 +294,7 @@ const isReply = (e: PmEvent) => isPm(e.who) && (e.outcome === 'Email User' || e.
 /** The PM closing the ticket, or Halo's ticket list showing it closed (see TICKET_CLOSED). */
 const isClose = (e: PmEvent) => (isPm(e.who) && (e.outcome === 'Resolved' || e.outcome === 'Close')) || e.outcome === TICKET_CLOSED
 /** A response that counts: the PM replied, or handed the ticket off with a private note. */
-const counts = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off'
+const counts = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off' || r.outcome === 'scheduled'
 const later = (a: string, b: string) => (Date.parse(a) >= Date.parse(b) ? a : b)
 
 /** Lucas takes bugs in for development; a move to him, or to anyone in Development, puts a bug into dev. */
@@ -436,6 +440,9 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       const arrivedAt: string = cur.arrivedAt
       if (isReply(e)) {
         close('replied', e.at, { action: e.outcome }, true)
+        state = 'answered'
+      } else if (isPm(e.who) && e.outcome === SCHEDULE_TICKET) {
+        close('scheduled', e.at, { action: e.outcome }, true)
         state = 'answered'
       } else if (isDeparture(e)) {
         const move = { action: e.outcome, to: party(e.to) }
