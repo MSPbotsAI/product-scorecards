@@ -4,7 +4,9 @@
  *   response  PM first response — every arrival into the PM's queue, to the PM's first reply to the
  *             customer, hand-off out of the queue with a private note, or scheduling of the ticket
  *             (Schedule Ticket: the request is decided and dated, so it no longer waits on him;
- *             decided by the PM, 2026-10-28, on #41410). Time the ticket spends on
+ *             decided by the PM, 2026-10-28, on #41410), or the PM resolving or closing it himself.
+ *             A reply within PAIR_WINDOW_MS of a move out is the response, whichever Halo logged
+ *             first; a move to NOTELESS_HANDOFF needs no note (both decided 2026-10-28). Time the ticket spends on
  *             hold (SLA Hold: scheduled, waiting on the requester) does not count, as in Halo's own
  *             SLA (decided by the PM, 2026-10-15). Each arrival is its own
  *             measurement: a ticket that comes back is answered again. The week's number is an
@@ -97,13 +99,15 @@ export type CycleOutcome =
   | 'handed-off'
   /** Counted: the PM scheduled the ticket (Schedule Ticket). It stays in his queue, but no longer waits on him. */
   | 'scheduled'
+  /** Counted: the PM resolved or closed the ticket himself (Resolved, Close): he finished it. */
+  | 'resolved'
   /** Not yet answered — shown with its working-time age so far. */
   | 'open'
   /** The PM moved it out with no private note: the definition asks for both. */
   | 'no-note'
   /** Someone other than the PM moved it out before the PM responded. */
   | 'taken-out'
-  /** Resolved or closed before any response. */
+  /** Closed by someone other than the PM before any response: Halo's ticket list shows it closed. */
   | 'closed'
 
 export interface ResponseRow {
@@ -294,12 +298,15 @@ const isReply = (e: PmEvent) => isPm(e.who) && (e.outcome === 'Email User' || e.
 /** The PM closing the ticket, or Halo's ticket list showing it closed (see TICKET_CLOSED). */
 const isClose = (e: PmEvent) => (isPm(e.who) && (e.outcome === 'Resolved' || e.outcome === 'Close')) || e.outcome === TICKET_CLOSED
 /** A response that counts: the PM replied, or handed the ticket off with a private note. */
-const counts = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off' || r.outcome === 'scheduled'
+const counts = (r: ResponseRow) =>
+  r.outcome === 'replied' || r.outcome === 'handed-off' || r.outcome === 'scheduled' || r.outcome === 'resolved'
 const later = (a: string, b: string) => (Date.parse(a) >= Date.parse(b) ? a : b)
 
 /** Lucas takes bugs in for development; a move to him, or to anyone in Development, puts a bug into dev. */
 const BUG_INTAKE = 'Lucas Chen'
 const toDevelopment = (p?: Party) => !!p && (p.person === BUG_INTAKE || p.dept === 'Development')
+/** People a move to is a hand-off without a private note: the move itself says who takes it (the PM, 2026-10-28). */
+const NOTELESS_HANDOFF = ['Glenn Bugtong']
 /** The Halo action that sets a ticket's scheduled date (status Scheduled). */
 const SCHEDULE_TICKET = 'Schedule Ticket'
 const isBugHandoff = (e: PmEvent) => isPm(e.who) && isDeparture(e) && toDevelopment(e.to)
@@ -378,7 +385,14 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
     return best
   }
 
-  const replyTimes = evs.filter(isReply).map((e) => Date.parse(e.at))
+  const replies = evs.filter(isReply)
+  const replyTimes = replies.map((e) => Date.parse(e.at))
+  /** The PM's reply to the customer within PAIR_WINDOW_MS of a move, not before the wait began. */
+  const replyNear = (atMs: number, notBefore: number) =>
+    replies.find((r) => {
+      const t = Date.parse(r.at)
+      return t >= notBefore && Math.abs(t - atMs) <= PAIR_WINDOW_MS
+    })
   /** The PM moving a ticket he has just answered into his own queue: see FILING_WINDOW_MS. */
   const isFiling = (e: PmEvent) => {
     if (!isPm(e.who)) return false
@@ -447,12 +461,18 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       } else if (isDeparture(e)) {
         const move = { action: e.outcome, to: party(e.to) }
         if (isPm(e.who)) {
+          // A reply seconds either side of the move is the response: Halo can log the move first
+          // (#51292: the move 26 s before the email).
+          const reply = replyNear(Date.parse(e.at), Date.parse(arrivedAt))
           const n = noteNear(Date.parse(e.at), Date.parse(arrivedAt))
-          if (n) {
-            const end = later(e.at, n.at)
-            close('handed-off', end, move, true)
-          } else close('no-note', e.at, move, false)
+          if (reply) close('replied', reply.at, { action: reply.outcome }, true)
+          else if (n) close('handed-off', later(e.at, n.at), move, true)
+          else if (e.to && NOTELESS_HANDOFF.includes(e.to.person)) close('handed-off', e.at, move, true)
+          else close('no-note', e.at, move, false)
         } else close('taken-out', e.at, { ...move, by: e.who }, false)
+        state = 'out'
+      } else if (isPm(e.who) && (e.outcome === 'Resolved' || e.outcome === 'Close')) {
+        close('resolved', e.at, { action: e.outcome }, true)
         state = 'out'
       } else if (isClose(e)) {
         close('closed', e.at, { action: e.outcome }, false)

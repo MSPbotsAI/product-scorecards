@@ -93,14 +93,14 @@ const EN = {
       name: 'PM first response',
       noun: (n: number): string => (n === 1 ? 'ticket' : 'tickets'),
       short:
-        'Each arrival into the queue, to the first reply to the customer, a hand-off with a private note, or the PM scheduling the ticket.',
+        'Each arrival into the queue, to the first reply to the customer, a hand-off with a private note, or the PM scheduling or closing the ticket.',
       notes: [
         'A clock starts every time a ticket is moved into the PM queue (Product · product_zd@ or the PM) from anywhere else — Support, Development, anyone. A ticket that comes back is answered again, and that answer is timed on its own. A ticket reopened while it sits in the queue — the customer replying to a closed ticket, or Support reopening it — enters the queue again at the reopen; one the PM reopens himself does not.',
         'It runs on the PM’s working days — the CN calendar as he works it: every hour of a working day counts, nights included; weekends and public holidays do not. A ticket that arrives on a day off is timed from 00:00 of the next working day; one answered before then counts as 0 h, stays in the average, and is marked in the list.',
-        'It stops at the PM’s first email to the customer (Email User or Email Update), or at the PM moving the ticket out of the queue with a private note left alongside, or at the PM scheduling the ticket (Schedule Ticket) — the request is decided and dated, so it no longer waits on him. Triage is not a response, and a private note on its own is not one either — even one that posts a ClickUp link.',
+        'It stops at the PM’s first email to the customer (Email User or Email Update), or at the PM moving the ticket out of the queue with a private note left alongside, or at the PM scheduling the ticket (Schedule Ticket) — the request is decided and dated, so it no longer waits on him — or at the PM resolving or closing it himself. An email sent within 30 minutes of a move out counts as the reply, whichever Halo logged first. A move to Glenn Bugtong is a hand-off without a note. Triage is not a response, and a private note on its own is not one either — even one that posts a ClickUp link.',
         'The week’s number is an average over tickets. A ticket that came into the queue more than once that week counts once, at the average of those first responses, so a ticket that bounces back and forth weighs no more than one that does not. A ticket whose entries fall in different weeks counts in each week with that week’s entries; the list shows its average over all of them beside it, and a finished week never changes.',
         'Time the ticket spends on hold — SLA Hold, such as scheduled or waiting on the requester — does not count, the same as in Halo’s own SLA. The list shows how much was left out.',
-        'Not counted, but listed with the reason: a hand-off with no private note, a ticket moved out by someone else first, or one closed before any response — by the PM or, as Halo’s ticket list shows, by anyone else. A ticket still waiting is not in any average until it is answered.',
+        'Not counted, but listed with the reason: a hand-off with no private note, a ticket moved out by someone else first, or one closed by someone else before any response, as Halo’s ticket list shows. A ticket still waiting is not in any average until it is answered.',
       ],
     },
     prd: {
@@ -233,6 +233,7 @@ const EN = {
   unknown: 'unknown',
   replied: (action: string) => `Replied to the customer (${action})`,
   scheduledReply: 'Scheduled the ticket (Schedule Ticket)',
+  resolvedByPm: (action: string) => `Closed the ticket (${action})`,
   handedOff: (to: string) => `Re-Assign → ${to} + private note`,
   noNote: (to: string) => `Re-Assign → ${to}, no private note`,
   takenOut: (to: string, by: string) => `moved to ${to} by ${by}`,
@@ -291,14 +292,14 @@ const ZH: typeof EN = {
     response: {
       name: 'PM 首次响应',
       noun: () => '张单',
-      short: '工单每次进入队列，到 PM 首次回复客户、带内部备注转出、或给工单排期为止。',
+      short: '工单每次进入队列，到 PM 首次回复客户、带内部备注转出、给工单排期、或关单为止。',
       notes: [
         '工单每次从其他任何地方（Support、Development 或任何人）被转入 PM 队列（Product · product_zd@ 或 PM 本人）时开始计时。工单退回后再次进入队列，就要再次响应，这次响应单独计时。单子关闭后被重开、且仍在 PM 队列里的（客户回复已关闭的单，或 Support 重开），也算在重开那一刻重新进入队列；PM 自己重开的不算。',
         '按 PM 的工作日计时（中国日历，按他实际上班的日子）：工作日的每个小时都算，包括晚上；周末和法定假期不算。非工作日进来的单，从下一个工作日 0 点起算；在那之前就回复了的记 0 h，照常计入平均，并在列表中标出。',
-        '在 PM 第一次给客户发邮件（Email User 或 Email Update）时停表，或在 PM 把工单转出队列、同时留下内部备注（private note）时停表，或在 PM 给工单排期（Schedule Ticket）时停表——需求已经定下并排了日期，不再等 PM 处理。Triage 不算响应；单独一条内部备注也不算——即使里面贴了 ClickUp 链接。',
+        '在 PM 第一次给客户发邮件（Email User 或 Email Update）时停表，或在 PM 把工单转出队列、同时留下内部备注（private note）时停表，或在 PM 给工单排期（Schedule Ticket）时停表——需求已经定下并排了日期，不再等 PM 处理——或在 PM 自己关单（Resolved、Close）时停表。转出前后 30 分钟内给客户发的邮件算回复，不管 Halo 先记了哪一条。转给 Glenn Bugtong 算交接，不需要内部备注。Triage 不算响应；单独一条内部备注也不算——即使里面贴了 ClickUp 链接。',
         '每周的数字按工单平均。同一张单在一周内多次进入队列，只算一张，取这几次首次响应的平均值，所以来回流转的单不会比只进一次的单占更多权重。一张单的几次进队列落在不同周时，每周只用当周的那几次计算，列表里另外标出它全部进队列的平均值；已结束的周，数字不会再变。',
         '单子挂起（SLA Hold，例如排期、等客户回复）期间不计时，与 Halo 自己的 SLA 一致；列表里会标出扣掉了多少。',
-        '以下情况不计入，但会连同原因列出：转出时没留内部备注、PM 响应前已被他人转出、响应前已关闭（PM 自己关的，或 Halo 工单列表显示已被别人关闭）。仍在等待的工单，在得到响应前不计入任何平均值。',
+        '以下情况不计入，但会连同原因列出：转出时没留内部备注、PM 响应前已被他人转出、响应前已被别人关闭（Halo 工单列表显示）。仍在等待的工单，在得到响应前不计入任何平均值。',
       ],
     },
     prd: {
@@ -427,6 +428,7 @@ const ZH: typeof EN = {
   unknown: '未知',
   replied: (action: string) => `回复客户（${action}）`,
   scheduledReply: '给工单排期（Schedule Ticket）',
+  resolvedByPm: (action: string) => `关单（${action}）`,
   handedOff: (to: string) => `转给 ${to} ＋ 内部备注`,
   noNote: (to: string) => `转给 ${to}，无内部备注`,
   takenOut: (to: string, by: string) => `被 ${by} 转给 ${to}`,
@@ -475,7 +477,8 @@ type Copy = typeof EN
 
 /* ── reading the payload ── */
 
-const counted = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off' || r.outcome === 'scheduled'
+const counted = (r: ResponseRow) =>
+  r.outcome === 'replied' || r.outcome === 'handed-off' || r.outcome === 'scheduled' || r.outcome === 'resolved'
 
 /** Asia/Shanghai wall time, "09-28 11:57" — the PM's clock, not the viewer's. */
 function local(iso: string | null): string {
@@ -586,6 +589,8 @@ function howText(r: ResponseRow, t: Copy): string {
       return t.handedOff(to)
     case 'scheduled':
       return t.scheduledReply
+    case 'resolved':
+      return t.resolvedByPm(r.action ?? '')
     case 'no-note':
       return t.noNote(to)
     case 'taken-out':
