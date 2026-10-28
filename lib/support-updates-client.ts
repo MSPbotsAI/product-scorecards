@@ -16,7 +16,6 @@ export type {
   Light,
   Line,
   Metric,
-  OffClock,
   ResponseRow,
   Sample,
   Stat,

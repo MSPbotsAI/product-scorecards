@@ -6,12 +6,20 @@
  * Both tables read with PUBLIC_API_KEY from .env.local, and the key needs the dataset granted.
  */
 import { readFileSync } from 'node:fs'
-import { PM_NAME, type PmEvent, relevant, toEvent } from '../service/lib/pm/actions.ts'
+import { PM_NAME, type PmEvent, relevant, reopenEvent, toEvent } from '../service/lib/pm/actions.ts'
 
 /** Every Halo action since 2019. */
 export const ODS_ACTIONS = '1563065169343234049'
 /** Halo tickets: summary and client, one row per ticket. */
 export const HALO_TICKETS = '1598347117760024578'
+
+/**
+ * The ODS table names a status by its id. It gives the new status's name beside the id, but not the
+ * old one's. These are the done statuses, as the live table names them (DONE_STATUSES).
+ */
+const DONE_STATUS_IDS: Record<string, string> = { '8': 'Resolved', '9': 'Closed' }
+/** An ODS row that takes a ticket out of a done status: a reopen, whatever the action. */
+export const isReopenRow = (r: Row) => String(r.old_status) in DONE_STATUS_IDS && !(String(r.new_status) in DONE_STATUS_IDS)
 
 /** The largest page the API serves: it answers size=5000 with 2000 rows. */
 const PAGE_SIZE = 2000
@@ -90,9 +98,9 @@ export async function readActions(people: string[]): Promise<Row[]> {
 }
 
 /**
- * Every action of the given outcomes on each of these tickets, read ticket by ticket. Holds and
- * releases are set by anyone, so a tenant-wide slice of them since 2019 would be enormous; the tickets
- * the PM numbers follow are a few hundred.
+ * Every action of the given outcomes on each of these tickets, read ticket by ticket, and every
+ * action that reopened one. Holds, releases and reopens come from anyone, so a tenant-wide slice of
+ * them since 2019 would be enormous; the tickets the PM numbers follow are a few hundred.
  */
 export async function readTicketActions(tickets: string[], outcomes: string[]): Promise<Row[]> {
   const out: Row[] = []
@@ -102,7 +110,7 @@ export async function readTicketActions(tickets: string[], outcomes: string[]): 
       for (let t = todo.shift(); t !== undefined; t = todo.shift()) {
         for (let n = 1, seen = 0; ; n++) {
           const p = await page(ODS_ACTIONS, { ticket_id: t }, n, 500)
-          out.push(...p.rows.filter((r) => outcomes.includes(String(r.outcome))))
+          out.push(...p.rows.filter((r) => outcomes.includes(String(r.outcome)) || isReopenRow(r)))
           seen += p.rows.length
           if (seen >= p.total || p.rows.length === 0) break
         }
@@ -142,6 +150,8 @@ export function eventsFor(rows: Row[], team: string[]): Record<string, PmEvent> 
     if (e.from) e.from = { ...e.from, person: asPm(e.from.person) }
     if (e.to) e.to = { ...e.to, person: asPm(e.to.person) }
     if (relevant(e) && !events[e.id]) events[e.id] = e
+    const reopen = isReopenRow(r) ? reopenEvent(e, DONE_STATUS_IDS[String(r.old_status)], String(r.new_status_name ?? '')) : null
+    if (reopen && !events[reopen.id]) events[reopen.id] = reopen
   }
   return events
 }

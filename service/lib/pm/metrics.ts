@@ -2,7 +2,11 @@
  * The PM scorecard: three numbers, and the fourth kept beside them.
  *
  *   response  PM first response — every arrival into the PM's queue, to the PM's first reply to the
- *             customer, or hand-off out of the queue with a private note. Time the ticket spends on
+ *             customer, hand-off out of the queue with a private note, or scheduling of the ticket
+ *             (Schedule Ticket: the request is decided and dated, so it no longer waits on him;
+ *             decided by the PM, 2026-10-28, on #41410), or the PM resolving or closing it himself.
+ *             A reply within PAIR_WINDOW_MS of a move out is the response, whichever Halo logged
+ *             first; a move to NOTELESS_HANDOFF needs no note (both decided 2026-10-28). Time the ticket spends on
  *             hold (SLA Hold: scheduled, waiting on the requester) does not count, as in Halo's own
  *             SLA (decided by the PM, 2026-10-15). Each arrival is its own
  *             measurement: a ticket that comes back is answered again. The week's number is an
@@ -11,17 +15,33 @@
  *             than one that does not (decided by the PM, 2026-10-14). A ticket whose entries fall in
  *             different weeks counts in each week with that week's entries, so a finished week
  *             still never moves.
- *   prd       Requirement into development — first arrival into the queue, to the first ClickUp PRD
- *             link the PM posts on the ticket.
+ *   prd       Requirement into development — the ticket's last entry into the queue before the link,
+ *             to the first ClickUp PRD link the PM posts on the ticket. Earlier rounds in the queue
+ *             are timed by first response; this clock times the round the request moved in
+ *             (decided by the PM, 2026-10-19). If the PM schedules the ticket (Schedule Ticket) in
+ *             that round before posting the link, the clock stops at the scheduling, and the link
+ *             that follows is paperwork (decided by the PM, 2026-10-22, on #49914).
  *   mb        Bug into development — the same clock, to the PM's own hand-off into development:
  *             moving the ticket to Lucas (the bug intake) or anyone in Development, or posting a
  *             ClickUp MB link, whichever comes first. The MB link Lucas logs afterwards is his time,
  *             not the PM's, so it does not stop this clock (decided by the PM, 2026-10-09). Kept apart
  *             from prd because bugs and requirements move at different speeds.
- *   canny     Requirement to Canny — first arrival, to the first Canny post link the PM posts
+ *   canny     Requirement to Canny — the same start, to the first Canny post link the PM posts
  *             (a new post or an existing one).
  *
- * All durations are PM working time (workTime.ts). Each measurement is reported in the week its END
+ * An entry into the queue is a move into it from anywhere else, or a reopen by anyone but the PM
+ * while the queue holds the ticket: Halo keeps the assignee when it closes a ticket, so a reopen hands
+ * it straight back (decided by the PM, 2026-10-22, on #49470). Both start a first-response clock, and
+ * the last one before a link or hand-off starts the requirement, Canny and bug clocks.
+ *
+ * Every duration runs on the PM's working days (calendar.ts — the CN calendar as he works it), each
+ * counted whole, 24 h, Asia/Shanghai: nights on a working day count, weekends and public holidays do
+ * not (decided by the PM, 2026-10-22; pure clock time from 2026-10-19, then weekdays from 2026-10-21).
+ * A ticket that arrives on a day off is timed from 00:00 of the next working day; one answered before
+ * then scores 0, stays in the average and is marked (`beforeClock`). First response is in hours and
+ * leaves out time on hold; the other three are in days of 24 h. The 30-day rules (LONG_WAIT_DAYS,
+ * AWAY_DAYS) count calendar days.
+ * Each measurement is reported in the week its END
  * lands in, so a finished week's numbers never move again. Nothing is averaged that is not also
  * listed: every counted row is shown behind its number, and every row that is not counted is shown
  * with the reason — a waiting ticket left out of an average is how an average lies.
@@ -29,21 +49,10 @@
  * A request that spent more than AWAY_DAYS out of the queue on the way is listed but in no average.
  * Each week is coloured against its quarter's benchmark, the previous quarter's average (benchmarkFor).
  */
-import { HOLD, RELEASE, TICKET_CLOSED, inQueue, isPm, type Party, type PmEvent } from './actions.ts'
+import { HOLD, RELEASE, TICKET_CLOSED, TICKET_REOPENED, inQueue, isPm, type Party, type PmEvent } from './actions.ts'
 import { HISTORY_BASELINES } from './baselines.ts'
 import { type EventStore, coverage } from './store.ts'
-import {
-  type WeekShape,
-  WORKDAY_HOURS,
-  clockStart,
-  isWorkday,
-  localDate,
-  weekLabel,
-  weekOf,
-  weekShape,
-  weeksBetween,
-  workingHoursBetween,
-} from './workTime.ts'
+import { type WeekShape, clockStart, weekLabel, weekOf, weekShape, weeksBetween, workdayMsBetween } from './workTime.ts'
 
 /** How far apart a hand-off and its private note may be and still be one act. Observed gaps are seconds. */
 const PAIR_WINDOW_MS = 30 * 60_000
@@ -59,11 +68,11 @@ const FILING_WINDOW_MS = 30 * 60_000
 /**
  * A request that was out of the PM's queue for more than this many calendar days in one stretch is
  * listed, but kept out of every average: the week's number and the quarter benchmark. This applies
- * between its first arrival and the clock stopping, for example a ticket moved out and back later.
+ * between the ticket's last entry and the clock stopping: a ticket moved out of the queue and linked
+ * a month later, while it was elsewhere.
  *
- * The requirement and bug clocks run from the first arrival, and a month spent elsewhere is not the
- * PM's time. Time INSIDE the queue always counts, however long it is: months waiting in the queue are
- * the PM's wait (decided by the PM, 2026-10-15).
+ * A month spent elsewhere is not the PM's time. Time INSIDE the queue always counts, however long it
+ * is: months waiting in the queue are the PM's wait (decided by the PM, 2026-10-15).
  *
  * First response is never affected. Its clock stops as soon as a ticket leaves the queue.
  */
@@ -88,13 +97,17 @@ export type CycleOutcome =
   | 'replied'
   /** Counted: the PM moved the ticket out of the queue and left a private note. */
   | 'handed-off'
+  /** Counted: the PM scheduled the ticket (Schedule Ticket). It stays in his queue, but no longer waits on him. */
+  | 'scheduled'
+  /** Counted: the PM resolved or closed the ticket himself (Resolved, Close): he finished it. */
+  | 'resolved'
   /** Not yet answered — shown with its working-time age so far. */
   | 'open'
   /** The PM moved it out with no private note: the definition asks for both. */
   | 'no-note'
   /** Someone other than the PM moved it out before the PM responded. */
   | 'taken-out'
-  /** Resolved or closed before any response. */
+  /** Closed by someone other than the PM before any response: Halo's ticket list shows it closed. */
   | 'closed'
 
 export interface ResponseRow {
@@ -102,23 +115,26 @@ export interface ResponseRow {
   summary: string
   client: string
   arrivedAt: string
-  /** Who moved it in, "Support · Kinn Maagad"; null when the move note did not name both ends. */
+  /** Who moved it in, "Support · Kinn Maagad"; null when the move note did not name both ends, or for a reopen. */
   arrivedFrom: string | null
-  /**
-   * When the working clock started for this entry, if later than the arrival (it came in outside
-   * working hours); null when it arrived during working time. Display only: the hours already count
-   * from here.
-   */
-  clockFrom: string | null
+  /** It entered by being reopened while the queue held it, not by a move. */
+  reopened: boolean
   outcome: CycleOutcome
   endedAt: string | null
   /**
-   * Working hours arrival → response when counted, or arrival → now when open, less the time on hold.
-   * Null otherwise.
+   * Working-day hours arrival → response when counted, or arrival → now when open, less the time on
+   * hold. Null otherwise.
    */
   hours: number | null
-  /** Working hours of that span the ticket was on hold (SLA Hold), left out of `hours`. 0 when never on hold. */
+  /** Working-day hours of that span the ticket was on hold (SLA Hold), left out of `hours`. 0 when never on hold. */
   heldHours: number
+  /** When the clock started, if later than `arrivedAt`: 00:00 of the next working day for an arrival on a day off. */
+  clockFrom: string | null
+  /**
+   * Answered before the clock started — it arrived and was answered on days off — so it scores 0 h.
+   * It stays in the average and is marked in the list (decided by the PM, 2026-10-22).
+   */
+  beforeClock: boolean
   /** The week it is reported in; null only for open cycles, which have not landed anywhere yet. */
   week: string | null
   /**
@@ -129,31 +145,16 @@ export interface ResponseRow {
   action: string | null
   to: string | null
   by: string | null
-  /** Set when a counted response scored exactly zero because the working clock had not started. */
-  offClock: OffClock
   /** A counted response that waited more than LONG_WAIT_DAYS: in its week's average, not in a benchmark. */
   longWait: boolean
-}
-
-/**
- * Why a counted duration is exactly zero: the reply, hand-off or link came before the working clock
- * started — on a rest day, or outside 09:30–19:00 — for a ticket that arrived in the same off-hours
- * stretch. Such a row stays in the average as 0.0 h (decided by the PM, 2026-10-09: "even on a
- * holiday, if I replied, it counts"); the label exists so a 0.0 h row is not read as a data error.
- */
-export type OffClock = 'rest-day' | 'after-hours' | null
-
-function offClock(hours: number | null, endIso: string): OffClock {
-  if (hours !== 0) return null
-  return isWorkday(localDate(Date.parse(endIso))) ? 'after-hours' : 'rest-day'
 }
 
 export type EntryKind = 'prd' | 'mb' | 'canny'
 export type EntryStatus =
   | 'counted'
-  /** The ticket was created before the log starts, so its first arrival cannot be known. */
+  /** No entry into the queue before the stop is in the log, and the ticket is older than the log. */
   | 'history-before-data'
-  /** The history is complete but shows no arrival before the link — created straight into the queue. */
+  /** The history is complete but shows no entry before the link — created straight into the queue. */
   | 'no-arrival-on-record'
   /** Timed, but the ticket was out of the queue for more than AWAY_DAYS in one stretch on the way: listed, in no average. */
   | 'away'
@@ -163,20 +164,29 @@ export interface EntryRow {
   summary: string
   client: string
   kind: EntryKind
-  /** How the clock stopped: a link the PM posted, or (bugs only) the PM's hand-off into development. */
-  via: 'link' | 'handoff'
+  /**
+   * How the clock stopped: a link the PM posted, (bugs only) the PM's hand-off into development, or
+   * (requirements only) the PM scheduling the ticket before he posted its link.
+   */
+  via: 'link' | 'handoff' | 'schedule'
   /** "PRD-19414", "MB-12057", a Canny post path, or for a hand-off the receiving party. */
   ref: string
-  /** The first arrival and the working hours from it, for counted and away rows; null otherwise. */
+  /** For a requirement stopped at its scheduling: when its PRD link was posted. Null otherwise. */
+  linkedAt: string | null
+  /** The entry the clock runs from — the last one into the queue before the stop — for counted and away rows; null otherwise. */
   arrivedAt: string | null
+  /** That entry was a reopen while the queue held the ticket, not a move. */
+  reopened: boolean
   at: string
   hours: number | null
-  /** The longest stretch out of the queue between the first arrival and the stop, in calendar days; null when not timed. */
+  /** When the clock started, if later than `arrivedAt` (an entry on a day off). */
+  clockFrom: string | null
+  /** Done before the clock started — entered and linked or handed off on days off — so it scores 0. */
+  beforeClock: boolean
+  /** The longest stretch out of the queue between that entry and the stop, in calendar days; null when not timed. */
   awayDays: number | null
   week: string
   status: EntryStatus
-  /** Set when a counted entry scored exactly zero because the working clock had not started. */
-  offClock: OffClock
   /** A counted entry that waited more than LONG_WAIT_DAYS: in its week's average, not in a benchmark. */
   longWait: boolean
 }
@@ -215,12 +225,13 @@ export interface WaitingAt {
   arrivedAt: string
   hours: number
   heldHours: number
+  /** When its clock starts or started, if later than `arrivedAt`: an arrival on a day off. */
+  clockFrom: string | null
   /**
-   * 'waiting': the working clock is running, so the ticket is waiting on the PM. 'on-hold': it is
-   * parked (scheduled, waiting on the requester). 'not-started': it arrived outside working time,
-   * and no working time has passed yet.
+   * 'waiting': the customer is waiting on the PM. 'on-hold': it is parked (scheduled, or waiting on
+   * the requester), so its clock is stopped.
    */
-  state: 'waiting' | 'on-hold' | 'not-started'
+  state: 'waiting' | 'on-hold'
 }
 
 export interface WeekRow extends WeekCore {
@@ -241,6 +252,8 @@ export interface TicketWeek {
   entries: number
   /** Their mean: the one value this ticket adds to the week's average. */
   meanHours: number
+  /** Every one of those entries was answered before the clock started, so the value is 0 for that reason. */
+  beforeClock: boolean
   /** Every counted first response of this ticket in the log, all weeks. Shown beside it, never averaged into a week. */
   allEntries: number
   allMeanHours: number
@@ -249,17 +262,53 @@ export interface TicketWeek {
 const party = (p?: Party): string | null => (p ? `${p.dept} · ${p.person}` : null)
 const byTime = (a: PmEvent, b: PmEvent) => Date.parse(a.at) - Date.parse(b.at) || a.seq - b.seq
 const isArrival = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.to) && !inQueue(e.from)
+
+/**
+ * A reopen this soon after an entry is part of the same hand-over, not a second entry. Support often
+ * reassigns a closed ticket to the PM and reopens it in one go (#51292 on 10-08: seconds apart).
+ */
+const REOPEN_WITH_ENTRY_MS = 30 * 60_000
+
+/**
+ * A ticket's entries into the queue, in order: every move in (isArrival), and every reopen by anyone
+ * but the PM while the queue holds it. Whether it holds the ticket is read from the moves around it;
+ * before the first move in the log, that move's "from" says where the ticket was.
+ */
+function queueEntries(evs: PmEvent[]): Set<PmEvent> {
+  const out = new Set<PmEvent>()
+  let held = inQueue(evs.find((e) => e.outcome === 'Re-Assign' && e.from)?.from)
+  let last = Number.NEGATIVE_INFINITY
+  for (const e of evs) {
+    const at = Date.parse(e.at)
+    if (e.outcome === 'Re-Assign' && e.to) {
+      if (isArrival(e)) {
+        out.add(e)
+        last = at
+      }
+      held = inQueue(e.to)
+    } else if (e.outcome === TICKET_REOPENED && held && !isPm(e.who) && at - last > REOPEN_WITH_ENTRY_MS) {
+      out.add(e)
+      last = at
+    }
+  }
+  return out
+}
 const isDeparture = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.from) && !inQueue(e.to)
 const isReply = (e: PmEvent) => isPm(e.who) && (e.outcome === 'Email User' || e.outcome === 'Email Update')
 /** The PM closing the ticket, or Halo's ticket list showing it closed (see TICKET_CLOSED). */
 const isClose = (e: PmEvent) => (isPm(e.who) && (e.outcome === 'Resolved' || e.outcome === 'Close')) || e.outcome === TICKET_CLOSED
 /** A response that counts: the PM replied, or handed the ticket off with a private note. */
-const counts = (r: ResponseRow) => r.outcome === 'replied' || r.outcome === 'handed-off'
+const counts = (r: ResponseRow) =>
+  r.outcome === 'replied' || r.outcome === 'handed-off' || r.outcome === 'scheduled' || r.outcome === 'resolved'
 const later = (a: string, b: string) => (Date.parse(a) >= Date.parse(b) ? a : b)
 
 /** Lucas takes bugs in for development; a move to him, or to anyone in Development, puts a bug into dev. */
 const BUG_INTAKE = 'Lucas Chen'
 const toDevelopment = (p?: Party) => !!p && (p.person === BUG_INTAKE || p.dept === 'Development')
+/** People a move to is a hand-off without a private note: the move itself says who takes it (the PM, 2026-10-28). */
+const NOTELESS_HANDOFF = ['Glenn Bugtong']
+/** The Halo action that sets a ticket's scheduled date (status Scheduled). */
+const SCHEDULE_TICKET = 'Schedule Ticket'
 const isBugHandoff = (e: PmEvent) => isPm(e.who) && isDeparture(e) && toDevelopment(e.to)
 
 /** When a ticket was on hold: each SLA Hold until the next SLA Release, or open-ended. */
@@ -275,16 +324,38 @@ function holdsOf(evs: PmEvent[]): Hold[] {
   return holds
 }
 
-/** Working time from → to, less the part on hold. `all` keeps the whole, for the rest-day label. */
+const HOUR_MS = 3_600_000
+
+/** Hours from → to on the scorecard's clock: every hour of the PM's working days, Asia/Shanghai. */
+const clockHours = (fromIso: string, toIso: string) => workdayMsBetween(Date.parse(fromIso), Date.parse(toIso)) / HOUR_MS
+
+/**
+ * First response's time from → to, less the part on hold: every working-day hour from the moment the
+ * ticket is escalated into the PM queue, working hours or not.
+ */
 function waitBetween(holds: Hold[], fromIso: string, toIso: string): { hours: number; held: number; all: number } {
-  const all = workingHoursBetween(fromIso, toIso)
+  const start = Date.parse(fromIso)
+  const end = Date.parse(toIso)
+  const all = workdayMsBetween(start, end) / HOUR_MS
   let held = 0
   for (const h of holds) {
-    const from = Math.max(h.from, Date.parse(fromIso))
-    const to = Math.min(h.to ?? Number.POSITIVE_INFINITY, Date.parse(toIso))
-    if (to > from) held += workingHoursBetween(new Date(from).toISOString(), new Date(to).toISOString())
+    const from = Math.max(h.from, start)
+    const to = Math.min(h.to ?? Number.POSITIVE_INFINITY, end)
+    if (to > from) held += workdayMsBetween(from, to) / HOUR_MS
   }
   return { hours: Math.max(0, all - held), held, all }
+}
+
+/**
+ * Where the clock starts for a start at `fromIso`, and whether the end came before it did. A start on
+ * a day off is timed from 00:00 of the next working day; an end before then scores 0, and the row
+ * says so rather than showing a bare 0.0.
+ */
+function clockOf(fromIso: string, endIso: string | null): { clockFrom: string | null; beforeClock: boolean } {
+  const start = clockStart(fromIso)
+  if (start === fromIso) return { clockFrom: null, beforeClock: false }
+  const before = endIso !== null && Date.parse(endIso) <= Date.parse(start)
+  return { clockFrom: before ? null : start, beforeClock: before }
 }
 
 const onHoldAt = (holds: Hold[], ms: number) => holds.some((h) => h.from <= ms && (h.to === null || h.to > ms))
@@ -314,7 +385,14 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
     return best
   }
 
-  const replyTimes = evs.filter(isReply).map((e) => Date.parse(e.at))
+  const replies = evs.filter(isReply)
+  const replyTimes = replies.map((e) => Date.parse(e.at))
+  /** The PM's reply to the customer within PAIR_WINDOW_MS of a move, not before the wait began. */
+  const replyNear = (atMs: number, notBefore: number) =>
+    replies.find((r) => {
+      const t = Date.parse(r.at)
+      return t >= notBefore && Math.abs(t - atMs) <= PAIR_WINDOW_MS
+    })
   /** The PM moving a ticket he has just answered into his own queue: see FILING_WINDOW_MS. */
   const isFiling = (e: PmEvent) => {
     if (!isPm(e.who)) return false
@@ -324,10 +402,11 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
 
   const holds = holdsOf(evs)
   const wait = (fromIso: string, toIso: string) => waitBetween(holds, fromIso, toIso)
+  const entered = queueEntries(evs)
 
   const rows: ResponseRow[] = []
   let state: 'out' | 'open' | 'answered' = 'out'
-  let cur: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } | null = null
+  let cur: { arrivedAt: string; arrivedFrom: string | null; reopened: boolean } | null = null
   const close = (outcome: CycleOutcome, endedAt: string, end: { action: string; to?: string | null; by?: string }, timed: boolean) => {
     if (!cur) return
     const w = timed ? wait(cur.arrivedAt, endedAt) : null
@@ -339,28 +418,34 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       endedAt,
       hours: w ? w.hours : null,
       heldHours: w ? w.held : 0,
+      ...(timed ? clockOf(cur.arrivedAt, endedAt) : { clockFrom: null, beforeClock: false }),
       week: weekOf(endedAt),
       action: end.action,
       to: end.to ?? null,
       by: end.by ?? null,
-      offClock: w ? offClock(w.all, endedAt) : null,
       longWait: !!w && isLongWait(cur.arrivedAt, endedAt),
     })
     cur = null
   }
 
   for (const e of evs) {
-    if (isArrival(e) && state !== 'open' && isFiling(e)) {
+    if (entered.has(e) && state !== 'open' && isFiling(e)) {
       // Filed by the PM right after his own reply: in the queue, already answered — no clock.
       state = 'answered'
       continue
     }
-    if (isArrival(e)) {
+    if (entered.has(e)) {
+      const reopened = e.outcome === TICKET_REOPENED
+      // A reopen while a cycle is open means the ticket was closed unanswered in between, by a route
+      // the log did not see: that wait ended unanswered, and the reopen starts a new one.
+      if (state === 'open' && reopened) {
+        close('closed', e.at, { action: TICKET_CLOSED }, false)
+        state = 'out'
+      }
       // An arrival while already open is a duplicate move; keep the first. An arrival while answered
       // means the ticket left by a route the log did not see, so it starts a fresh cycle.
       if (state !== 'open') {
-        const starts = clockStart(e.at)
-        cur = { arrivedAt: e.at, arrivedFrom: party(e.from), clockFrom: starts === e.at ? null : starts }
+        cur = { arrivedAt: e.at, arrivedFrom: reopened ? null : party(e.from), reopened }
         state = 'open'
       }
       continue
@@ -370,15 +455,24 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       if (isReply(e)) {
         close('replied', e.at, { action: e.outcome }, true)
         state = 'answered'
+      } else if (isPm(e.who) && e.outcome === SCHEDULE_TICKET) {
+        close('scheduled', e.at, { action: e.outcome }, true)
+        state = 'answered'
       } else if (isDeparture(e)) {
         const move = { action: e.outcome, to: party(e.to) }
         if (isPm(e.who)) {
+          // A reply seconds either side of the move is the response: Halo can log the move first
+          // (#51292: the move 26 s before the email).
+          const reply = replyNear(Date.parse(e.at), Date.parse(arrivedAt))
           const n = noteNear(Date.parse(e.at), Date.parse(arrivedAt))
-          if (n) {
-            const end = later(e.at, n.at)
-            close('handed-off', end, move, true)
-          } else close('no-note', e.at, move, false)
+          if (reply) close('replied', reply.at, { action: reply.outcome }, true)
+          else if (n) close('handed-off', later(e.at, n.at), move, true)
+          else if (e.to && NOTELESS_HANDOFF.includes(e.to.person)) close('handed-off', e.at, move, true)
+          else close('no-note', e.at, move, false)
         } else close('taken-out', e.at, { ...move, by: e.who }, false)
+        state = 'out'
+      } else if (isPm(e.who) && (e.outcome === 'Resolved' || e.outcome === 'Close')) {
+        close('resolved', e.at, { action: e.outcome }, true)
         state = 'out'
       } else if (isClose(e)) {
         close('closed', e.at, { action: e.outcome }, false)
@@ -390,7 +484,7 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
   }
 
   if (state === 'open' && cur) {
-    const open: { arrivedAt: string; arrivedFrom: string | null; clockFrom: string | null } = cur
+    const open: { arrivedAt: string; arrivedFrom: string | null; reopened: boolean } = cur
     const w = wait(open.arrivedAt, now)
     rows.push({
       ticket,
@@ -400,11 +494,11 @@ function cycles(ticket: string, evs: PmEvent[], meta: { summary: string; client:
       endedAt: null,
       hours: w.hours,
       heldHours: w.held,
+      ...clockOf(open.arrivedAt, null),
       week: null,
       action: null,
       to: null,
       by: null,
-      offClock: null,
       longWait: false,
     })
   }
@@ -434,44 +528,60 @@ function longestAway(evs: PmEvent[], fromIso: string, toIso: string): number {
 }
 
 /**
- * When each kind of request entered development or Canny, measured from the ticket's first arrival:
- * the first link of that kind the PM posted, and for bugs also the PM's hand-off into development —
- * whichever came first.
+ * When each kind of request entered development or Canny: the first link of that kind the PM posted,
+ * for bugs also the PM's hand-off into development — whichever came first — and for requirements the
+ * PM's scheduling of the ticket, if it came before the link. Measured from the ticket's last entry
+ * into the queue before it.
  */
 function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client: string }, complete: boolean): EntryRow[] {
-  const firstArrival = evs.find(isArrival)?.at ?? null
   const out: EntryRow[] = []
+  const into = queueEntries(evs)
   for (const kind of ['prd', 'mb', 'canny'] as const) {
     const link = evs.find((x) => isPm(x.who) && x[kind].length > 0)
     const handoff = kind === 'mb' ? evs.find(isBugHandoff) : undefined
-    const e = [link, handoff].filter((x): x is PmEvent => !!x).sort(byTime)[0]
-    if (!e) continue
-    const via: EntryRow['via'] = e === link ? 'link' : 'handoff'
-    const timed = complete && !!firstArrival && Date.parse(firstArrival) <= Date.parse(e.at)
-    const away = timed && firstArrival ? longestAway(evs, firstArrival, e.at) : null
-    const status: EntryStatus = !complete
-      ? 'history-before-data'
-      : !timed
+    const first = [link, handoff].filter((x): x is PmEvent => !!x).sort(byTime)[0]
+    if (!first) continue
+    // The round the request moved in: its last entry into the queue before the link or hand-off — a
+    // reopen counts. An entry the log holds is the last one whether or not older history is on record.
+    const entry = evs.filter((x) => into.has(x) && Date.parse(x.at) <= Date.parse(first.at)).pop()
+    // A requirement the PM scheduled in that round before posting its link went to development when he
+    // scheduled it; the link followed as paperwork. The link still has to come: scheduling alone is not
+    // a requirement into development.
+    const scheduled =
+      kind === 'prd' && entry
+        ? evs.find((x) => isPm(x.who) && x.outcome === SCHEDULE_TICKET && byTime(x, entry) > 0 && byTime(x, first) < 0)
+        : undefined
+    const e = scheduled ?? first
+    const via: EntryRow['via'] = scheduled ? 'schedule' : first === link ? 'link' : 'handoff'
+    const entered = entry?.at ?? null
+    const timed = entered !== null
+    const away = entered ? longestAway(evs, entered, e.at) : null
+    const status: EntryStatus = !timed
+      ? complete
         ? 'no-arrival-on-record'
-        : (away ?? 0) > AWAY_DAYS * DAY_MS
-          ? 'away'
-          : 'counted'
-    const hours = timed && firstArrival ? workingHoursBetween(firstArrival, e.at) : null
+        : 'history-before-data'
+      : (away ?? 0) > AWAY_DAYS * DAY_MS
+        ? 'away'
+        : 'counted'
+    // The same clock as first response: the PM's working days, 24 h each.
+    const hours = entered ? clockHours(entered, e.at) : null
     out.push({
       ticket,
       ...meta,
       kind,
       via,
       // A hand-off always names its receiver: isBugHandoff only matches a move whose "to" is known.
-      ref: via === 'link' ? e[kind][0] : (party(e.to) ?? ''),
-      arrivedAt: timed ? firstArrival : null,
+      ref: via === 'handoff' ? (party(e.to) ?? '') : (link as PmEvent)[kind][0],
+      linkedAt: scheduled && link ? link.at : null,
+      arrivedAt: entered,
+      reopened: entry?.outcome === TICKET_REOPENED,
       at: e.at,
       hours,
+      ...(entered ? clockOf(entered, e.at) : { clockFrom: null, beforeClock: false }),
       awayDays: away === null ? null : Math.round((away / DAY_MS) * 10) / 10,
       week: weekOf(e.at),
       status,
-      offClock: status === 'counted' ? offClock(hours, e.at) : null,
-      longWait: status === 'counted' && !!firstArrival && isLongWait(firstArrival, e.at),
+      longWait: status === 'counted' && !!entered && isLongWait(entered, e.at),
     })
   }
   return out
@@ -509,7 +619,9 @@ export const MIN_WORKDAYS = 3
 const METRIC_IDS: Metric[] = ['response', 'prd', 'mb', 'canny']
 /** How the page shows each number. Colours compare the value as shown, so a shown "7.3 h" is judged as 7.3. */
 const SHOWN_IN: Record<Metric, 'h' | 'd'> = { response: 'h', prd: 'd', mb: 'd', canny: 'd' }
-const inShownUnit = (hours: number, metric: Metric) => (SHOWN_IN[metric] === 'h' ? hours : hours / WORKDAY_HOURS)
+/** A shown day is one working day counted whole: 24 hours, not the 9.5 working hours in it. */
+export const DAY_HOURS = 24
+const inShownUnit = (hours: number, metric: Metric) => (SHOWN_IN[metric] === 'h' ? hours : hours / DAY_HOURS)
 const round1 = (v: number) => Math.round(v * 10) / 10
 
 /**
@@ -529,6 +641,8 @@ export interface Sample {
   out?: 'long-wait' | 'short-week'
   /** Calendar days waited, for a long wait. */
   waitedDays?: number
+  /** Answered or done on a day off, before the clock started: it counts, as 0. */
+  beforeClock?: true
 }
 
 export interface Line {
@@ -608,12 +722,20 @@ export function quarterSamples(
 
   const responses = card.response.filter((r) => counts(r) && inQuarter.has(r.week as string))
   for (const t of ticketWeeks(responses.filter((r) => !r.longWait && !short(r.week as string)))) {
-    out.push({ metric: 'response', ticket: t.ticket, week: t.week, hours: t.meanHours, entries: t.entries })
+    out.push({
+      metric: 'response',
+      ticket: t.ticket,
+      week: t.week,
+      hours: t.meanHours,
+      entries: t.entries,
+      ...(t.beforeClock ? { beforeClock: true as const } : {}),
+    })
   }
   for (const r of responses) {
     const week = r.week as string
     const hours = r.hours as number
-    if (short(week)) out.push({ metric: 'response', ticket: r.ticket, week, hours, out: 'short-week' })
+    const marked = r.beforeClock ? { beforeClock: true as const } : {}
+    if (short(week)) out.push({ metric: 'response', ticket: r.ticket, week, hours, out: 'short-week', ...marked })
     else if (r.longWait) {
       out.push({
         metric: 'response',
@@ -622,11 +744,18 @@ export function quarterSamples(
         hours,
         out: 'long-wait',
         waitedDays: daysBetween(r.arrivedAt, r.endedAt as string),
+        ...marked,
       })
     }
   }
   for (const r of card.entries.filter((x) => x.status === 'counted' && inQuarter.has(x.week))) {
-    const base = { metric: r.kind, ticket: r.ticket, week: r.week, hours: r.hours as number }
+    const base = {
+      metric: r.kind,
+      ticket: r.ticket,
+      week: r.week,
+      hours: r.hours as number,
+      ...(r.beforeClock ? { beforeClock: true as const } : {}),
+    }
     if (short(r.week)) out.push({ ...base, out: 'short-week' })
     else if (r.longWait) out.push({ ...base, out: 'long-wait', waitedDays: daysBetween(r.arrivedAt as string, r.at) })
     else out.push(base)
@@ -685,13 +814,14 @@ export interface PmScorecard {
 /** Group the counted first responses by ticket and week, keeping each ticket's all-weeks mean beside it. */
 function ticketWeeks(rows: ResponseRow[]): TicketWeek[] {
   const all = new Map<string, number[]>()
-  const byWeek = new Map<string, { ticket: string; week: string; hours: number[] }>()
+  const byWeek = new Map<string, { ticket: string; week: string; hours: number[]; beforeClock: boolean }>()
   for (const r of rows) {
     const hours = r.hours as number
     all.set(r.ticket, [...(all.get(r.ticket) ?? []), hours])
     const key = `${r.ticket}|${r.week}`
-    const unit = byWeek.get(key) ?? { ticket: r.ticket, week: r.week as string, hours: [] }
+    const unit = byWeek.get(key) ?? { ticket: r.ticket, week: r.week as string, hours: [], beforeClock: true }
     unit.hours.push(hours)
+    unit.beforeClock = unit.beforeClock && r.beforeClock
     byWeek.set(key, unit)
   }
   return [...byWeek.values()].map((u) => {
@@ -701,6 +831,7 @@ function ticketWeeks(rows: ResponseRow[]): TicketWeek[] {
       week: u.week,
       entries: u.hours.length,
       meanHours: mean(u.hours),
+      beforeClock: u.beforeClock,
       allEntries: everything.length,
       allMeanHours: mean(everything),
     }
@@ -744,8 +875,10 @@ export function buildScorecard(store: EventStore, now: string): PmScorecard {
       .map((r) => {
         const holds = holdsByTicket.get(r.ticket) ?? []
         const w = waitBetween(holds, r.arrivedAt, atIso)
-        const state: WaitingAt['state'] = onHoldAt(holds, at) ? 'on-hold' : w.all === 0 ? 'not-started' : 'waiting'
-        return { ticket: r.ticket, arrivedAt: r.arrivedAt, hours: w.hours, heldHours: w.held, state }
+        const state: WaitingAt['state'] = onHoldAt(holds, at) ? 'on-hold' : 'waiting'
+        const start = clockStart(r.arrivedAt)
+        const clockFrom = start === r.arrivedAt ? null : start
+        return { ticket: r.ticket, arrivedAt: r.arrivedAt, hours: w.hours, heldHours: w.held, clockFrom, state }
       })
       .sort((a, b) => b.hours - a.hours)
   }

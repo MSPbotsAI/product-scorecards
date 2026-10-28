@@ -16,7 +16,8 @@ import { type PmEvent, PM_NAME, type ReadAuth, closureEvents, readActions, readT
 import { CALENDAR } from './calendar.ts'
 import { AWAY_DAYS, LONG_WAIT_DAYS, MIN_SAMPLES, MIN_WORKDAYS, YELLOW_FACTOR, buildScorecard } from './metrics.ts'
 import { type Batch, type Capture, batchOf, loadStore, mergeBatch, storeKind } from './store.ts'
-import { WORK_END, WORK_START, WORKDAY_HOURS } from './workTime.ts'
+import { DAY_HOURS } from './metrics.ts'
+import { WORK_END, WORK_START } from './workTime.ts'
 
 /** The numbers move at ticket speed; a capture every half hour is plenty for a weekly scorecard. */
 const STALE_MS = 30 * 60_000
@@ -152,7 +153,8 @@ export async function supportTicketUpdates(tenantId: string, token: string, forc
     calendar: {
       status: CALENDAR.status,
       hours: `${WORK_START}–${WORK_END} Asia/Shanghai`,
-      workdayHours: WORKDAY_HOURS,
+      /** Hours in one shown day (d): a working day counted whole, since every duration runs on working days. */
+      dayHours: DAY_HOURS,
       holidays: CALENDAR.holidays,
       makeupWorkdays: CALENDAR.makeupWorkdays,
     },
