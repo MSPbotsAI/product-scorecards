@@ -32,7 +32,10 @@
  * An entry into the queue is a move into it from anywhere else, or a reopen by anyone but the PM
  * while the queue holds the ticket: Halo keeps the assignee when it closes a ticket, so a reopen hands
  * it straight back (decided by the PM, 2026-10-22, on #49470). Both start a first-response clock, and
- * the last one before a link or hand-off starts the requirement, Canny and bug clocks.
+ * the last one before a link or hand-off starts the requirement, Canny and bug clocks. For those three
+ * clocks the customer answering is an entry too: a hold the PM set with his reply (waiting on the
+ * requester) ending by anyone but him, while the queue holds the ticket (decided by the PM,
+ * 2026-11-11, on #52872).
  *
  * Every duration runs on the PM's working days (calendar.ts — the CN calendar as he works it), each
  * counted whole, 24 h, Asia/Shanghai: nights on a working day count, weekends and public holidays do
@@ -177,6 +180,8 @@ export interface EntryRow {
   arrivedAt: string | null
   /** That entry was a reopen while the queue held the ticket, not a move. */
   reopened: boolean
+  /** That entry was a hold ending while the queue held the ticket: the customer answered, or a scheduled date came. */
+  resumed: boolean
   at: string
   hours: number | null
   /** When the clock started, if later than `arrivedAt` (an entry on a day off). */
@@ -268,18 +273,25 @@ const isArrival = (e: PmEvent) => e.outcome === 'Re-Assign' && inQueue(e.to) && 
  * reassigns a closed ticket to the PM and reopens it in one go (#51292 on 10-08: seconds apart).
  */
 const REOPEN_WITH_ENTRY_MS = 30 * 60_000
+/** How close a hold and the PM's reply must be for the hold to be him waiting on the requester. Halo logs them together. */
+const HOLD_WITH_REPLY_MS = 2 * 60_000
 
 /**
  * A ticket's entries into the queue, in order: every move in (isArrival), and every reopen by anyone
  * but the PM while the queue holds it. Whether it holds the ticket is read from the moves around it;
  * before the first move in the log, that move's "from" says where the ticket was.
  */
-function queueEntries(evs: PmEvent[]): Set<PmEvent> {
+function queueEntries(evs: PmEvent[], resumes = false): Set<PmEvent> {
   const out = new Set<PmEvent>()
   let held = inQueue(evs.find((e) => e.outcome === 'Re-Assign' && e.from)?.from)
   let last = Number.NEGATIVE_INFINITY
+  // Whether the hold now on the ticket is the PM waiting on the requester: set with his own reply to
+  // the customer, not by scheduling the ticket or changing its status.
+  const replies = evs.filter(isReply).map((e) => Date.parse(e.at))
+  let waitingOnRequester = false
   for (const e of evs) {
     const at = Date.parse(e.at)
+    if (e.outcome === HOLD) waitingOnRequester = replies.some((t) => Math.abs(t - at) <= HOLD_WITH_REPLY_MS)
     if (e.outcome === 'Re-Assign' && e.to) {
       if (isArrival(e)) {
         out.add(e)
@@ -287,6 +299,12 @@ function queueEntries(evs: PmEvent[]): Set<PmEvent> {
       }
       held = inQueue(e.to)
     } else if (e.outcome === TICKET_REOPENED && held && !isPm(e.who) && at - last > REOPEN_WITH_ENTRY_MS) {
+      out.add(e)
+      last = at
+    } else if (resumes && e.outcome === RELEASE && waitingOnRequester && held && !isPm(e.who) && at - last > REOPEN_WITH_ENTRY_MS) {
+      // The customer answering the PM's question ends his wait on them and hands the request back
+      // (decided by the PM, 2026-11-11, on #52872). A scheduled ticket's hold ending is not this: the
+      // request was already decided (#49914, scheduled 09-07, a customer email on 09-09).
       out.add(e)
       last = at
     }
@@ -535,7 +553,8 @@ function longestAway(evs: PmEvent[], fromIso: string, toIso: string): number {
  */
 function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client: string }, complete: boolean): EntryRow[] {
   const out: EntryRow[] = []
-  const into = queueEntries(evs)
+  // For these clocks the ticket also comes back to the PM when a hold on it ends.
+  const into = queueEntries(evs, true)
   for (const kind of ['prd', 'mb', 'canny'] as const) {
     const link = evs.find((x) => isPm(x.who) && x[kind].length > 0)
     const handoff = kind === 'mb' ? evs.find(isBugHandoff) : undefined
@@ -575,6 +594,7 @@ function entries(ticket: string, evs: PmEvent[], meta: { summary: string; client
       linkedAt: scheduled && link ? link.at : null,
       arrivedAt: entered,
       reopened: entry?.outcome === TICKET_REOPENED,
+      resumed: entry?.outcome === RELEASE,
       at: e.at,
       hours,
       ...(entered ? clockOf(entered, e.at) : { clockFrom: null, beforeClock: false }),

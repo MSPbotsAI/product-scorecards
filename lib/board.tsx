@@ -59,7 +59,8 @@ export function StatusIcon({ status, className }: { status: RowStatus; className
 
 /* ── delta: signed, vs last week; color = direction × whether up is good ── */
 
-export function Delta({ row }: { row: ScorecardRow }) {
+/** `neutral`: the change is shown, not judged — for a board whose only colour is its benchmark. */
+export function Delta({ row, neutral }: { row: ScorecardRow; neutral?: boolean }) {
   if (row.value == null || row.previous == null) return null;
   const diff = row.value - row.previous;
   if (diff === 0)
@@ -75,7 +76,7 @@ export function Delta({ row }: { row: ScorecardRow }) {
     <span
       className={cn(
         "inline-flex items-center gap-0.5 text-xs font-medium tabular-nums",
-        good ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400",
+        neutral ? "text-muted-foreground" : good ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400",
       )}
     >
       <Icon className="h-3 w-3" />
@@ -176,7 +177,26 @@ export function NoteHint({ note, children }: { note: string; children: ReactNode
 
 /* ── sparkline: 2px line in the de-emphasis hue, current point accented; hover = the table view ── */
 
-export function Sparkline({ row, width = 72, height = 22 }: { row: ScorecardRow; width?: number; height?: number }) {
+const DOT_FILL: Record<RowStatus, string> = {
+  red: "fill-danger-500",
+  yellow: "fill-warning-500",
+  green: "fill-success-500",
+  display: "fill-muted-foreground",
+  nodata: "fill-muted-foreground",
+};
+
+/** `dot`: colour the current point by this status (a benchmark's light) instead of by the week-on-week direction. */
+export function Sparkline({
+  row,
+  width = 72,
+  height = 22,
+  dot,
+}: {
+  row: ScorecardRow;
+  width?: number;
+  height?: number;
+  dot?: RowStatus;
+}) {
   const h = row.history;
   if (!h || h.length < 2) return <span className="inline-block" style={{ width }} />;
 
@@ -201,7 +221,7 @@ export function Sparkline({ row, width = 72, height = 22 }: { row: ScorecardRow;
             cy={y(last.value)}
             r="2.5"
             className={cn(
-              flat ? "fill-muted-foreground" : good ? "fill-emerald-500" : "fill-red-500",
+              dot ? DOT_FILL[dot] : flat ? "fill-muted-foreground" : good ? "fill-emerald-500" : "fill-red-500",
             )}
           />
         </svg>

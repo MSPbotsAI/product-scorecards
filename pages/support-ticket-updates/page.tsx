@@ -43,9 +43,9 @@ import {
   root,
 } from '@mspbots/ui'
 import { AlertTriangle, RefreshCw, Upload } from 'lucide-react'
-import { Delta, LangToggle, STATUS_META, Sparkline, StatusChip, StatusIcon } from '../../lib/board'
+import { Delta, LangToggle, STATUS_META, Sparkline, StatusChip } from '../../lib/board'
 import { useLang } from '../../lib/i18n'
-import type { RowStatus, ScorecardRow } from '../../lib/scorecard-client'
+import type { ScorecardRow } from '../../lib/scorecard-client'
 import {
   type Benchmark,
   type Sample,
@@ -109,7 +109,7 @@ const EN = {
       short:
         'The ticket’s last entry into the queue, to the PM scheduling it or posting its first ClickUp PRD link — whichever comes first.',
       notes: [
-        'Measured from the last time the ticket entered the PM queue before the link — a reopen while it sits in the queue counts as entering it. Earlier rounds — a question back to the customer, a return from the team — are timed by first response; this clock times the round the request moved in. Counted in working days of 24 h; weekends and public holidays do not count.',
+        'Measured from the last time the ticket entered the PM queue before the link — a reopen while it sits in the queue counts as entering it, and so does the customer answering while the PM waits on them (the hold his reply set ends). Earlier rounds — a question back to the customer, a return from the team — are timed by first response; this clock times the round the request moved in. Counted in working days of 24 h; weekends and public holidays do not count.',
         'If the PM schedules the ticket in Halo (Schedule Ticket) in that round before posting the link, the clock stops at the scheduling: the link is the paperwork that follows. The ticket still needs a PRD link to count — scheduling alone is not a requirement into development.',
         'Only a pasted ClickUp link counts (app.clickup.com/t/…/PRD-…); a bare "PRD-14894" in prose is usually a reference to something else.',
         'A ticket whose last entry came before the log starts has no start on record, so it is listed as not counted rather than guessed.',
@@ -140,6 +140,14 @@ const EN = {
   target: (benchmark: string) => `benchmark ${benchmark}`,
   trendOnly: 'trend only',
   benchmarksTitle: (quarter: string) => `Benchmarks · ${quarter}`,
+  scorecardDesc: (quarter: string) =>
+    `One row per number, one column per week of ${quarter}. A cell is shaded only against ${quarter}'s benchmark. Hover a cell for its counts; click it to open that week.`,
+  thisQuarter: 'this quarter',
+  breakdownDesc: (quarter: string) =>
+    `One row per number, one column per week. A cell is shaded only against the benchmark of its own week's quarter: the Goal column gives ${quarter}'s, with any earlier quarter's below it. Click a cell to open that week.`,
+  colGoal: 'Goal',
+  breakdownWaiting: 'Waiting at week end',
+  monthLabel: (month: number) => ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][month - 1],
   benchmarksFrom: (from: string, history: boolean) =>
     `The ${from} average, held for the whole quarter${history ? ' — from Halo’s full history, which the log does not reach' : ''}.`,
   benchmarksLeftOut: (longWait: number, minWorkdays: number) =>
@@ -242,6 +250,7 @@ const EN = {
   heldNote: (hours: string) => `on hold ${hours} h, not counted`,
   clockFrom: (when: string) => `clock from ${when}`,
   reopened: 'reopened in the queue',
+  resumed: 'back when the customer answered',
   beforeClockReply: 'Answered on a day off — the clock had not started',
   beforeClockEntry: 'Done on a day off — the clock had not started',
   beforeClockSample: 'on a day off — counts as 0',
@@ -307,7 +316,7 @@ const ZH: typeof EN = {
       noun: () => '个需求',
       short: '工单最后一次进入队列，到 PM 给它排期（Schedule Ticket）或贴出第一个 ClickUp PRD 链接为止，以先发生者为准。',
       notes: [
-        '从贴链接之前工单最后一次进入 PM 队列起算（关闭后在队列里被重开，也算进入队列）。之前的几轮——问客户、被团队退回——由首次响应计时；这里只计需求真正推进的那一轮。按工作日计（每天 24 小时），周末和法定假期不算。',
+        '从贴链接之前工单最后一次进入 PM 队列起算（关闭后在队列里被重开，或 PM 回复客户后在等客户、客户回了信，也算进入队列；排期造成的挂起结束不算）。之前的几轮——问客户、被团队退回——由首次响应计时；这里只计需求真正推进的那一轮。按工作日计（每天 24 小时），周末和法定假期不算。',
         '如果同一轮里 PM 先在 Halo 给工单排期（Schedule Ticket），之后才贴链接，就按排期那一刻停表——链接只是补的手续。单子仍要贴出 PRD 链接才计入，单独排期不算需求进研发。',
         '只有贴出的 ClickUp 链接才算（app.clickup.com/t/…/PRD-…）；正文里单独写的 "PRD-14894" 通常是在引用别的东西。',
         '最后一次进队列早于日志起点的工单没有起点记录，因此列为「不计入」，而不是去猜。',
@@ -338,6 +347,14 @@ const ZH: typeof EN = {
   target: (benchmark: string) => `基准 ${benchmark}`,
   trendOnly: '仅看趋势',
   benchmarksTitle: (quarter: string) => `基准 · ${quarter}`,
+  scorecardDesc: (quarter: string) =>
+    `每行一个指标，每列是 ${quarter} 的一周。格子只按 ${quarter} 的基准着色；鼠标悬停看单数，点开看那一周的工单。`,
+  thisQuarter: '本季度',
+  breakdownDesc: (quarter: string) =>
+    `每行一个指标，每列一周。格子只按该周所属季度的基准着色："目标"一列上面是 ${quarter} 的基准，下面小字是表里更早季度的基准。点格子查看那一周的工单。`,
+  colGoal: '目标',
+  breakdownWaiting: '周结束时等待',
+  monthLabel: (month: number) => `${month} 月`,
   benchmarksFrom: (from: string, history: boolean) =>
     `取自 ${from} 的平均值，整个季度固定不变${history ? '；日志覆盖不到那个季度，取自 Halo 完整历史' : ''}。`,
   benchmarksLeftOut: (longWait: number, minWorkdays: number) =>
@@ -437,6 +454,7 @@ const ZH: typeof EN = {
   heldNote: (hours: string) => `挂起 ${hours} h 不计`,
   clockFrom: (when: string) => `从 ${when} 起算`,
   reopened: '在队列中重开',
+  resumed: '客户回复后回到队列',
   beforeClockReply: '非工作日回复——还没开始计时',
   beforeClockEntry: '非工作日完成——还没开始计时',
   beforeClockSample: '非工作日处理——记 0',
@@ -544,11 +562,6 @@ function reading(data: SupportUpdatesPayload, metric: Metric, index: number) {
   return { unit, stat, row, benchmark, line, median: stat && stat.n > 0 ? inUnit(stat.medianHours, unit, dayHours) : null }
 }
 
-/** "benchmark 7.7 h", or "trend only" when the quarter has no usable benchmark for this number. */
-function targetText(t: Copy, line: BenchmarkLine | undefined, unit: Unit): string {
-  return line?.green != null ? t.target(show(line.green, unit)) : t.trendOnly
-}
-
 /**
  * The three bands as ranges of the shown value. Values compare at one decimal, so yellow starts one
  * tenth above the benchmark: "≤ 7.7 h", "7.8–9.6 h", "> 9.6 h".
@@ -603,50 +616,6 @@ function howText(r: ResponseRow, t: Copy): string {
 }
 
 /* ── rows ── */
-
-function Line({
-  status,
-  name,
-  sub,
-  spark,
-  value,
-  delta,
-  onClick,
-}: {
-  status: RowStatus
-  name: string
-  sub: string
-  spark?: ReactNode
-  value: string
-  delta?: ReactNode
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex w-full cursor-pointer items-center gap-3 rounded-md border border-l-2 bg-card px-3 py-2 text-left transition-colors hover:bg-muted/40',
-        status === 'red'
-          ? 'border-l-danger-500 bg-danger-500/[0.04] hover:bg-danger-500/[0.08]'
-          : status === 'yellow'
-            ? 'border-l-warning-500 bg-warning-500/[0.04] hover:bg-warning-500/[0.08]'
-            : 'border-l-transparent',
-      )}
-    >
-      <StatusIcon status={status} className="w-5 justify-center" />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm">{name}</div>
-        <div className="text-[11px] text-muted-foreground">{sub}</div>
-      </div>
-      {spark}
-      <div className="flex shrink-0 items-baseline gap-1.5">
-        <span className="font-mono text-sm font-semibold tabular-nums">{value}</span>
-        {delta}
-      </div>
-    </button>
-  )
-}
 
 /* ── detail dialogs ── */
 
@@ -814,6 +783,7 @@ function EntryRows({
               {local(r.arrivedAt)}
               {r.clockFrom && <div className="text-[11px] italic text-muted-foreground">{t.clockFrom(local(r.clockFrom))}</div>}
               {r.reopened && <div className="text-[11px] text-muted-foreground">{t.reopened}</div>}
+              {r.resumed && <div className="text-[11px] text-muted-foreground">{t.resumed}</div>}
             </TableCell>
             <TableCell className="align-top tabular-nums">{local(r.at)}</TableCell>
             {!reason && (
@@ -989,10 +959,10 @@ function MetricDialog({
                 {show(row.value, unit)}
               </span>
               <span className="font-mono text-sm tabular-nums text-muted-foreground">{show(row.previous, unit)}</span>
-              <Delta row={row} />
+              <Delta row={row} neutral />
             </div>
           </div>
-          <Sparkline row={row} width={150} height={44} />
+          <Sparkline row={row} width={150} height={44} dot={row.status} />
         </div>
         {week && <Bands data={data} quarter={week.quarter} benchmark={benchmark} metric={metric} unit={unit} t={t} />}
 
@@ -1029,7 +999,7 @@ function MetricDialog({
                     <TableCell
                       className={cn(
                         'px-3 py-1.5 text-right',
-                        diff === null || diff === 0 ? 'text-muted-foreground/60' : diff < 0 ? 'text-success-700' : 'text-danger-700',
+                        diff === null || diff === 0 ? 'text-muted-foreground/60' : 'text-muted-foreground',
                       )}
                     >
                       {diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff}`}
@@ -1130,7 +1100,6 @@ function WaitingDialog({ data, index, onClose }: { data: SupportUpdatesPayload; 
       <DialogContent container={root()} className="max-h-[88vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
           <div className="flex items-center gap-2">
-            <StatusChip status={rows.length ? 'yellow' : 'green'} />
             <span className="text-[11px] text-muted-foreground">
               {live ? t.asOfNow : t.asOfWeekEnd(week?.label ?? '')} · {data.pm}
             </span>
@@ -1368,7 +1337,7 @@ function BenchmarkCard({ data, index, onOpen }: { data: SupportUpdatesPayload; i
                 const r = ranges(line, m.unit)
                 return (
                   <TableRow key={m.id} onClick={() => onOpen(m.id)} className="cursor-pointer hover:bg-muted/40">
-                    <TableCell className="px-2 py-1.5">
+                    <TableCell className="whitespace-normal px-2 py-1.5">
                       <span className="text-muted-foreground">{m.tag}</span> {t.metrics[m.id].name}
                     </TableCell>
                     {r && line.green !== null ? (
@@ -1383,7 +1352,7 @@ function BenchmarkCard({ data, index, onOpen }: { data: SupportUpdatesPayload; i
                         {t.tooFew(line.n, data.rules.minSamples)}
                       </TableCell>
                     )}
-                    <TableCell className="px-2 py-1.5 text-right text-muted-foreground">
+                    <TableCell className="whitespace-normal px-2 py-1.5 text-right text-muted-foreground">
                       {line.n} {t.metrics[m.id].noun(line.n)}
                     </TableCell>
                   </TableRow>
@@ -1397,39 +1366,53 @@ function BenchmarkCard({ data, index, onOpen }: { data: SupportUpdatesPayload; i
   )
 }
 
-function OwnerCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index: number; onOpen: (m: Metric | 'waiting') => void }) {
+/** A scorecard cell's shading: its week's light against its quarter's benchmark, and nothing else. */
+const CELL_TONE: Record<Light, string> = {
+  green: 'bg-success-500/15 text-success-700',
+  yellow: 'bg-warning-500/20 text-warning-700',
+  red: 'bg-danger-500/15 text-danger-700',
+  display: 'text-foreground',
+}
+
+/**
+ * The PM's scorecard for one quarter, like an EOS scorecard: one row per number, one column per week,
+ * each cell that week's value shaded only by the quarter's benchmark (decided by the PM, 2026-10-29).
+ * Hovering a cell gives its counts; clicking it opens that number at that week.
+ */
+function ScorecardCard({
+  data,
+  quarter,
+  onOpen,
+}: {
+  data: SupportUpdatesPayload
+  quarter: string
+  onOpen: (m: Metric | 'waiting', weekIndex: number) => void
+}) {
   const t = T[useLang()]
-  const week: WeekRow | undefined = data.weeks[index]
-  // Waiting on the PM as the selected week ended (now, for the week in progress): the clock running,
-  // not on hold. Tickets on hold or not yet due are mentioned, not counted.
-  const all = week?.waiting ?? []
-  const open = all.filter((w) => w.state === 'waiting')
-  const oldest = open.reduce((m, w) => Math.max(m, w.hours), 0)
-  const live = !week || week.partial === 'in-progress'
-  const others = t.othersNote(all.filter((w) => w.state === 'on-hold').length)
-  const waitingSub = `${
-    open.length > 0
-      ? live
-        ? t.waitingSub(oldest.toFixed(1))
-        : t.waitingSubAt(week?.label ?? '', oldest.toFixed(1))
-      : live
-        ? t.waitingNone
-        : t.waitingNoneAt(week?.label ?? '')
-  }${others}`
-  const shape = week?.shape
-  const done = shape ? shape.elapsedHours / Math.max(shape.totalHours, 1) : 0
-  const extras = [shape?.holidays ? t.holidays(shape.holidays) : '', shape?.makeupDays ? t.makeupDays(shape.makeupDays) : ''].filter(
-    Boolean,
-  )
-  const status =
-    week?.partial === 'in-progress'
-      ? t.inProgress(shape?.elapsedHours.toFixed(0) ?? '0', String(shape?.totalHours ?? 0))
-      : week?.partial === 'coverage'
-        ? t.logStarts(local(data.coverageFrom).slice(0, 5))
-        : t.complete
+  const dayHours = data.calendar.dayHours
+  // The quarter's weeks, oldest on the left, each with its index in data.weeks (newest first).
+  const cols = data.weeks
+    .map((w, i) => ({ w, i }))
+    .filter(({ w }) => w.quarter === quarter)
+    .reverse()
+  const latest = cols[cols.length - 1]
+  const benchmark = data.benchmarks.find((b) => b.quarter === quarter)
+  // Month bands over the week columns, by the month each Monday falls in.
+  const months: { label: string; span: number; from: string }[] = []
+  for (const { w } of cols) {
+    const label = t.monthLabel(Number(w.monday.slice(5, 7)))
+    const last = months[months.length - 1]
+    if (last && last.label === label) last.span++
+    else months.push({ label, span: 1, from: w.monday })
+  }
+  // The week in progress, when this quarter holds it: what waits on the PM right now.
+  const live = cols.find(({ w }) => w.partial === 'in-progress')?.w
+  const waitingNow = live ? live.waiting.filter((x) => x.state === 'waiting').length : 0
+  const cellBase = 'h-8 min-w-14 px-1.5 text-center tabular-nums'
+  const clickable = 'cursor-pointer border-r hover:ring-1 hover:ring-inset hover:ring-primary/40'
 
   return (
-    <Card className={cn(open.length > 0 && 'border-warning-500/30')}>
+    <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center gap-3">
           <Avatar className="h-9 w-9">
@@ -1439,59 +1422,118 @@ function OwnerCard({ data, index, onOpen }: { data: SupportUpdatesPayload; index
             <div className="flex items-center justify-between gap-2">
               <CardTitle className="truncate text-base">{data.pm}</CardTitle>
               <div className="flex shrink-0 items-center gap-1.5">
-                {open.length > 0 && (
-                  <Badge variant="outline" className="h-5 border-warning-500/50 px-1.5 text-[11px] text-warning-700">
-                    {t.waitingBadge(open.length)}
+                {waitingNow > 0 && (
+                  <Badge variant="outline" className="h-5 px-1.5 text-[11px]">
+                    {t.waitingBadge(waitingNow)}
                   </Badge>
                 )}
                 <Badge variant="outline" className="h-5 px-1.5 text-[11px]">
-                  {week?.label}
+                  {t.quarter(quarter)}
                 </Badge>
               </div>
             </div>
-            <CardDescription className="text-xs">
-              {shape ? t.workingDays(shape.workdays) : ''}
-              {t.aside(extras)} · {status}
-            </CardDescription>
+            <CardDescription className="text-xs">{t.scorecardDesc(t.quarter(quarter))}</CardDescription>
           </div>
         </div>
-        <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
-          <div
-            className={cn('absolute inset-y-0 left-0 rounded-full', done >= 1 ? 'bg-success-500' : 'bg-primary')}
-            style={{ width: `${Math.min(done, 1) * 100}%` }}
-          />
-        </div>
       </CardHeader>
-      <CardContent className="space-y-1">
-        {METRICS.map((m) => {
-          const { row, stat, median, unit, line } = reading(data, m.id, index)
-          const n = stat?.n ?? 0
-          const copy = t.metrics[m.id]
-          const target = targetText(t, line, unit)
-          return (
-            <Line
-              key={m.id}
-              status={row.status}
-              name={copy.name}
-              sub={
-                n > 0
-                  ? t.rowSub(m.tag, countText(t, m.id, n, week?.responseEntries ?? n), show(median, unit), target)
-                  : t.rowNone(m.tag, target)
-              }
-              spark={<Sparkline row={row} width={56} height={18} />}
-              value={show(row.value, unit)}
-              delta={<Delta row={row} />}
-              onClick={() => onOpen(m.id)}
-            />
-          )
-        })}
-        <Line
-          status={open.length > 0 ? 'yellow' : 'green'}
-          name={t.waitingName}
-          sub={waitingSub}
-          value={String(open.length)}
-          onClick={() => onOpen('waiting')}
-        />
+      <CardContent>
+        <div className="overflow-x-auto rounded-md border">
+          <Table className="text-xs">
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead rowSpan={2} className="min-w-52 border-r px-2 align-bottom">
+                  {t.colMetric}
+                </TableHead>
+                <TableHead rowSpan={2} className="min-w-20 border-r bg-muted/50 px-2 text-center align-bottom">
+                  {t.colGoal}
+                </TableHead>
+                {months.map((m) => (
+                  <TableHead key={m.from} colSpan={m.span} className="h-7 border-r px-1 text-center text-[11px] uppercase">
+                    {m.label}
+                  </TableHead>
+                ))}
+              </TableRow>
+              <TableRow className="hover:bg-transparent">
+                {cols.map(({ w }) => (
+                  <TableHead
+                    key={w.monday}
+                    className={cn(
+                      'h-auto border-r px-1 py-1 text-center text-[11px] font-normal leading-tight',
+                      w.partial === 'in-progress' && 'bg-primary/10 font-medium text-foreground',
+                    )}
+                  >
+                    <div>{w.monday.slice(5)}</div>
+                    <div className="text-muted-foreground">{weekSpan(w.monday).slice(-5)}</div>
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {METRICS.map((m) => {
+                const line = benchmark?.lines[m.id]
+                return (
+                  <TableRow key={m.id} className="hover:bg-transparent">
+                    <TableCell
+                      onClick={() => latest && onOpen(m.id, latest.i)}
+                      className="cursor-pointer border-r px-2 py-1 hover:bg-muted/40"
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="text-muted-foreground">{m.tag}</span> {t.metrics[m.id].name}
+                        <span className="text-muted-foreground">({m.unit})</span>
+                      </span>
+                    </TableCell>
+                    <TableCell className="border-r bg-muted/50 px-2 py-1 text-center font-mono tabular-nums">
+                      {line?.green != null ? `≤ ${line.green.toFixed(1)}` : t.trendOnly}
+                    </TableCell>
+                    {cols.map(({ w, i }) => {
+                      const st = w[m.id]
+                      const v = st.n > 0 ? inUnit(st.meanHours, m.unit, dayHours) : null
+                      const median = st.n > 0 ? inUnit(st.medianHours, m.unit, dayHours) : null
+                      return (
+                        <TableCell
+                          key={w.monday}
+                          title={
+                            st.n > 0
+                              ? `${w.label} · ${countText(t, m.id, st.n, m.id === 'response' ? w.responseEntries : st.n)} · ${t.median(show(median, m.unit))}`
+                              : w.label
+                          }
+                          onClick={() => onOpen(m.id, i)}
+                          className={cn(
+                            cellBase,
+                            clickable,
+                            v === null ? 'text-muted-foreground/60' : CELL_TONE[w.light[m.id]],
+                            w.partial === 'in-progress' && 'font-semibold',
+                          )}
+                        >
+                          {v === null ? '—' : v.toFixed(1)}
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                )
+              })}
+              <TableRow className="hover:bg-transparent">
+                <TableCell
+                  onClick={() => latest && onOpen('waiting', latest.i)}
+                  className="cursor-pointer border-r px-2 py-1 text-muted-foreground hover:bg-muted/40"
+                >
+                  {t.breakdownWaiting}
+                </TableCell>
+                <TableCell className="border-r bg-muted/50 px-2 py-1 text-center text-muted-foreground">—</TableCell>
+                {cols.map(({ w, i }) => (
+                  <TableCell
+                    key={w.monday}
+                    title={w.label}
+                    onClick={() => onOpen('waiting', i)}
+                    className={cn(cellBase, clickable, 'text-muted-foreground')}
+                  >
+                    {w.waiting.filter((x) => x.state === 'waiting').length}
+                  </TableCell>
+                ))}
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   )
@@ -1540,6 +1582,7 @@ export default function SupportTicketUpdates() {
   const t = T[useLang()]
   const { data, error, loading, reload, refresh } = useSupportUpdates()
   const [pick, setPick] = useState<string | null>(null)
+  const [quarterPick, setQuarterPick] = useState<string | null>(null)
   const [open, setOpen] = useState<Metric | 'waiting' | null>(null)
   const [openBenchmark, setOpenBenchmark] = useState<{ quarter: string; metric: Metric } | null>(null)
 
@@ -1547,6 +1590,15 @@ export default function SupportTicketUpdates() {
     ? Math.max(
         0,
         data.weeks.findIndex((w) => w.monday === (pick ?? data.weeks[0]?.monday)),
+      )
+    : 0
+  // The quarters the log reaches, newest first; the scorecard and the benchmarks show one at a time.
+  const quarters = data ? [...new Set(data.weeks.map((w) => w.quarter))] : []
+  const quarter = quarterPick && quarters.includes(quarterPick) ? quarterPick : (quarters[0] ?? '')
+  const quarterTop = data
+    ? Math.max(
+        0,
+        data.weeks.findIndex((w) => w.quarter === quarter),
       )
     : 0
   const cap = data?.capture
@@ -1560,16 +1612,16 @@ export default function SupportTicketUpdates() {
           <p className="max-w-3xl text-sm text-muted-foreground">{t.subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
-          {data && data.weeks.length > 0 && (
-            <Select value={data.weeks[index]?.monday} onValueChange={setPick}>
-              <SelectTrigger className="h-8 w-48 text-xs">
+          {data && quarters.length > 0 && (
+            <Select value={quarter} onValueChange={setQuarterPick}>
+              <SelectTrigger className="h-8 w-40 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent container={root()}>
-                {data.weeks.map((w) => (
-                  <SelectItem key={w.monday} value={w.monday} className="text-xs">
-                    {w.label}
-                    {w.partial === 'in-progress' ? ` · ${t.thisWeek}` : ''}
+                {quarters.map((q, qi) => (
+                  <SelectItem key={q} value={q} className="text-xs">
+                    {t.quarter(q)}
+                    {qi === 0 ? ` · ${t.thisQuarter}` : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1623,17 +1675,21 @@ export default function SupportTicketUpdates() {
 
       {data && data.weeks.length > 0 && (
         <>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <OwnerCard data={data} index={index} onOpen={setOpen} />
-            <BenchmarkCard
-              data={data}
-              index={index}
-              onOpen={(metric) => {
-                const quarter = data.weeks[index]?.quarter
-                if (quarter) setOpenBenchmark({ quarter, metric })
-              }}
-            />
-          </div>
+          <ScorecardCard
+            data={data}
+            quarter={quarter}
+            onOpen={(metric, weekIndex) => {
+              setPick(data.weeks[weekIndex]?.monday ?? null)
+              setOpen(metric)
+            }}
+          />
+          <BenchmarkCard
+            data={data}
+            index={quarterTop}
+            onOpen={(metric) => {
+              if (quarter) setOpenBenchmark({ quarter, metric })
+            }}
+          />
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
             <span>
               {cap?.inFlight ? t.refreshing : cap?.lastAt ? t.captured(local(cap.lastAt), cap.source ?? '') : ''}
